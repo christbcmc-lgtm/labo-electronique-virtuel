@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Labo Électronique Virtuel</title>
+<!-- Client Supabase (chargé même si Supabase n'est pas encore configuré : voir
+     le bloc CONFIGURATION en tête du script principal ci-dessous — l'app
+     tourne alors en mode démo locale et cette librairie reste inutilisée). -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
 /* ==========================================================================
    Labo Électronique Virtuel — feuille de style
@@ -254,7 +258,8 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:.86em; }
 .terminal-dot{ fill:var(--bg); stroke:var(--cyan); stroke-width:1.5; cursor:crosshair; }
 .terminal-dot:hover{ fill:var(--amber); stroke:var(--amber); }
 .terminal-dot.wiring-start{ fill:var(--amber); stroke:var(--amber); }
-.wire-line{ stroke:var(--amber); stroke-width:2; fill:none; }
+.wire-line{ stroke:var(--amber); stroke-width:2; fill:none; pointer-events:stroke; }
+.ws-svg.tool-supprimer .wire-line:hover{ stroke:var(--danger); cursor:pointer; }
 .wire-preview{ stroke:var(--amber); stroke-width:1.5; stroke-dasharray:4 3; opacity:.7; }
 
 .zoom-controls{ position:absolute; right:14px; bottom:14px; display:flex; flex-direction:column; gap:4px; z-index:5; }
@@ -307,6 +312,39 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:.86em; }
   <main id="app"></main>
   <div class="toast-wrap" id="toasts"></div>
   <script>
+/* ==========================================================================
+   CONFIGURATION — à renseigner pour activer le vrai backend Supabase.
+   Tant que SUPABASE_URL / SUPABASE_ANON_KEY gardent leur valeur placeholder
+   (contenant "_A_REMPLACER"), l'application tourne en MODE DÉMO LOCALE
+   (données conservées uniquement dans ce navigateur, voir plus bas) — elle
+   reste entièrement utilisable pour développer/tester l'interface sans
+   dépendre d'un projet Supabase réel.
+
+   Pour activer le vrai backend :
+     1. Créer un projet sur https://supabase.com (gratuit pour démarrer).
+     2. Exécuter supabase/schema.sql dans l'éditeur SQL du projet (après y
+        avoir remplacé ADMIN_EMAIL_A_REMPLACER par le véritable e-mail admin).
+     3. Remplacer les 3 constantes ci-dessous par les valeurs de votre projet
+        (Project Settings → API pour l'URL et la clé "anon public").
+     4. Dans Authentication → URL Configuration, ajouter l'URL de cette page
+        à "Redirect URLs" (nécessaire pour le lien de réinitialisation de
+        mot de passe envoyé par e-mail).
+
+   SUPABASE_ANON_KEY est une clé PUBLIQUE conçue pour être exposée côté
+   navigateur (la sécurité réelle est assurée par les policies RLS dans
+   schema.sql) — ce n'est PAS un secret. À l'inverse, ne jamais mettre ici
+   une "service_role key" ni une clé d'API d'IA : ces clés-là sont secrètes
+   et doivent rester côté serveur (voir supabase/functions/ai-interpret).
+   ========================================================================== */
+const SUPABASE_URL = 'SUPABASE_URL_A_REMPLACER';
+const SUPABASE_ANON_KEY = 'SUPABASE_ANON_KEY_A_REMPLACER';
+const ADMIN_EMAIL = 'ADMIN_EMAIL_A_REMPLACER'; // doit correspondre à ADMIN_EMAIL_A_REMPLACER dans schema.sql
+const AI_EDGE_FUNCTION_URL = 'AI_EDGE_FUNCTION_URL_A_CONFIGURER'; // ex: https://xxxx.supabase.co/functions/v1/ai-interpret
+
+const SUPABASE_CONFIGURED = !SUPABASE_URL.includes('_A_REMPLACER') && !SUPABASE_ANON_KEY.includes('_A_REMPLACER');
+const AI_CONFIGURED = !AI_EDGE_FUNCTION_URL.includes('_A_CONFIGURER');
+const supabaseClient = SUPABASE_CONFIGURED && window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
 /* ==========================================================================
    BIBLIOTHÈQUE DE COMPOSANTS — symboles schématiques (SVG), bornes de
    connexion, valeurs modifiables, définitions pédagogiques.
@@ -368,10 +406,10 @@ const SYM = {
     <circle cx="21" cy="15" r="13" fill="none" stroke="currentColor" stroke-width="1.5"/>`,
   mosfet_n: `${leadLine(0,8,18,8)}${leadLine(18,-2,18,4)}${leadLine(18,-2,42,-2)}${leadLine(42,-2,42,4)}${leadLine(18,26,18,20)}${leadLine(18,26,42,26)}${leadLine(42,26,42,20)}${leadLine(42,-4,42,34)}${leadLine(42,15,60,15)}
     <line x1="18" y1="4" x2="18" y2="20" stroke="currentColor" stroke-width="2"/>`,
-  transfo_pointmilieu: `${leadLine(0,4,22,4)}${leadLine(0,26,22,26)}${leadLine(0,15,10,15)}${leadLine(38,8,60,8)}${leadLine(38,22,60,22)}
-    <path d="M22,0 Q28,7.5 22,15 Q28,22.5 22,30" fill="none" stroke="currentColor" stroke-width="1.6"/>
-    <line x1="30" y1="0" x2="30" y2="30" stroke="currentColor" stroke-width="1.5"/><line x1="34" y1="0" x2="34" y2="30" stroke="currentColor" stroke-width="1.5"/>
-    <path d="M38,0 Q32,7.5 38,15 Q32,22.5 38,30" fill="none" stroke="currentColor" stroke-width="1.6"/>`,
+  transfo_pointmilieu: `${leadLine(0,8,22,8)}${leadLine(0,22,22,22)}${leadLine(38,4,60,4)}${leadLine(38,26,60,26)}${leadLine(46,15,60,15)}
+    <path d="M22,3 Q28,8 22,13 Q28,18 22,23 Q28,28 22,33" fill="none" stroke="currentColor" stroke-width="1.6" transform="translate(0,-3)"/>
+    <line x1="30" y1="2" x2="30" y2="28" stroke="currentColor" stroke-width="1.5"/><line x1="34" y1="2" x2="34" y2="28" stroke="currentColor" stroke-width="1.5"/>
+    <path d="M38,3 Q32,8 38,13 Q32,18 38,23 Q32,28 38,33" fill="none" stroke="currentColor" stroke-width="1.6" transform="translate(0,-3)"/>`,
   transfo_isolement: `${leadLine(0,8,22,8)}${leadLine(0,22,22,22)}${leadLine(38,8,60,8)}${leadLine(38,22,60,22)}
     <path d="M22,3 Q28,8 22,13 Q28,18 22,23 Q28,28 22,33" fill="none" stroke="currentColor" stroke-width="1.6" transform="translate(0,-3)"/>
     <line x1="30" y1="0" x2="30" y2="30" stroke="currentColor" stroke-width="1"/>
@@ -381,8 +419,11 @@ const SYM = {
 // terminaux locaux (avant rotation), en coordonnées du viewBox 60x30
 const T2 = [[0,15],[60,15]];
 const T3_TRANSISTOR = [[0,15],[42,-4],[42,34]]; // base, collecteur, émetteur
+const T3_MOSFET = [[0,8],[42,-4],[42,34]]; // grille, drain, source (la grille part de y=8, pas y=15)
 const T3_AOP = [[0,8],[0,22],[60,15]];
+const T3_REGULATEUR = [[0,15],[60,15],[30,30]]; // entrée, sortie, masse
 const T4 = [[0,8],[0,22],[60,8],[60,22]];
+const T5_TRANSFO_PM = [[0,8],[0,22],[60,4],[60,15],[60,26]]; // primaire haut/bas, secondaire haut/point milieu/bas
 
 // Composants communs aux 3 domaines — définis une seule fois, réutilisés partout
 // (évite la duplication ; findDef() les retrouve comme n'importe quel autre composant).
@@ -409,13 +450,13 @@ const COMPONENT_LIBRARY = {
       def:"Composant à 3 bornes (base, collecteur, émetteur) utilisé comme interrupteur ou amplificateur commandé par un faible courant de base.", wiki:'Transistor_bipolaire', alias:'2n2222 bc547 bipolaire' },
     { id:'transistor_pnp', nom:'Transistor PNP', terminals:T3_TRANSISTOR, unit:'gain β', defaultValue:100, valueOptions:[50,100,150,200],
       def:"Comme le NPN mais avec les polarités inversées : conduit quand la base est plus négative que l'émetteur.", wiki:'Transistor_bipolaire', alias:'2n2907 bc557 bipolaire' },
-    { id:'mosfet_n', nom:'MOSFET canal N', terminals:T3_TRANSISTOR, unit:'V (seuil)', defaultValue:2, valueOptions:[1,2,3,4],
+    { id:'mosfet_n', nom:'MOSFET canal N', terminals:T3_MOSFET, unit:'V (seuil)', defaultValue:2, valueOptions:[1,2,3,4],
       def:"Transistor à effet de champ commandé en tension par sa grille, très utilisé en commutation de puissance.", wiki:'Transistor_à_effet_de_champ_à_grille_isolée', alias:'irf540 fet grille source drain' },
     { id:'aop', nom:'AOP', terminals:T3_AOP, unit:'gain', defaultValue:100000, valueOptions:[1000,10000,100000],
       def:"Amplificateur opérationnel : amplifie fortement la différence entre ses deux entrées (+ et −).", wiki:'Amplificateur_opérationnel', alias:'lm358 lm741 opamp' },
     { id:'porte_and', nom:'Porte logique ET', terminals:T3_AOP, unit:'logique', defaultValue:'TTL', valueOptions:['TTL','CMOS'],
       def:"Sortie à 1 uniquement si les deux entrées sont à 1 (logique combinatoire).", wiki:'Porte_logique', alias:'and gate 7408' },
-    { id:'regulateur', nom:'Régulateur de tension', terminals:T3_AOP, unit:'V', defaultValue:5, valueOptions:[3.3,5,9,12],
+    { id:'regulateur', nom:'Régulateur de tension', terminals:T3_REGULATEUR, unit:'V', defaultValue:5, valueOptions:[3.3,5,9,12],
       def:"Maintient une tension de sortie stable quelle que soit la charge ou les variations d'entrée.", wiki:'Régulateur_de_tension', alias:'7805 lm7805 ldo' },
   ],
   electrotechnique: [
@@ -427,7 +468,7 @@ const COMPONENT_LIBRARY = {
       def:"Protège un moteur contre les surintensités prolongées en coupant le circuit en cas de surchauffe.", wiki:'Relais_thermique' },
     { id:'transformateur', nom:'Transformateur simple', terminals:T4, unit:'rapport', defaultValue:'230/24V', valueOptions:['230/24V','230/12V','400/230V'],
       def:"Modifie le niveau de tension d'un réseau alternatif par couplage magnétique entre deux bobinages.", wiki:'Transformateur_électrique', alias:'transfo monophasé élévateur abaisseur' },
-    { id:'transfo_pointmilieu', nom:'Transformateur à point milieu', terminals:T4, unit:'rapport', defaultValue:'230/12-0-12V', valueOptions:['230/12-0-12V','230/9-0-9V','230/6-0-6V'],
+    { id:'transfo_pointmilieu', nom:'Transformateur à point milieu', terminals:T5_TRANSFO_PM, unit:'rapport', defaultValue:'230/12-0-12V', valueOptions:['230/12-0-12V','230/9-0-9V','230/6-0-6V'],
       def:"Transformateur dont le secondaire possède une prise centrale, utile pour un redressement double alternance symétrique.", wiki:'Transformateur_électrique', alias:'point milieu center tap' },
     { id:'transfo_isolement', nom:"Transformateur d'isolement", terminals:T4, unit:'rapport', defaultValue:'230/230V', valueOptions:['230/230V','400/400V'],
       def:"Rapport 1:1 utilisé pour isoler galvaniquement un équipement du réseau, sans changer le niveau de tension.", wiki:'Transformateur_électrique', alias:'isolement galvanique securité' },
@@ -485,9 +526,13 @@ function wikiUrl(slug){ return `https://fr.wikipedia.org/wiki/${slug}`; }
    (mêmes noms de fonctions, même forme de retour { data, error }).
    ========================================================================== */
 
+// En mode démo locale, le compte admin utilise ADMIN_EMAIL s'il a été renseigné
+// (pour rester cohérent avec schema.sql), sinon une adresse de démonstration.
+const MOCK_ADMIN_EMAIL = ADMIN_EMAIL.includes('_A_REMPLACER') ? 'root.esmer@labo-interne.local' : ADMIN_EMAIL;
+
 const DB = {
   users: [
-    { id:'admin', nom:'Admin', prenom:'', email:'root.esmer@labo-interne.local', password:'admin123', motMagique:'phase0',
+    { id:'admin', nom:'Admin', prenom:'', email: MOCK_ADMIN_EMAIL, password:'admin123', motMagique:'phase0',
       role:'admin', avatar:'AD', accountType:'solo', members:[], createdAt:'2026-01-01' },
   ],
 
@@ -501,12 +546,34 @@ const DB = {
   passwordResetTokens: {},
 };
 
+// Persistance locale du mock (localStorage) : évite de tout perdre à chaque rechargement de page.
+// Reste un mock — pas un vrai stockage sécurisé côté serveur (voir commentaire au-dessus).
+const DB_STORAGE_KEY = 'labo_electronique_virtuel_db_v1';
+function persistDB(){ try{ localStorage.setItem(DB_STORAGE_KEY, JSON.stringify(DB)); }catch(e){} }
+function loadDB(){
+  try{
+    const raw = localStorage.getItem(DB_STORAGE_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    Object.keys(DB).forEach(k => { if (saved[k] !== undefined) DB[k] = saved[k]; });
+    if (!DB.users.some(u => u.role === 'admin')){
+      DB.users.unshift({ id:'admin', nom:'Admin', prenom:'', email: MOCK_ADMIN_EMAIL, password:'admin123', motMagique:'phase0',
+        role:'admin', avatar:'AD', accountType:'solo', members:[], createdAt:'2026-01-01' });
+    }
+  }catch(e){}
+}
+loadDB();
+
 const LATENCY = 200;
 const wait = (ms=LATENCY) => new Promise(r => setTimeout(r, ms));
 const uid = (p='id') => p + '_' + Math.random().toString(36).slice(2,9);
 function pairKey(a,b){ return [a,b].sort().join('|'); }
 
-const auth = {
+// ----------------------------------------------------------------------------
+// MODE DÉMO LOCALE (mock) — utilisé tant que SUPABASE_CONFIGURED est faux.
+// Entièrement testé (voir RAPPORT-FINAL.md, section Tests).
+// ----------------------------------------------------------------------------
+const mockAuth = {
   currentUser: null,
 
   async signUp({ nom, prenom, email, password, motMagique, accountType }){
@@ -519,6 +586,7 @@ const auth = {
       members:[], createdAt:new Date().toISOString().slice(0,10) };
     DB.users.push(user);
     this.currentUser = user;
+    persistDB();
     return { data:{ user }, error:null };
   },
 
@@ -543,6 +611,7 @@ const auth = {
     }
     const tempPassword = Math.random().toString(36).slice(2,8).toUpperCase();
     DB.passwordResetTokens[user.email] = { tempPassword, expiresAt: Date.now() + 15*60*1000 };
+    persistDB();
     return { data:{ tempPassword, emailMasque: maskEmail(user.email) }, error:null };
   },
 
@@ -556,6 +625,7 @@ const auth = {
     user.password = tempPassword;
     user.mustChangePassword = true;
     this.currentUser = user;
+    persistDB();
     return { data:{ user }, error:null };
   },
 
@@ -564,6 +634,7 @@ const auth = {
     if (!this.currentUser) return { data:null, error:{ message:'Non connecté.' } };
     this.currentUser.password = newPassword;
     this.currentUser.mustChangePassword = false;
+    persistDB();
     return { data:{ ok:true }, error:null };
   },
 };
@@ -574,7 +645,7 @@ function maskEmail(email){
   return `${visible}${'•'.repeat(Math.max(name.length-2,2))}@${domain}`;
 }
 
-const db = {
+const mockDb = {
   async listProjects({ userId, espace }={}){
     await wait();
     let rows = DB.projects.filter(p => p.ownerId === userId || p.collaborateurs.includes(userId));
@@ -591,6 +662,7 @@ const db = {
     await wait();
     const p = { id:uid('p'), ownerId, titre, espace, updatedAt:new Date().toISOString().slice(0,10), collaborateurs:[], erreurs:0, schema:{ items:[], wires:[] } };
     DB.projects.unshift(p);
+    persistDB();
     return { data:p, error:null };
   },
 
@@ -599,7 +671,7 @@ const db = {
   async saveSchema(id, schema){
     await wait(80);
     const p = DB.projects.find(p => p.id === id);
-    if (p){ p.schema = schema; p.updatedAt = new Date().toISOString().slice(0,10); }
+    if (p){ p.schema = schema; p.updatedAt = new Date().toISOString().slice(0,10); persistDB(); }
     return { error:null };
   },
 
@@ -610,10 +682,11 @@ const db = {
     if (!p) return { error:{ message:'Projet introuvable.' } };
     if (!u) return { error:{ message:'Aucun utilisateur avec cet e-mail.' } };
     if (!p.collaborateurs.includes(u.id)) p.collaborateurs.push(u.id);
+    persistDB();
     return { data:p, error:null };
   },
 
-  async deleteProject(id){ await wait(); DB.projects = DB.projects.filter(p => p.id !== id); return { error:null }; },
+  async deleteProject(id){ await wait(); DB.projects = DB.projects.filter(p => p.id !== id); persistDB(); return { error:null }; },
 
   async listComments(projectId){ await wait(120); return { data: DB.comments.filter(c => c.projectId === projectId), error:null }; },
 
@@ -621,6 +694,7 @@ const db = {
     await wait(120);
     const c = { id:uid('c'), projectId, userId, texte, createdAt:new Date().toISOString().slice(0,16).replace('T',' ') };
     DB.comments.push(c);
+    persistDB();
     return { data:c, error:null };
   },
 
@@ -630,6 +704,7 @@ const db = {
     await wait(120);
     const m = { id:uid('m'), userId, texte, createdAt:new Date().toISOString().slice(0,16).replace('T',' '), pinned:false };
     DB.commonMessages.push(m);
+    persistDB();
     return { data:m, error:null };
   },
 
@@ -641,6 +716,7 @@ const db = {
     if (!DB.privateThreads[key]) DB.privateThreads[key] = [];
     const m = { from, texte, createdAt:new Date().toISOString().slice(0,16).replace('T',' ') };
     DB.privateThreads[key].push(m);
+    persistDB();
     return { data:m, error:null };
   },
 
@@ -657,13 +733,14 @@ const db = {
     await wait(120);
     const s = { id:uid('s'), userId, texte, statut:'en attente', reponseAdmin:null, createdAt:new Date().toISOString().slice(0,10) };
     DB.suggestions.push(s);
+    persistDB();
     return { data:s, error:null };
   },
 
   async answerSuggestion({ id, reponse }){
     await wait(120);
     const s = DB.suggestions.find(s => s.id === id);
-    if (s){ s.reponseAdmin = reponse; s.statut = 'traitée'; }
+    if (s){ s.reponseAdmin = reponse; s.statut = 'traitée'; persistDB(); }
     return { data:s, error:null };
   },
 
@@ -672,10 +749,17 @@ const db = {
     const u = DB.users.find(u => u.id === userId);
     if (!u) return { error:{ message:'Utilisateur introuvable.' } };
     u.members.push({ id:uid('mb'), nom, email });
+    persistDB();
     return { data:u.members, error:null };
   },
 
-  adminStats(){
+  async listGroupMembers(userId){
+    await wait(120);
+    const u = DB.users.find(u => u.id === userId);
+    return { data: (u && u.members) || [], error:null };
+  },
+
+  async adminStats(){
     return {
       utilisateurs: DB.users.length,
       projets: DB.projects.length,
@@ -683,8 +767,258 @@ const db = {
     };
   },
 
+  // Espace de stockage estimé (mock : taille JSON des projets de l'utilisateur).
+  async storageUsage(userId){
+    const mine = DB.projects.filter(p => p.ownerId === userId);
+    const bytes = mine.reduce((n,p) => n + JSON.stringify(p.schema||{}).length, 0);
+    return { data: { projets: mine.length, bytes }, error:null };
+  },
+
   userById(id){ return DB.users.find(u => u.id === id); },
 };
+
+// ----------------------------------------------------------------------------
+// MODE SUPABASE RÉEL — actif uniquement si SUPABASE_CONFIGURED est vrai.
+// IMPORTANT (honnêteté de test) : ce bloc n'a PAS pu être testé contre un
+// projet Supabase réel (aucun projet fourni au moment du développement — voir
+// RAPPORT-FINAL.md, section Tests). Il a été écrit et relu avec soin pour
+// respecter l'API officielle de @supabase/supabase-js v2 et le schéma défini
+// dans supabase/schema.sql, mais vérifiez-le vous-même après connexion d'un
+// vrai projet, avant toute mise en production.
+// ----------------------------------------------------------------------------
+
+// Correspondance colonnes Postgres (snake_case) → objet JS utilisé par l'UI (camelCase).
+function profileRowToUser(row){
+  if (!row) return null;
+  return {
+    id: row.id, nom: row.nom, prenom: row.prenom, email: row.email,
+    role: row.role, accountType: row.account_type, avatar: row.avatar,
+    motMagique: row.mot_magique, createdAt: (row.created_at || '').slice(0,10),
+    mustChangePassword: false,
+  };
+}
+function projectRowToProject(row){
+  return {
+    id: row.id, ownerId: row.owner_id, titre: row.titre, espace: row.espace,
+    schema: row.schema || { items:[], wires:[] }, erreurs: row.erreurs || 0,
+    updatedAt: (row.updated_at || '').slice(0,10),
+    collaborateurs: (row.project_collaborators || []).map(c => c.user_id),
+  };
+}
+
+// Annuaire local des profils (nom/prénom/avatar de tous les utilisateurs) : évite de
+// refaire une requête réseau à chaque fois que l'UI a besoin d'afficher un nom
+// (db.userById est utilisé de façon SYNCHRONE un peu partout dans le rendu).
+// Rafraîchi à la connexion et à chaque appel explicite de listUsers().
+let __profilesCache = [];
+async function refreshProfilesCache(){
+  const { data, error } = await supabaseClient.from('profiles').select('*');
+  if (!error) __profilesCache = (data || []).map(profileRowToUser);
+  return __profilesCache;
+}
+async function fetchProfile(userId){
+  const { data } = await supabaseClient.from('profiles').select('*').eq('id', userId).single();
+  return profileRowToUser(data);
+}
+
+const supabaseAuth = {
+  currentUser: null,
+
+  async signUp({ nom, prenom, email, password, motMagique, accountType }){
+    const { data, error } = await supabaseClient.auth.signUp({
+      email, password,
+      options: { data: { nom, prenom, motMagique, accountType: accountType || 'solo' } },
+    });
+    if (error) return { data:null, error:{ message: error.message } };
+    if (!data.user) return { data:null, error:{ message:"Vérifiez votre boîte mail pour confirmer votre compte, puis connectez-vous." } };
+    const profile = await fetchProfile(data.user.id);
+    this.currentUser = profile;
+    await refreshProfilesCache();
+    return { data:{ user: profile }, error:null };
+  },
+
+  async signInWithPassword({ email, password }){
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    if (error) return { data:null, error:{ message:'E-mail ou mot de passe incorrect.' } };
+    const profile = await fetchProfile(data.user.id);
+    this.currentUser = profile;
+    await refreshProfilesCache();
+    return { data:{ user: profile }, error:null };
+  },
+
+  async signOut(){
+    await supabaseClient.auth.signOut();
+    this.currentUser = null;
+    return { error:null };
+  },
+
+  // Remplace verifyMotMagique/signInWithTempPassword du mode démo : vraie
+  // récupération par e-mail via Supabase Auth (lien de réinitialisation).
+  async sendPasswordReset({ email }){
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname + '#/change-password',
+    });
+    if (error) return { error:{ message: error.message } };
+    return { error:null };
+  },
+
+  async updatePassword({ newPassword }){
+    const { error } = await supabaseClient.auth.updateUser({ password: newPassword });
+    if (error) return { data:null, error:{ message: error.message } };
+    return { data:{ ok:true }, error:null };
+  },
+};
+
+const supabaseDb = {
+  async listProjects({ userId, espace }={}){
+    let q = supabaseClient.from('projects').select('*, project_collaborators(user_id)');
+    if (espace) q = q.eq('espace', espace);
+    const { data, error } = await q;
+    if (error) return { data:[], error:{ message:error.message } };
+    const rows = (data||[]).map(projectRowToProject).filter(p => p.ownerId===userId || p.collaborateurs.includes(userId));
+    return { data: rows, error:null };
+  },
+
+  async listSharedProjects(userId){
+    const { data, error } = await supabaseClient.from('projects').select('*, project_collaborators(user_id)');
+    if (error) return { data:[], error:{ message:error.message } };
+    const rows = (data||[]).map(projectRowToProject).filter(p => p.ownerId!==userId && p.collaborateurs.includes(userId));
+    return { data: rows, error:null };
+  },
+
+  async createProject({ ownerId, titre, espace }){
+    const { data, error } = await supabaseClient.from('projects')
+      .insert({ owner_id: ownerId, titre, espace, schema:{ items:[], wires:[] } })
+      .select('*, project_collaborators(user_id)').single();
+    if (error) return { data:null, error:{ message:error.message } };
+    return { data: projectRowToProject(data), error:null };
+  },
+
+  async getProject(id){
+    const { data, error } = await supabaseClient.from('projects').select('*, project_collaborators(user_id)').eq('id', id).single();
+    if (error) return { data:null, error:null }; // introuvable ou non autorisé (RLS) → traité comme "absent" par l'UI
+    return { data: projectRowToProject(data), error:null };
+  },
+
+  async saveSchema(id, schema){
+    const { error } = await supabaseClient.from('projects').update({ schema, updated_at:new Date().toISOString() }).eq('id', id);
+    return { error: error ? { message:error.message } : null };
+  },
+
+  async addCollaborator({ projectId, email }){
+    const { data: user } = await supabaseClient.from('profiles').select('id').eq('email', email).single();
+    if (!user) return { error:{ message:'Aucun utilisateur avec cet e-mail.' } };
+    const { error } = await supabaseClient.from('project_collaborators').insert({ project_id: projectId, user_id: user.id });
+    if (error) return { error:{ message: error.code === '23505' ? 'Déjà collaborateur sur ce projet.' : error.message } };
+    return { data:true, error:null };
+  },
+
+  async deleteProject(id){
+    const { error } = await supabaseClient.from('projects').delete().eq('id', id);
+    return { error: error ? { message:error.message } : null };
+  },
+
+  async listComments(projectId){
+    const { data, error } = await supabaseClient.from('comments').select('*').eq('project_id', projectId).order('created_at');
+    if (error) return { data:[], error:{ message:error.message } };
+    return { data: (data||[]).map(c => ({ id:c.id, projectId:c.project_id, userId:c.user_id, texte:c.texte, createdAt:(c.created_at||'').slice(0,16).replace('T',' ') })), error:null };
+  },
+
+  async addComment({ projectId, userId, texte }){
+    const { data, error } = await supabaseClient.from('comments').insert({ project_id:projectId, user_id:userId, texte }).select().single();
+    if (error) return { data:null, error:{ message:error.message } };
+    return { data: { id:data.id, projectId, userId, texte, createdAt:(data.created_at||'').slice(0,16).replace('T',' ') }, error:null };
+  },
+
+  async listCommonMessages(){
+    const { data, error } = await supabaseClient.from('common_messages').select('*').order('pinned',{ascending:false}).order('created_at');
+    if (error) return { data:[], error:{ message:error.message } };
+    return { data:(data||[]).map(m=>({ id:m.id, userId:m.user_id, texte:m.texte, pinned:m.pinned, createdAt:(m.created_at||'').slice(0,16).replace('T',' ') })), error:null };
+  },
+
+  async addCommonMessage({ userId, texte }){
+    const { data, error } = await supabaseClient.from('common_messages').insert({ user_id:userId, texte }).select().single();
+    if (error) return { data:null, error:{ message:error.message } };
+    return { data:{ id:data.id, userId, texte, pinned:false, createdAt:(data.created_at||'').slice(0,16).replace('T',' ') }, error:null };
+  },
+
+  async listPrivateThread(a,b){
+    const { data, error } = await supabaseClient.from('private_messages').select('*')
+      .or(`and(from_user.eq.${a},to_user.eq.${b}),and(from_user.eq.${b},to_user.eq.${a})`)
+      .order('created_at');
+    if (error) return { data:[], error:{ message:error.message } };
+    return { data:(data||[]).map(m=>({ from:m.from_user, texte:m.texte, createdAt:(m.created_at||'').slice(0,16).replace('T',' ') })), error:null };
+  },
+
+  async sendPrivateMessage({ from, to, texte }){
+    const { data, error } = await supabaseClient.from('private_messages').insert({ from_user:from, to_user:to, texte }).select().single();
+    if (error) return { data:null, error:{ message:error.message } };
+    return { data:{ from, texte, createdAt:(data.created_at||'').slice(0,16).replace('T',' ') }, error:null };
+  },
+
+  async listUsers(){
+    const rows = await refreshProfilesCache();
+    return { data: rows, error:null };
+  },
+
+  async listMySuggestions(userId){
+    const { data, error } = await supabaseClient.from('suggestions').select('*').eq('user_id', userId).order('created_at',{ascending:false});
+    if (error) return { data:[], error:{ message:error.message } };
+    return { data:(data||[]).map(suggestionRowToSuggestion), error:null };
+  },
+  async listAllSuggestions(){
+    const { data, error } = await supabaseClient.from('suggestions').select('*').order('created_at',{ascending:false});
+    if (error) return { data:[], error:{ message:error.message } };
+    return { data:(data||[]).map(suggestionRowToSuggestion), error:null };
+  },
+
+  async addSuggestion({ userId, texte }){
+    const { data, error } = await supabaseClient.from('suggestions').insert({ user_id:userId, texte }).select().single();
+    if (error) return { data:null, error:{ message:error.message } };
+    return { data: suggestionRowToSuggestion(data), error:null };
+  },
+
+  async answerSuggestion({ id, reponse }){
+    const { data, error } = await supabaseClient.from('suggestions').update({ reponse_admin:reponse, statut:'traitée' }).eq('id', id).select().single();
+    if (error) return { data:null, error:{ message:error.message } };
+    return { data: suggestionRowToSuggestion(data), error:null };
+  },
+
+  async addGroupMember({ userId, nom, email }){
+    const { data, error } = await supabaseClient.from('group_members').insert({ owner_id:userId, nom, email }).select();
+    if (error) return { error:{ message:error.message } };
+    return { data, error:null };
+  },
+  async listGroupMembers(userId){
+    const { data, error } = await supabaseClient.from('group_members').select('*').eq('owner_id', userId);
+    if (error) return { data:[], error:{ message:error.message } };
+    return { data:(data||[]).map(m=>({ id:m.id, nom:m.nom, email:m.email })), error:null };
+  },
+
+  async adminStats(){
+    const [{ count: utilisateurs }, { count: projets }, { count: cm }, { count: pm }] = await Promise.all([
+      supabaseClient.from('profiles').select('*', { count:'exact', head:true }),
+      supabaseClient.from('projects').select('*', { count:'exact', head:true }),
+      supabaseClient.from('common_messages').select('*', { count:'exact', head:true }),
+      supabaseClient.from('private_messages').select('*', { count:'exact', head:true }),
+    ]);
+    return { utilisateurs: utilisateurs||0, projets: projets||0, messages:(cm||0)+(pm||0) };
+  },
+
+  async storageUsage(userId){
+    const { data } = await supabaseClient.from('projects').select('schema').eq('owner_id', userId);
+    const bytes = (data||[]).reduce((n,p)=>n+JSON.stringify(p.schema||{}).length, 0);
+    return { data:{ projets:(data||[]).length, bytes }, error:null };
+  },
+
+  userById(id){ return __profilesCache.find(u => u.id === id); },
+};
+function suggestionRowToSuggestion(s){
+  return { id:s.id, userId:s.user_id, texte:s.texte, statut:s.statut, reponseAdmin:s.reponse_admin, createdAt:(s.created_at||'').slice(0,10) };
+}
+
+const auth = SUPABASE_CONFIGURED ? supabaseAuth : mockAuth;
+const db = SUPABASE_CONFIGURED ? supabaseDb : mockDb;
 
 /* app.js dépend de mock-backend.js et components-data.js chargés avant lui (scripts classiques, pas de modules). */
 
@@ -753,19 +1087,41 @@ async function render(){
   window.scrollTo?.(0,0);
   AFTER[base]?.();
 }
+// Au démarrage en mode Supabase : restaure la session existante (si l'utilisateur
+// était déjà connecté) avant le tout premier rendu, pour éviter un flash de
+// l'écran de connexion. En mode démo locale, ceci ne fait rien (pas de session
+// serveur : l'utilisateur doit se reconnecter après un rechargement, comme
+// indiqué dans le rapport).
+async function bootAuth(){
+  if (!SUPABASE_CONFIGURED) return;
+  const { data:{ session } } = await supabaseClient.auth.getSession();
+  if (session){
+    auth.currentUser = await fetchProfile(session.user.id);
+    await refreshProfilesCache();
+  }
+  supabaseClient.auth.onAuthStateChange((event) => {
+    if (event === 'PASSWORD_RECOVERY') go('change-password');
+    if (event === 'SIGNED_OUT') { auth.currentUser = null; render(); }
+  });
+}
+
 window.addEventListener('hashchange', render);
-window.addEventListener('DOMContentLoaded', render);
+window.addEventListener('DOMContentLoaded', async () => { await bootAuth(); render(); });
 
 /* ==========================================================================
    TOPBAR
    ========================================================================== */
+const MODE_PILL = SUPABASE_CONFIGURED
+  ? `<span class="pill pill-cyan" title="Comptes et projets stockés sur votre projet Supabase">Supabase</span>`
+  : `<span class="pill" title="Comptes et projets stockés uniquement dans ce navigateur (localStorage) — voir RAPPORT-FINAL.md pour connecter Supabase">Démo locale</span>`;
+
 function renderTopbar(route){
   const bar = document.getElementById('topbar');
   const base = route.split('/')[0];
   const user = auth.currentUser;
   if (!user){
     bar.innerHTML = `<a href="#/" class="brand"><span class="brand-mark">◈</span> Labo Électronique Virtuel</a>
-      <div class="right"><a href="#/login" class="btn btn-ghost btn-sm">Connexion</a><a href="#/register" class="btn btn-primary btn-sm">Créer un compte</a></div>`;
+      <div class="right">${MODE_PILL}<a href="#/login" class="btn btn-ghost btn-sm">Connexion</a><a href="#/register" class="btn btn-primary btn-sm">Créer un compte</a></div>`;
     return;
   }
   const links = [['dashboard','Mon espace'],['discussion','Discussion & suggestions'],['messages','Messagerie']];
@@ -773,6 +1129,7 @@ function renderTopbar(route){
   bar.innerHTML = `<a href="#/dashboard" class="brand"><span class="brand-mark">◈</span> Labo Électronique Virtuel</a>
     <nav>${links.map(([r,l]) => `<a href="#/${r}" class="navlink ${base===r?'active':''}">${l}</a>`).join('')}</nav>
     <div class="right">
+      ${MODE_PILL}
       <a href="#/compte" class="avatar" title="${esc(user.prenom)} ${esc(user.nom)}">${initials(user)}</a>
       <button class="btn btn-ghost btn-sm" id="btn-logout">Se déconnecter</button>
     </div>`;
@@ -814,7 +1171,10 @@ function viewLogin(){
   </div></div>`;
 }
 function afterLoginView(){
-  document.getElementById('btn-google').onclick = () => toast('Connexion Google — à activer une fois Supabase Auth branché (fonctionnera alors pour tous les utilisateurs).');
+  document.getElementById('btn-google').onclick = () => {
+    if (SUPABASE_CONFIGURED) supabaseClient.auth.signInWithOAuth({ provider:'google' });
+    else toast('Connexion Google — disponible une fois Supabase configuré (voir supabase/schema.sql et Authentication → Providers dans votre projet Supabase).');
+  };
   wirePwToggle();
   document.getElementById('form-login').onsubmit = async (e) => {
     e.preventDefault();
@@ -877,10 +1237,23 @@ function afterRegisterView(){
 }
 
 function viewForgot(){
+  if (SUPABASE_CONFIGURED){
+    return `
+    <div class="auth-shell pcb-grid"><div class="auth-card">
+      <h2>Mot de passe oublié</h2><p class="sub">Recevez un lien de réinitialisation sécurisé par e-mail.</p>
+      <form id="form-forgot">
+        <div class="field"><label>E-mail</label><input type="email" name="email" required></div>
+        <div class="field-error hidden" id="forgot-error"></div>
+        <button class="btn btn-primary btn-block" type="submit">Envoyer le lien</button>
+      </form>
+      <div class="auth-switch"><a href="#/login">Retour à la connexion</a></div>
+    </div></div>`;
+  }
   return `
   <div class="auth-shell pcb-grid"><div class="auth-card">
     <div class="step-indicator"><span class="active"></span><span></span></div>
     <h2>Mot de passe oublié</h2><p class="sub">Entrez votre mot magique pour vérifier votre identité.</p>
+    <div class="magic-note">Mode démo locale — en production (Supabase configuré), ce formulaire envoie un vrai lien de réinitialisation par e-mail ; le mot magique ne suffit alors plus à lui seul à prouver l'identité.</div>
     <form id="form-forgot">
       <div class="field"><label>E-mail</label><input type="email" name="email" required></div>
       <div class="field"><label>Entrez votre mot magique</label><input name="motMagique" required></div>
@@ -895,8 +1268,15 @@ function afterForgotView(){
     e.preventDefault();
     const f = new FormData(e.target);
     const email = f.get('email');
-    const { data, error } = await auth.verifyMotMagique({ email, motMagique:f.get('motMagique') });
     const $err = document.getElementById('forgot-error');
+    if (SUPABASE_CONFIGURED){
+      const { error } = await auth.sendPasswordReset({ email });
+      if (error){ $err.textContent = error.message; $err.classList.remove('hidden'); return; }
+      toast("E-mail envoyé si ce compte existe — suivez le lien reçu pour choisir un nouveau mot de passe.");
+      go('login');
+      return;
+    }
+    const { data, error } = await auth.verifyMotMagique({ email, motMagique:f.get('motMagique') });
     if (error){ $err.textContent = error.message; $err.classList.remove('hidden'); return; }
     state.recovery = { email, tempPassword:data.tempPassword, emailMasque:data.emailMasque };
     toast('Mot magique vérifié.');
@@ -953,7 +1333,15 @@ function afterChangePasswordView(){
     const $err = document.getElementById('cp-error');
     if (f.get('p1') !== f.get('p2')){ $err.textContent='Les deux mots de passe ne correspondent pas.'; $err.classList.remove('hidden'); return; }
     if (f.get('p1').length < 6){ $err.textContent='6 caractères minimum.'; $err.classList.remove('hidden'); return; }
-    await auth.updatePassword({ newPassword:f.get('p1') });
+    const { error } = await auth.updatePassword({ newPassword:f.get('p1') });
+    if (error){ $err.textContent = error.message; $err.classList.remove('hidden'); return; }
+    // Après un lien de récupération Supabase, la session existe côté client mais
+    // auth.currentUser n'a pas forcément encore été hydraté : on le fait ici pour
+    // que la redirection vers /dashboard ne soit pas renvoyée vers /login.
+    if (SUPABASE_CONFIGURED && !auth.currentUser){
+      const { data:{ session } } = await supabaseClient.auth.getSession();
+      if (session){ auth.currentUser = await fetchProfile(session.user.id); await refreshProfilesCache(); }
+    }
     toast('Mot de passe mis à jour.');
     go('dashboard');
   };
@@ -1112,6 +1500,8 @@ async function viewProject(id){
           <span class="pill pill-cyan" id="tool-indicator" style="margin-left:6px">Outil : Sélection</span></div>
         <div style="display:flex;gap:8px">
           <button class="btn btn-ghost btn-sm" id="btn-share">Partager</button>
+          <button class="btn btn-ghost btn-sm" id="btn-export-pdf">Exporter PDF</button>
+          <button class="btn btn-ghost btn-sm" id="btn-ai-interpret">🤖 Interpréter (IA)</button>
           <button class="btn btn-ghost btn-sm" id="btn-test-circuit">Tester le circuit</button>
           <button class="btn btn-primary btn-sm" id="btn-save-project">Enregistrer</button>
         </div>
@@ -1142,11 +1532,23 @@ async function viewProject(id){
       <div class="readout">-- . -- V</div>`;
   }
   function panelDiagnostic(){
-    const n = wsState.schema.items.length;
-    return n === 0
-      ? `<div class="empty">Aucun composant posé pour l'instant.</div>`
-      : `<div class="diag-ok">✓ ${n} composant(s) posé(s).</div><div class="diag-ok">✓ ${wsState.schema.wires.length} connexion(s) tracée(s).</div>
-         <p style="font-size:.78em;margin-top:10px">Le calcul électrique réel (court-circuit, continuité) arrivera avec le moteur de simulation, à une prochaine étape.</p>`;
+    const items = wsState.schema.items, wires = wsState.schema.wires;
+    if (items.length === 0) return `<div class="empty">Aucun composant posé pour l'instant.</div>`;
+    const connected = new Set();
+    wires.forEach(w => { connected.add(w.a.itemId+'#'+w.a.term); connected.add(w.b.itemId+'#'+w.b.term); });
+    const warnings = [];
+    items.forEach(item => {
+      const def = findDef(item.typeId);
+      def.terminals.forEach((t,idx) => {
+        if (!connected.has(item.id+'#'+idx)) warnings.push(`${def.nom} — borne ${idx+1} non connectée`);
+      });
+    });
+    const okLines = `<div class="diag-ok">✓ ${items.length} composant(s) posé(s).</div><div class="diag-ok">✓ ${wires.length} connexion(s) tracée(s).</div>`;
+    const warnLines = warnings.length
+      ? warnings.map(w => `<div class="diag-error">⚠ ${esc(w)}</div>`).join('')
+      : `<div class="diag-ok">✓ Toutes les bornes sont connectées.</div>`;
+    return `${okLines}${warnLines}
+       <p style="font-size:.78em;margin-top:10px">Vérification structurelle uniquement (bornes reliées ou non). Le calcul électrique réel (court-circuit, continuité, valeurs) arrivera avec le moteur de simulation, à une prochaine étape.</p>`;
   }
   function panelProprietes(){
     const item = wsState.schema.items.find(i => i.id === wsState.selectedId);
@@ -1157,14 +1559,20 @@ async function viewProject(id){
       <h4 style="margin-bottom:.3em">${esc(def.nom)}</h4>
       <p class="def-text">${esc(def.def)}</p>
       <a class="wiki-link" href="${wikiUrl(def.wiki)}" target="_blank" rel="noopener">En savoir plus →</a>
-      ${isCatalogComp ? `
+      ${isCatalogComp ? (() => {
+        const isPreset = def.valueOptions.some(v => String(v) === String(item.value));
+        return `
       <div class="field" style="margin-top:14px"><label>Valeur (${esc(def.unit)})</label>
         <select id="prop-value">
           ${def.valueOptions.map(v => `<option value="${v}" ${String(v)===String(item.value)?'selected':''}>${v}</option>`).join('')}
+          <option value="__custom__" ${!isPreset?'selected':''}>Autre valeur…</option>
         </select>
-      </div>` : ''}
-      <div style="display:flex;gap:8px;margin-top:14px">
+        <input type="text" id="prop-value-custom" placeholder="Valeur personnalisée" value="${!isPreset?esc(item.value):''}" class="${isPreset?'hidden':''}" style="margin-top:.4em">
+      </div>`;
+      })() : ''}
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" id="prop-rotate">↻ Pivoter</button>
+        <button class="btn btn-ghost btn-sm" id="prop-duplicate">⧉ Dupliquer</button>
         <button class="btn btn-danger btn-sm" id="prop-delete">✕ Supprimer</button>
       </div>`;
   }
@@ -1185,16 +1593,19 @@ function renderCanvasSVG(){
   const wiresSvg = wires.map(w => {
     const a = terminalAbsPos(items.find(i=>i.id===w.a.itemId), w.a.term);
     const b = terminalAbsPos(items.find(i=>i.id===w.b.itemId), w.b.term);
-    return `<line class="wire-line" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`;
+    return `<line class="wire-line" data-wire="${w.id}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`;
   }).join('');
   const itemsSvg = items.map(item => {
     const def = findDef(item.typeId);
     const sym = SYM[item.typeId] || '';
     const selected = item.id === wsState.selectedId ? 'selected' : '';
     const terms = def.terminals.map((t,idx) => `<circle class="terminal-dot ${wsState.wireStart && wsState.wireStart.itemId===item.id && wsState.wireStart.term===idx ? 'wiring-start':''}" data-term-item="${item.id}" data-term-idx="${idx}" cx="${t[0]}" cy="${t[1]}" r="3.4"/>`).join('');
-    const valueLabel = def.unit ? `<text class="comp-label" x="6" y="-4">${esc(item.value)}${esc(def.unit.split(' ')[0]==='V'||def.unit.split(' ')[0]==='Ω'?'':'')}</text>` : '';
+    const UNIT_SUFFIX = { 'état':'', 'logique':'', 'rapport':'', 'gain β':' β' };
+    const unitSuffix = def.unit ? (def.unit in UNIT_SUFFIX ? UNIT_SUFFIX[def.unit] : ' '+def.unit.split(' ')[0]) : '';
+    const valueLabel = def.unit ? `<text class="comp-label" x="6" y="-4">${esc(item.value)}${esc(unitSuffix)}</text>` : '';
     return `<g class="comp-node ${selected}" data-item="${item.id}" transform="translate(${item.x},${item.y}) rotate(${item.rot||0},30,15)">
       <g class="comp-body">${sym}</g>
+      ${valueLabel}
       ${terms}
     </g>`;
   }).join('');
@@ -1295,6 +1706,16 @@ function wireCanvasEvents(){
     });
   });
 
+  svg.querySelectorAll('.wire-line').forEach(line => {
+    line.addEventListener('click', (e) => {
+      if (wsState.tool !== 'supprimer') return;
+      e.stopPropagation();
+      const id = line.dataset.wire;
+      wsState.schema.wires = wsState.schema.wires.filter(w=>w.id!==id);
+      persistSchema(); redrawCanvas(); toast('Fil supprimé.');
+    });
+  });
+
   // clic droit : annule un fil en cours plutôt que d'ouvrir le menu contextuel du navigateur
   svg.addEventListener('contextmenu', (e) => {
     if (wsState.tool === 'fil' && wsState.wireStart){ e.preventDefault(); wsState.wireStart = null; redrawCanvas(); }
@@ -1344,7 +1765,7 @@ function redrawCanvasLight(){
   const wiresSvg = wsState.schema.wires.map(w => {
     const a = terminalAbsPos(wsState.schema.items.find(i=>i.id===w.a.itemId), w.a.term);
     const b = terminalAbsPos(wsState.schema.items.find(i=>i.id===w.b.itemId), w.b.term);
-    return `<line class="wire-line" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`;
+    return `<line class="wire-line" data-wire="${w.id}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`;
   }).join('');
   viewport.insertAdjacentHTML('afterbegin', wiresSvg);
 }
@@ -1362,11 +1783,32 @@ function selectItem(id){
 function wirePropsPanel(){
   document.getElementById('prop-value')?.addEventListener('change', (e) => {
     const item = wsState.schema.items.find(i=>i.id===wsState.selectedId);
-    item.value = e.target.value; persistSchema();
+    const customInput = document.getElementById('prop-value-custom');
+    if (e.target.value === '__custom__'){
+      customInput.classList.remove('hidden');
+      customInput.focus();
+      return;
+    }
+    customInput.classList.add('hidden');
+    item.value = e.target.value; persistSchema(); redrawCanvas();
+  });
+  document.getElementById('prop-value-custom')?.addEventListener('input', (e) => {
+    const item = wsState.schema.items.find(i=>i.id===wsState.selectedId);
+    item.value = e.target.value; persistSchema(); redrawCanvas();
   });
   document.getElementById('prop-rotate')?.addEventListener('click', () => {
     const item = wsState.schema.items.find(i=>i.id===wsState.selectedId);
     item.rot = ((item.rot||0)+90)%360; persistSchema(); redrawCanvas();
+  });
+  document.getElementById('prop-duplicate')?.addEventListener('click', () => {
+    const item = wsState.schema.items.find(i=>i.id===wsState.selectedId);
+    const copy = { ...item, id:'i_'+Math.random().toString(36).slice(2,8), x:item.x+24, y:item.y+24 };
+    wsState.schema.items.push(copy);
+    wsState.selectedId = copy.id;
+    persistSchema(); redrawCanvas();
+    document.getElementById('ws-panel').innerHTML = window.__wsPanels.proprietes();
+    wirePropsPanel();
+    toast('Composant dupliqué.');
   });
   document.getElementById('prop-delete')?.addEventListener('click', () => {
     const id = wsState.selectedId;
@@ -1400,6 +1842,63 @@ function afterProjectView(){
     db.addCollaborator({ projectId: wsState.projectId, email }).then(({error}) => {
       if (error) toast(error.message); else toast('Projet partagé.');
     });
+  });
+
+  document.getElementById('btn-export-pdf')?.addEventListener('click', async () => {
+    const { data: project } = await db.getProject(wsState.projectId);
+    if (!project) return;
+    const items = wsState.schema.items, wires = wsState.schema.wires;
+    const connected = new Set();
+    wires.forEach(w => { connected.add(w.a.itemId+'#'+w.a.term); connected.add(w.b.itemId+'#'+w.b.term); });
+    const rows = items.map(item => {
+      const def = findDef(item.typeId);
+      const nonConnectees = def.terminals.filter((t,idx)=>!connected.has(item.id+'#'+idx)).length;
+      const valeur = def.unit ? `${item.value} ${def.unit.split(' ')[0]}` : '—';
+      return `<tr><td>${esc(def.nom)}</td><td>${esc(valeur)}</td><td>${nonConnectees>0?`⚠ ${nonConnectees} borne(s) non connectée(s)`:'OK'}</td></tr>`;
+    }).join('');
+    const win = window.open('', '_blank');
+    if (!win){ toast("Le navigateur a bloqué l'ouverture de la fenêtre d'export — autorisez les pop-ups pour ce site."); return; }
+    win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(project.titre)} — export</title>
+      <style>body{font-family:Arial,sans-serif;padding:32px;color:#111} h1{margin-bottom:0} table{width:100%;border-collapse:collapse;margin-top:16px} td,th{border:1px solid #ccc;padding:6px 10px;text-align:left;font-size:13px} .warn{color:#a15c00} .note{margin-top:24px;font-size:11px;color:#666}</style>
+      </head><body>
+      <h1>${esc(project.titre)}</h1>
+      <p>Domaine : ${esc(ESPACES[project.espace]?.nom || project.espace)} · Auteur : ${esc(auth.currentUser.prenom)} ${esc(auth.currentUser.nom)} · Exporté le ${new Date().toLocaleDateString('fr-FR')}</p>
+      <p><strong>${items.length}</strong> composant(s) · <strong>${wires.length}</strong> connexion(s)</p>
+      <table><tr><th>Composant</th><th>Valeur</th><th>Diagnostic structurel</th></tr>${rows || '<tr><td colspan="3">Aucun composant.</td></tr>'}</table>
+      <p class="note">Vérification structurelle uniquement (bornes non connectées). Aucun calcul électrique réel (tensions, courants, court-circuit) n'a été effectué sur ce circuit.</p>
+      </body></html>`);
+    win.document.close();
+    win.focus();
+    win.print();
+  });
+
+  document.getElementById('btn-ai-interpret')?.addEventListener('click', async () => {
+    if (!AI_CONFIGURED){ toast("Interprétation IA non configurée — voir AI_EDGE_FUNCTION_URL en tête de fichier et supabase/functions/ai-interpret."); return; }
+    const items = wsState.schema.items, wires = wsState.schema.wires;
+    const connected = new Set();
+    wires.forEach(w => { connected.add(w.a.itemId+'#'+w.a.term); connected.add(w.b.itemId+'#'+w.b.term); });
+    const nonConnectees = items.reduce((n,item) => n + findDef(item.typeId).terminals.filter((t,idx)=>!connected.has(item.id+'#'+idx)).length, 0);
+    const { data: project } = await db.getProject(wsState.projectId);
+    toast('Interprétation en cours…');
+    try {
+      const res = await fetch(AI_EDGE_FUNCTION_URL, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          domaine: project?.espace,
+          composants: items.map(i => ({ type:i.typeId, valeur:i.value })),
+          connexions: wires.length,
+          diagnostic: { bornesNonConnectees: nonConnectees },
+        }),
+      });
+      const data = await res.json();
+      if (data.error){ toast('IA : ' + data.error); return; }
+      const backdrop = document.createElement('div'); backdrop.className='modal-backdrop';
+      backdrop.innerHTML = `<div class="modal" style="max-width:520px;text-align:left"><h3>Interprétation IA</h3><p style="white-space:pre-wrap;font-size:.9em">${esc(data.interpretation || '(réponse vide)')}</p><div style="text-align:right;margin-top:1em"><button class="btn btn-ghost" id="btn-close-ai">Fermer</button></div></div>`;
+      document.body.appendChild(backdrop);
+      backdrop.querySelector('#btn-close-ai').onclick = () => backdrop.remove();
+    } catch (err) {
+      toast("Erreur d'appel à l'IA : " + err.message);
+    }
   });
 
   // Délégation sur le panneau outils : couvre aussi les résultats de recherche injectés dynamiquement.
@@ -1534,9 +2033,14 @@ function afterMessagesView(){
 /* ==========================================================================
    COMPTE (+ gestion des membres si groupe/communauté)
    ========================================================================== */
-function viewCompte(){
+const STORAGE_QUOTA_BYTES = 2 * 1024 * 1024; // 2 Mo par utilisateur — seuil indicatif, ajustable.
+
+async function viewCompte(){
   const u = auth.currentUser;
   const type = ACCOUNT_TYPES[u.accountType] || ACCOUNT_TYPES.solo;
+  const { data: members } = u.accountType !== 'solo' ? await db.listGroupMembers(u.id) : { data:[] };
+  const { data: usage } = await db.storageUsage(u.id);
+  const pct = Math.min(100, Math.round((usage.bytes / STORAGE_QUOTA_BYTES) * 100));
   return `<div class="app-shell">${renderSidebar('compte')}
     <div class="main" style="max-width:560px">
       <div class="main-header"><h2>Paramètres du compte</h2></div>
@@ -1546,11 +2050,20 @@ function viewCompte(){
         <div class="field"><label>E-mail</label><input value="${esc(u.email)}" disabled></div>
         <div class="field"><label>Type de compte</label><input value="${type.icon} ${type.label}" disabled></div>
       </div>
+      <div class="card" style="margin-top:16px">
+        <h3>Stockage</h3>
+        <p style="font-size:.85em">${usage.projets} projet(s) · ${(usage.bytes/1024).toFixed(1)} Ko utilisés sur ${(STORAGE_QUOTA_BYTES/1024/1024).toFixed(0)} Mo estimés.</p>
+        <div style="background:var(--bg);border:1px solid var(--panel-border);border-radius:20px;height:8px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:${pct>=100?'var(--danger)':pct>=80?'var(--amber)':'var(--ok)'}"></div>
+        </div>
+        ${pct>=100?`<p style="font-size:.8em;color:var(--danger);margin-top:8px">Espace plein — supprimez ou exportez certains projets pour continuer.</p>`
+          : pct>=80?`<p style="font-size:.8em;color:var(--amber);margin-top:8px">Votre espace de stockage est presque plein.</p>` : ''}
+      </div>
       ${u.accountType !== 'solo' ? `
       <div class="card" style="margin-top:16px">
         <h3>Membres de votre ${u.accountType === 'groupe' ? 'groupe' : 'communauté'}</h3>
         <p style="font-size:.85em">Vous êtes responsable — ajoutez ici les personnes qui travailleront avec vous.</p>
-        <div id="members-list">${(u.members||[]).map(m => `<div class="member-row"><span>${esc(m.nom)}</span><span style="color:var(--text-faint)">${esc(m.email)}</span></div>`).join('') || '<div class="empty">Aucun membre ajouté.</div>'}</div>
+        <div id="members-list">${(members||[]).map(m => `<div class="member-row"><span>${esc(m.nom)}</span><span style="color:var(--text-faint)">${esc(m.email)}</span></div>`).join('') || '<div class="empty">Aucun membre ajouté.</div>'}</div>
         <form class="composer" id="form-add-member" style="margin-top:12px">
           <input name="nom" placeholder="Nom du membre" required style="flex:1">
           <input name="email" type="email" placeholder="E-mail du membre" required style="flex:1">
