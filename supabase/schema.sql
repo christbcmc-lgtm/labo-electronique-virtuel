@@ -27,6 +27,8 @@ create table if not exists public.profiles (
   account_type  text not null default 'solo' check (account_type in ('solo','groupe','communaute')),
   mot_magique   text,        -- indice complémentaire optionnel, JAMAIS suffisant seul pour prouver l'identité
   avatar        text,
+  suspended     boolean not null default false,             -- §29 : suspension par l'administrateur
+  storage_quota bigint not null default 2097152,            -- §27 : quota de stockage en octets (2 Mo par défaut)
   created_at    timestamptz not null default now()
 );
 
@@ -82,8 +84,9 @@ create table if not exists public.projects (
   id            uuid primary key default gen_random_uuid(),
   owner_id      uuid not null references public.profiles(id) on delete cascade,
   titre         text not null,
-  espace        text not null check (espace in ('electronique','electrotechnique','energies-renouvelables')),
+  espace        text not null check (espace in ('electronique','electrotechnique','batiment','energies-renouvelables','automatisme')),
   schema        jsonb not null default '{"items":[],"wires":[]}'::jsonb,
+  devis         jsonb not null default '{"lignes":[],"remisePct":0,"tauxTaxe":20,"taxeActive":false}'::jsonb, -- §22/§23
   erreurs       integer not null default 0,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
@@ -169,6 +172,36 @@ create table if not exists public.group_members (
   created_at  timestamptz not null default now()
 );
 
+-- ----------------------------------------------------------------------------
+-- 8. DEMANDES D'AUGMENTATION DE STOCKAGE (§28)
+-- ----------------------------------------------------------------------------
+create table if not exists public.storage_requests (
+  id              uuid primary key default gen_random_uuid(),
+  user_id         uuid not null references public.profiles(id) on delete cascade,
+  montant_octets  bigint not null,
+  motif           text,
+  statut          text not null default 'en attente' check (statut in ('en attente','acceptee','refusee')),
+  created_at      timestamptz not null default now()
+);
+
+-- ----------------------------------------------------------------------------
+-- COMPATIBILITÉ : si ce script a déjà été exécuté avec une version antérieure
+-- (sans suspended/storage_quota/devis, ou avec seulement 3 domaines), ces
+-- instructions idempotentes mettent la base à niveau sans perte de données.
+-- Sans effet si le script est exécuté pour la toute première fois.
+-- ----------------------------------------------------------------------------
+alter table public.profiles add column if not exists suspended boolean not null default false;
+alter table public.profiles add column if not exists storage_quota bigint not null default 2097152;
+alter table public.projects add column if not exists devis jsonb not null default '{"lignes":[],"remisePct":0,"tauxTaxe":20,"taxeActive":false}'::jsonb;
+do $$
+begin
+  if exists (select 1 from pg_constraint where conname = 'projects_espace_check') then
+    alter table public.projects drop constraint projects_espace_check;
+  end if;
+  alter table public.projects add constraint projects_espace_check
+    check (espace in ('electronique','electrotechnique','batiment','energies-renouvelables','automatisme'));
+end $$;
+
 -- ============================================================================
 -- SÉCURITÉ — Row Level Security (RLS)
 -- Chaque table est isolée : un utilisateur ne peut lire/modifier que ses
@@ -184,6 +217,7 @@ alter table public.common_messages       enable row level security;
 alter table public.private_messages      enable row level security;
 alter table public.suggestions           enable row level security;
 alter table public.group_members         enable row level security;
+alter table public.storage_requests      enable row level security;
 
 -- PROFILES : lecture ouverte à tout utilisateur connecté (annuaire nécessaire
 -- pour la messagerie, les noms d'auteurs de commentaires/suggestions, etc. —
@@ -197,9 +231,26 @@ alter table public.group_members         enable row level security;
 create policy "profiles_select_authenticated" on public.profiles
   for select using (auth.role() = 'authenticated');
 
+-- Un utilisateur peut modifier ses propres informations (nom, prénom, mot magique...), mais
+-- JAMAIS son propre rôle, son statut de suspension ou son quota de stockage : ces trois champs
+-- doivent rester strictement identiques à leur valeur actuelle dans cette policy (sinon un
+-- utilisateur suspendu pourrait lui-même annuler sa suspension, ou s'auto-attribuer un quota
+-- illimité). Seul l'administrateur peut les changer, via la policy admin ci-dessous (§29).
 create policy "profiles_update_own" on public.profiles
   for update using (id = auth.uid())
-  with check (id = auth.uid() and role = (select role from public.profiles where id = auth.uid()));
+  with check (
+    id = auth.uid()
+    and role = (select role from public.profiles where id = auth.uid())
+    and suspended = (select suspended from public.profiles where id = auth.uid())
+    and storage_quota = (select storage_quota from public.profiles where id = auth.uid())
+  );
+
+create policy "profiles_update_admin" on public.profiles
+  for update using (public.is_admin())
+  with check (public.is_admin());
+
+create policy "profiles_delete_admin" on public.profiles
+  for delete using (public.is_admin());
 
 -- PROJECTS : le propriétaire et les collaborateurs peuvent lire ; seul le
 -- propriétaire peut modifier/supprimer ; l'admin peut tout lire (support/modération).
@@ -278,6 +329,17 @@ create policy "group_members_insert_owner" on public.group_members
   for insert with check (owner_id = auth.uid());
 create policy "group_members_delete_owner" on public.group_members
   for delete using (owner_id = auth.uid());
+
+-- STORAGE_REQUESTS (§28) : l'utilisateur voit/crée ses propres demandes ; seul l'admin peut les
+-- traiter (accepter/refuser). L'augmentation effective du quota est appliquée côté client dans
+-- resolveStorageRequest() lors de l'acceptation (nécessite d'être admin, protégé par profiles_update_admin
+-- ci-dessus) — une fonction Postgres dédiée serait préférable en production pour atomicité, voir rapport final.
+create policy "storage_requests_select_own_or_admin" on public.storage_requests
+  for select using (user_id = auth.uid() or public.is_admin());
+create policy "storage_requests_insert_own" on public.storage_requests
+  for insert with check (user_id = auth.uid());
+create policy "storage_requests_update_admin_only" on public.storage_requests
+  for update using (public.is_admin());
 
 -- ============================================================================
 -- FIN DU SCHÉMA.

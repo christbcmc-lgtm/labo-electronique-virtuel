@@ -1,0 +1,468 @@
+// Harness de test DOM simulé (Node + jsdom) pour labo-electronique-virtuel.
+// Charge le vrai HTML + les vrais fichiers JS du projet (aucune duplication de logique),
+// simule des interactions utilisateur réelles, et vérifie les résultats.
+const path = require('path');
+const fs = require('fs');
+const PROJECT = path.join(__dirname, '..');
+const { JSDOM } = require('jsdom');
+
+let PASS = 0, FAIL = 0;
+const failures = [];
+function assert(cond, label){
+  if (cond){ PASS++; }
+  else { FAIL++; failures.push(label); console.log('  FAIL:', label); }
+}
+function section(title){ console.log('\n=== ' + title + ' ==='); }
+
+async function boot(){
+  let html = fs.readFileSync(path.join(PROJECT, 'labo-electronique-virtuel.html'), 'utf8');
+  // Retire TOUTES les balises <script src> (CDN Supabase + fichiers locaux) : on les charge
+  // nous-mêmes ci-dessous via eval(), pour un contrôle total sur l'ordre et éviter toute
+  // tentative de fetch réseau par jsdom pendant le parsing du HTML.
+  html = html.replace(/<script src="[^"]*"><\/script>/g, '');
+  const dom = new JSDOM(html, {
+    url: 'http://localhost/labo-electronique-virtuel.html',
+    runScripts: 'dangerously',
+    pretendToBeVisual: true,
+    beforeParse(window){
+      // jsdom n'implémente pas la géométrie SVG réelle (getScreenCTM etc.) — on fournit une
+      // approximation stable (mappage direct client->svg) suffisante pour tester la LOGIQUE
+      // (association bornes/fils, snapping, etc.), pas le rendu pixel-parfait.
+      window.SVGSVGElement.prototype.createSVGPoint = function(){
+        return { x:0, y:0, matrixTransform(){ return { x:this.x, y:this.y }; } };
+      };
+      window.SVGSVGElement.prototype.getScreenCTM = function(){ return { inverse(){ return {}; } }; };
+    },
+  });
+  const readFile = (p) => fs.readFileSync(path.join(PROJECT, p), 'utf8');
+  // jsdom's window.eval() does NOT share top-level const/let across separate calls (unlike real
+  // browsers) — injecting real <script> elements does, exactly like the browser loading js/*.js
+  // via <script src>. This is what actually behaves like the shipped page.
+  const doc0 = dom.window.document;
+  for (const f of ['js/config.js','js/catalog.js','js/backend.js','js/editor.js','js/pdf.js','js/devis.js','js/dimensionnement.js','js/app.js']){
+    const s = doc0.createElement('script');
+    s.textContent = readFile(f);
+    doc0.body.appendChild(s);
+  }
+  // Pont de test uniquement : les top-level `const` d'un <script> classique ne deviennent PAS
+  // des propriétés de `window` (comportement standard, pas un bug) — on les y recopie pour que
+  // ce harnais puisse les inspecter/manipuler facilement via `win.X`.
+  const bridge = doc0.createElement('script');
+  bridge.textContent = `window.__t = { SUPABASE_CONFIGURED, auth, db, wsState, state, GRID_SIZE,
+    MOCK_ADMIN_EMAIL, DB_STORAGE_KEY, DB, COMMON_COMPONENTS, COMPONENT_LIBRARY, INSTRUMENT_LIBRARY, ESPACES };`;
+  doc0.body.appendChild(bridge);
+  Object.assign(dom.window, dom.window.__t);
+  dom.window.__jsErrors = [];
+  dom.window.addEventListener('error', (e) => dom.window.__jsErrors.push((e.error && e.error.stack) || e.message));
+  await new Promise(r => setTimeout(r, 20));
+  dom.window.document.dispatchEvent(new dom.window.Event('DOMContentLoaded', { bubbles:true, cancelable:true }));
+  await new Promise(r => setTimeout(r, 50));
+  return dom;
+}
+
+function click(win, el){
+  el.dispatchEvent(new win.MouseEvent('click', { bubbles:true, cancelable:true, clientX:0, clientY:0 }));
+}
+function mouseAt(win, el, type, x, y){
+  el.dispatchEvent(new win.MouseEvent(type, { bubbles:true, cancelable:true, clientX:x, clientY:y }));
+}
+function setVal(win, el, val){
+  if (!el) throw new Error('setVal: element introuvable');
+  const proto = el.tagName === 'SELECT' ? win.HTMLSelectElement.prototype : win.HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+  setter.call(el, val);
+  el.dispatchEvent(new win.Event('input', { bubbles:true }));
+  el.dispatchEvent(new win.Event('change', { bubbles:true }));
+}
+async function nav(win, route){ win.location.hash = '#/' + route; await new Promise(r=>setTimeout(r,250)); }
+async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
+
+(async () => {
+  const dom = await boot();
+  const win = dom.window, doc = win.document;
+
+  section('Démarrage / landing');
+  assert(doc.title === 'Labo Électronique Virtuel', 'titre de la page correct');
+  assert(doc.body.textContent.includes('Concevez'), 'page d\'accueil affichée par défaut');
+  assert(win.SUPABASE_CONFIGURED === false, 'mode démo locale actif (pas de config Supabase)');
+
+  section('Inscription');
+  await nav(win, 'register');
+  const regForm = doc.getElementById('form-register');
+  assert(!!regForm, 'formulaire d\'inscription présent');
+  setVal(win, regForm.querySelector('[name=prenom]'), 'Alice');
+  setVal(win, regForm.querySelector('[name=nom]'), 'Test');
+  setVal(win, regForm.querySelector('[name=email]'), 'alice@example.com');
+  setVal(win, regForm.querySelector('[name=password]'), 'motdepasse123');
+  setVal(win, regForm.querySelector('[name=motMagique]'), 'chatnoir');
+  regForm.dispatchEvent(new win.Event('submit', { bubbles:true, cancelable:true }));
+  await tick(250);
+  assert(win.currentRoute() === 'dashboard', 'redirection vers le tableau de bord après inscription (route=' + win.currentRoute() + ')');
+  assert(win.auth.currentUser && win.auth.currentUser.email === 'alice@example.com', 'utilisateur connecté après inscription');
+
+  section('Déconnexion / connexion');
+  await nav(win, 'compte');
+  await tick(300);
+  const logoutBtn = doc.getElementById('btn-logout');
+  assert(!!logoutBtn, 'bouton de déconnexion présent dans la barre supérieure');
+  click(win, logoutBtn);
+  await tick(250);
+  assert(win.auth.currentUser === null, 'déconnexion effective');
+  await nav(win, 'login');
+  const loginForm = doc.getElementById('form-login');
+  setVal(win, loginForm.querySelector('[name=email]'), 'alice@example.com');
+  setVal(win, loginForm.querySelector('[name=password]'), 'motdepasse123');
+  loginForm.dispatchEvent(new win.Event('submit', { bubbles:true, cancelable:true }));
+  await tick(250);
+  assert(win.auth.currentUser && win.auth.currentUser.email === 'alice@example.com', 'reconnexion réussie');
+
+  section('Récupération mot de passe (mot magique)');
+  await win.auth.signOut();
+  await nav(win, 'forgot');
+  const forgotForm = doc.getElementById('form-forgot');
+  setVal(win, forgotForm.querySelector('[name=email]'), 'alice@example.com');
+  setVal(win, forgotForm.querySelector('[name=motMagique]'), 'chatnoir');
+  forgotForm.dispatchEvent(new win.Event('submit', { bubbles:true, cancelable:true }));
+  await tick(250);
+  assert(win.currentRoute() === 'reset-email', 'étape mot de passe temporaire atteinte');
+  const tempPw = win.state.recovery.tempPassword;
+  assert(!!tempPw, 'mot de passe temporaire généré');
+  const resetForm = doc.getElementById('form-reset-email');
+  setVal(win, resetForm.querySelector('[name=tempPassword]'), tempPw);
+  resetForm.dispatchEvent(new win.Event('submit', { bubbles:true, cancelable:true }));
+  await tick(250);
+  assert(win.currentRoute() === 'change-password', 'redirigé vers le changement de mot de passe obligatoire');
+  const cpForm = doc.getElementById('form-change-pw');
+  setVal(win, cpForm.querySelector('[name=p1]'), 'nouveaumdp123');
+  setVal(win, cpForm.querySelector('[name=p2]'), 'nouveaumdp123');
+  cpForm.dispatchEvent(new win.Event('submit', { bubbles:true, cancelable:true }));
+  await tick(250);
+  assert(win.currentRoute() === 'dashboard', 'accès au tableau de bord après changement de mot de passe');
+
+  section('Projet — création');
+  await nav(win, 'dashboard');
+  await tick(250);
+  click(win, doc.getElementById('btn-new-project'));
+  await tick(150);
+  const npForm = doc.getElementById('form-new-project');
+  setVal(win, npForm.querySelector('[name=titre]'), 'Mon montage test');
+  setVal(win, npForm.querySelector('[name=espace]'), 'electronique');
+  npForm.dispatchEvent(new win.Event('submit', { bubbles:true, cancelable:true }));
+  await tick(250);
+  assert(win.currentRoute().startsWith('project/'), 'redirection vers l\'éditeur après création (route=' + win.currentRoute() + ')');
+  const projectId = win.currentRoute().split('/')[1];
+  await tick(400);
+
+  section('Éditeur — catalogue et familles');
+  assert(doc.querySelectorAll('[data-fam-toggle]').length > 5, 'plusieurs familles de composants affichées');
+  assert(doc.getElementById('ws-search'), 'champ de recherche présent');
+  setVal(win, doc.getElementById('ws-search'), 'NE555');
+  await tick(150);
+  const searchResults = doc.getElementById('ws-search-results').textContent;
+  assert(searchResults.includes('NE555'), 'recherche "NE555" trouve le composant (résultat: ' + searchResults.slice(0,40) + ')');
+  setVal(win, doc.getElementById('ws-search'), '');
+
+  section('Éditeur — placement de composants (zone de dépôt + grille)');
+  const placeResistanceBtn = doc.querySelector('[data-place="resistance"]');
+  assert(!!placeResistanceBtn, 'bouton de placement "résistance" trouvé au catalogue');
+  click(win, placeResistanceBtn);
+  await tick(150);
+  assert(win.wsState.armedType === 'resistance', 'composant "armé" en attente de dépôt (pas placé brutalement)');
+  const svg1 = doc.getElementById('ws-svg');
+  const bg1 = doc.getElementById('ws-grid-bg');
+  mouseAt(win, bg1, 'click', 313, 217);
+  await tick(150);
+  assert(win.wsState.schema.items.length === 1, '1 composant posé après clic sur le canevas');
+  const item1 = win.wsState.schema.items[0];
+  assert(item1.x % win.GRID_SIZE === 0 && item1.y % win.GRID_SIZE === 0, 'position du composant aimantée sur la grille (x=' + item1.x + ', y=' + item1.y + ')');
+
+  const placeLedBtn = doc.querySelector('[data-place="led"]');
+  click(win, placeLedBtn);
+  await tick(150);
+  mouseAt(win, doc.getElementById('ws-grid-bg'), 'click', 500, 217);
+  await tick(150);
+  assert(win.wsState.schema.items.length === 2, '2e composant posé');
+  const item2 = win.wsState.schema.items[1];
+
+  section('Éditeur — fils (routage orthogonal, jonctions)');
+  const toolFilBtn = doc.querySelector('[data-tool="fil"]');
+  click(win, toolFilBtn);
+  await tick(150);
+  assert(win.wsState.tool === 'fil', 'outil fil activé');
+  const term1_0 = doc.querySelector(`[data-term-item="${item1.id}"][data-term-idx="0"]`);
+  const term2_0 = doc.querySelector(`[data-term-item="${item2.id}"][data-term-idx="0"]`);
+  assert(!!term1_0 && !!term2_0, 'bornes des deux composants trouvées dans le DOM');
+  click(win, term1_0);
+  await tick(150);
+  assert(win.wsState.wireStart && win.wsState.wireStart.itemId === item1.id, 'première borne sélectionnée pour le fil');
+  click(win, doc.querySelector(`[data-term-item="${item2.id}"][data-term-idx="0"]`));
+  await tick(150);
+  assert(win.wsState.schema.wires.length === 1, 'fil créé entre les deux composants');
+  const wire1 = win.wsState.schema.wires[0];
+  assert(wire1.a.itemId === item1.id && wire1.b.itemId === item2.id, 'le fil référence bien les deux bons composants');
+  const polyline = doc.querySelector(`[data-wire="${wire1.id}"]`);
+  assert(polyline && polyline.tagName === 'polyline', 'le fil est rendu en polyline (routage orthogonal), pas une simple ligne diagonale');
+  const pts = polyline.getAttribute('points').trim().split(/\s+/);
+  assert(pts.length >= 2, 'polyline a des points définis');
+
+  section('Éditeur — diagnostic structurel');
+  const diagHtml = win.diagnosticHTML(win.wsState.schema);
+  assert(diagHtml.includes('borne') && diagHtml.includes('non connectée'), 'diagnostic signale les bornes restantes non connectées');
+  assert(diagHtml.includes('2 composant'), 'diagnostic compte bien 2 composants');
+
+  section('Éditeur — court-circuit direct détecté');
+  const before = win.wsState.schema.wires.length;
+  win.wsState.schema.wires.push({ id:'w_short', a:{itemId:item1.id, term:0}, b:{itemId:item1.id, term:1} });
+  const diagShort = win.diagnosticHTML(win.wsState.schema);
+  assert(diagShort.includes('court-circuite') || diagShort.includes('court-circuit'), 'court-circuit direct (fil reliant 2 bornes du même composant) détecté');
+  win.wsState.schema.wires.pop();
+
+  section('Éditeur — sélection/suppression de fil');
+  const wireLineEl = doc.querySelector(`[data-wire="${wire1.id}"]`);
+  click(win, wireLineEl);
+  await tick(150);
+  assert(win.wsState.selectedWireId === wire1.id, 'fil sélectionné au clic (outil sélection)');
+  doc.dispatchEvent(new win.KeyboardEvent('keydown', { key:'Delete', bubbles:true, cancelable:true }));
+  await tick(150);
+  assert(win.wsState.schema.wires.length === 0, 'fil supprimé via la touche Suppr');
+
+  section('Éditeur — rotation/duplication/suppression composant');
+  win.selectItem(item1.id);
+  await tick(150);
+  const rotateBtn = doc.getElementById('prop-rotate');
+  assert(!!rotateBtn, 'bouton pivoter présent dans le panneau propriétés');
+  click(win, rotateBtn);
+  await tick(150);
+  assert(win.wsState.schema.items.find(i=>i.id===item1.id).rot === 90, 'rotation appliquée (90°)');
+  const nBefore = win.wsState.schema.items.length;
+  click(win, doc.getElementById('prop-duplicate'));
+  await tick(150);
+  assert(win.wsState.schema.items.length === nBefore+1, 'composant dupliqué');
+  const dupId = win.wsState.selectedId;
+  click(win, doc.getElementById('prop-delete'));
+  await tick(150);
+  assert(!win.wsState.schema.items.some(i=>i.id===dupId), 'composant dupliqué supprimé');
+
+  section('Éditeur — "Ranger le schéma" (ne casse pas les connexions)');
+  win.wsState.schema.items.forEach(it => { it.x += 3; it.y += 7; }); // désaligne volontairement
+  win.wsState.schema.wires.push({ id:'w_re', a:{itemId:item1.id, term:0}, b:{itemId:item2.id, term:0} });
+  const wiresCountBefore = win.wsState.schema.wires.length;
+  click(win, doc.getElementById('btn-declutter'));
+  await tick(150);
+  const allSnapped = win.wsState.schema.items.every(it => it.x % win.GRID_SIZE === 0 && it.y % win.GRID_SIZE === 0);
+  assert(allSnapped, 'tous les composants alignés sur la grille après "Ranger le schéma"');
+  assert(win.wsState.schema.wires.length === wiresCountBefore, 'les connexions sont conservées après rangement (aucune perdue)');
+
+  section('Éditeur — menu contextuel (§6) et variante (§10)');
+  // "transformateur" appartient au domaine électrotechnique ; ce projet est en électronique —
+  // on le trouve donc via la recherche globale (qui couvre tout le catalogue, pas que le domaine courant).
+  setVal(win, doc.getElementById('ws-search'), 'transformateur simple');
+  await tick(150);
+  const placeTransfoBtn = doc.querySelector('#ws-search-results [data-place="transformateur"]');
+  assert(!!placeTransfoBtn, 'recherche globale trouve un composant hors du domaine courant du projet');
+  click(win, placeTransfoBtn);
+  await tick(150);
+  mouseAt(win, doc.getElementById('ws-grid-bg'), 'click', 700, 400);
+  await tick(150);
+  const transfoItem = win.wsState.schema.items[win.wsState.schema.items.length-1];
+  assert(transfoItem.typeId === 'transformateur', 'transformateur posé');
+  const transfoNode = doc.querySelector(`[data-item="${transfoItem.id}"]`);
+  transfoNode.dispatchEvent(new win.MouseEvent('contextmenu', { bubbles:true, cancelable:true, clientX:100, clientY:100 }));
+  await tick(150);
+  const ctxMenu = doc.querySelector('.ctx-menu');
+  assert(!!ctxMenu, 'menu contextuel ouvert au clic droit');
+  const menuText = ctxMenu.textContent;
+  assert(menuText.includes('Propriétés') && menuText.includes('Dupliquer') && menuText.includes('Pivoter') && menuText.includes('Supprimer') && menuText.includes('Informations'), 'menu contextuel contient les actions attendues (§6)');
+  const variantBtn = [...ctxMenu.querySelectorAll('[data-act="variante"]')].find(b => b.dataset.vid === 'transfo_pointmilieu');
+  assert(!!variantBtn, 'variante "transformateur à point milieu" proposée dans le menu (§10)');
+  click(win, variantBtn);
+  await tick(150);
+  const transfoAfter = win.wsState.schema.items.find(i=>i.id===transfoItem.id);
+  assert(transfoAfter.typeId === 'transfo_pointmilieu', 'composant remplacé par la variante choisie, position conservée');
+
+  section('Éditeur — instrument mal branché (voltmètre en série)');
+  const schemaCopy = { items: [
+      { id:'r1', typeId:'resistance', x:0, y:0, rot:0, value:220 },
+      { id:'r2', typeId:'resistance', x:100, y:0, rot:0, value:220 },
+      { id:'v1', typeId:'multimetre', x:200, y:0, rot:0, value:'' },
+    ], wires: [
+      { id:'w1', a:{itemId:'r1',term:1}, b:{itemId:'v1',term:0} },
+      { id:'w2', a:{itemId:'v1',term:1}, b:{itemId:'r2',term:0} },
+    ] };
+  const diagInstr = win.diagnosticHTML(schemaCopy);
+  assert(diagInstr.includes('série') && diagInstr.toLowerCase().includes('parallèle'), 'diagnostic signale un multimètre (voltmètre) branché en série au lieu du parallèle');
+
+  section('Devis (§22/§23)');
+  await nav(win, 'devis/' + projectId);
+  await tick(250);
+  assert(!!doc.getElementById('devis-table'), 'table de devis affichée');
+  click(win, doc.getElementById('btn-devis-add'));
+  await tick(150);
+  let rows = doc.querySelectorAll('#devis-table tr[data-idx]');
+  assert(rows.length === 1, 'ligne de devis ajoutée');
+  const qteInput = rows[0].querySelector('[data-f="qte"]');
+  const prixInput = rows[0].querySelector('[data-f="prix"]');
+  setVal(win, qteInput, '3');
+  setVal(win, prixInput, '10');
+  await tick(150);
+  assert(doc.getElementById('devis-total').textContent.includes('30'), 'total du devis recalculé correctement (3 × 10 = 30, affiché: ' + doc.getElementById('devis-total').textContent + ')');
+  setVal(win, doc.getElementById('devis-remise'), '10');
+  await tick(150);
+  assert(doc.getElementById('devis-total').textContent.includes('27'), 'remise de 10% appliquée correctement (30 - 10% = 27, affiché: ' + doc.getElementById('devis-total').textContent + ')');
+  click(win, doc.getElementById('btn-devis-import'));
+  await tick(250);
+  rows = doc.querySelectorAll('#devis-table tr[data-idx]');
+  assert(rows.length > 1, 'import des composants du schéma dans le devis (lignes=' + rows.length + ')');
+
+  section('Dimensionnement (§24) — formules réelles');
+  await nav(win, 'dimensionnement/' + projectId);
+  await tick(250);
+  // Le projet de test est en domaine "électronique" : l'onglet par défaut n'est pas "Photovoltaïque".
+  click(win, [...doc.querySelectorAll('[data-dim-tab]')].find(a=>a.dataset.dimTab==='pv'));
+  await tick(150);
+  setVal(win, doc.getElementById('pv-besoin'), '2000');
+  setVal(win, doc.getElementById('pv-irrad'), '4');
+  setVal(win, doc.getElementById('pv-rendement'), '80');
+  setVal(win, doc.getElementById('pv-ppanneau'), '400');
+  click(win, doc.getElementById('pv-calc'));
+  await tick(150);
+  const pvResultText = doc.getElementById('pv-result').textContent;
+  // Pc attendu = 2000 / (4*0.8) = 625 Wc ; nb panneaux = ceil(625/400) = 2
+  assert(pvResultText.includes('625'), 'calcul PV correct : puissance crête = 625 Wc (résultat: ' + pvResultText.replace(/\s+/g,' ').slice(0,200) + ')');
+  assert(/\b2 panneau/.test(pvResultText), 'calcul PV correct : 2 panneaux nécessaires');
+
+  await nav(win, 'dimensionnement/' + projectId);
+  await tick(150);
+  const etTab = [...doc.querySelectorAll('[data-dim-tab]')].find(a=>a.dataset.dimTab==='electrotechnique');
+  click(win, etTab);
+  await tick(150);
+  setVal(win, doc.getElementById('et-puissance'), '2300');
+  setVal(win, doc.getElementById('et-tension'), '230');
+  setVal(win, doc.getElementById('et-cosphi'), '1');
+  click(win, doc.getElementById('et-calc'));
+  await tick(150);
+  const etResultText = doc.getElementById('et-result').textContent;
+  // In = 2300/230 = 10 A
+  assert(etResultText.includes('10.0 A') || etResultText.includes('10 A'), 'calcul électrotechnique correct : courant nominal = 10 A (résultat: ' + etResultText.replace(/\s+/g,' ').slice(0,200) + ')');
+
+  section('Export PDF (ne doit pas planter même si popup bloqué)');
+  let pdfError = null;
+  try { await win.exportProjectPDF(projectId, win.wsState.schema); } catch(e){ pdfError = e; }
+  assert(!pdfError, 'exportProjectPDF ne lève pas d\'exception (popup bloqué géré proprement)' + (pdfError ? ' — ERREUR: ' + pdfError.message : ''));
+
+  section('Thème (§33)');
+  const themeBtn = doc.querySelector('[data-theme-pick="clair"]');
+  assert(!!themeBtn, 'sélecteur de thème présent dans la barre supérieure');
+  click(win, themeBtn);
+  await tick(150);
+  assert(doc.documentElement.getAttribute('data-theme') === 'clair', 'thème clair appliqué sur <html>');
+  assert(win.localStorage.getItem('labo_theme') === 'clair', 'préférence de thème persistée en localStorage');
+
+  section('Persistance (localStorage)');
+  const raw = win.localStorage.getItem(win.DB_STORAGE_KEY);
+  assert(!!raw, 'la base mock est bien sérialisée dans localStorage');
+  const saved = JSON.parse(raw);
+  assert(saved.users.some(u=>u.email==='alice@example.com'), 'utilisateur créé bien persisté');
+  assert(saved.projects.some(p=>p.id===projectId), 'projet créé bien persisté');
+
+  section('Responsive / mobile (présence des éléments adaptatifs)');
+  await nav(win, 'project/' + projectId);
+  await tick(250);
+  assert(!!doc.querySelector('.ws-mobile-tabs'), 'barre d\'onglets mobile présente dans l\'éditeur');
+  assert(doc.querySelectorAll('[data-mtab]').length === 3, '3 onglets mobiles (Composants/Canevas/Mesures)');
+
+  section('Admin (§29)');
+  await win.auth.signOut();
+  await nav(win, 'login');
+  const adminEmail = win.MOCK_ADMIN_EMAIL;
+  const loginForm2 = doc.getElementById('form-login');
+  setVal(win, loginForm2.querySelector('[name=email]'), adminEmail);
+  setVal(win, loginForm2.querySelector('[name=password]'), 'admin123');
+  loginForm2.dispatchEvent(new win.Event('submit', { bubbles:true, cancelable:true }));
+  await tick(250);
+  assert(win.auth.currentUser && win.auth.currentUser.role === 'admin', 'connexion admin réussie');
+  await nav(win, 'admin/users');
+  await tick(250);
+  assert(doc.body.textContent.includes('alice@example.com'), 'admin voit la liste des utilisateurs (alice présente)');
+  const suspendBtn = doc.querySelector('[data-suspend]');
+  assert(!!suspendBtn, 'bouton suspendre présent pour un utilisateur non-admin');
+  const targetUserId = suspendBtn.dataset.suspend;
+  click(win, suspendBtn);
+  await tick(200);
+  const suspendedUser = (await win.db.listUsers()).data.find(u=>u.id===targetUserId);
+  assert(suspendedUser.suspended === true, 'utilisateur suspendu avec succès par l\'admin');
+
+  await win.auth.signOut();
+  const loginForm3Route = await nav(win, 'login');
+  const loginForm3 = doc.getElementById('form-login');
+  setVal(win, loginForm3.querySelector('[name=email]'), 'alice@example.com');
+  setVal(win, loginForm3.querySelector('[name=password]'), 'nouveaumdp123');
+  loginForm3.dispatchEvent(new win.Event('submit', { bubbles:true, cancelable:true }));
+  await tick(250);
+  const errEl = doc.getElementById('login-error');
+  assert(win.auth.currentUser === null && errEl && !errEl.classList.contains('hidden'), 'compte suspendu ne peut plus se connecter (message affiché: ' + (errEl?errEl.textContent:'?') + ')');
+
+  // Reconnexion admin pour tester quota + demande de stockage
+  const loginForm4 = doc.getElementById('form-login');
+  setVal(win, loginForm4.querySelector('[name=email]'), adminEmail);
+  setVal(win, loginForm4.querySelector('[name=password]'), 'admin123');
+  loginForm4.dispatchEvent(new win.Event('submit', { bubbles:true, cancelable:true }));
+  await tick(250);
+  await nav(win, 'admin/users');
+  await tick(250);
+  const quotaInput = doc.querySelector(`[data-quota="${targetUserId}"]`);
+  assert(!!quotaInput, 'champ quota présent pour l\'utilisateur');
+  setVal(win, quotaInput, '50');
+  await tick(200);
+  const userAfterQuota = (await win.db.listUsers()).data.find(u=>u.id===targetUserId);
+  assert(userAfterQuota.storageQuota === 50*1024*1024, 'quota de stockage mis à jour par l\'admin (50 Mo)');
+
+  // Réactiver alice pour tester la demande de stockage (§28) de son côté
+  await win.db.setUserSuspended({ userId: targetUserId, suspended:false });
+  await win.auth.signOut();
+  await nav(win, 'login');
+  const loginForm5 = doc.getElementById('form-login');
+  setVal(win, loginForm5.querySelector('[name=email]'), 'alice@example.com');
+  setVal(win, loginForm5.querySelector('[name=password]'), 'nouveaumdp123');
+  loginForm5.dispatchEvent(new win.Event('submit', { bubbles:true, cancelable:true }));
+  await tick(250);
+  await nav(win, 'compte');
+  await tick(250);
+  const storageForm = doc.getElementById('form-storage-request');
+  assert(!!storageForm, 'formulaire de demande d\'augmentation de stockage présent (§28)');
+  storageForm.dispatchEvent(new win.Event('submit', { bubbles:true, cancelable:true }));
+  await tick(250);
+  const myReqs = (await win.db.listMyStorageRequests(targetUserId)).data;
+  assert(myReqs.length === 1, 'demande de stockage envoyée');
+
+  await win.auth.signOut();
+  await nav(win, 'login');
+  const loginForm6 = doc.getElementById('form-login');
+  setVal(win, loginForm6.querySelector('[name=email]'), adminEmail);
+  setVal(win, loginForm6.querySelector('[name=password]'), 'admin123');
+  loginForm6.dispatchEvent(new win.Event('submit', { bubbles:true, cancelable:true }));
+  await tick(250);
+  await nav(win, 'admin/storage');
+  await tick(250);
+  const acceptBtn = doc.querySelector('[data-storage-accept]');
+  assert(!!acceptBtn, 'demande de stockage visible côté admin, bouton accepter présent');
+  const quotaBefore = userAfterQuota.storageQuota;
+  click(win, acceptBtn);
+  await tick(200);
+  const userAfterAccept = (await win.db.listUsers()).data.find(u=>u.id===targetUserId);
+  assert(userAfterAccept.storageQuota > quotaBefore, 'quota augmenté après acceptation de la demande par l\'admin');
+
+  section('Catalogue global — cohérence (164 composants attendus)');
+  const total = win.COMMON_COMPONENTS.length + Object.values(win.COMPONENT_LIBRARY).reduce((n,l)=>n+l.length,0) + win.INSTRUMENT_LIBRARY.length;
+  assert(total > 150, 'catalogue élargi (total=' + total + ' composants, 5 domaines)');
+  assert(Object.keys(win.ESPACES).length === 5, '5 domaines disponibles (électronique, électrotechnique, bâtiment, renouvelables, automatisme)');
+
+  console.log('\n=== Erreurs JS non interceptées pendant toute la session ===');
+  console.log(win.__jsErrors.length ? win.__jsErrors.join('\n---\n') : '(aucune)');
+
+  console.log('\n========================================');
+  console.log(`RÉSULTAT : ${PASS} tests réussis, ${FAIL} échoués sur ${PASS+FAIL}`);
+  if (failures.length) console.log('Échecs :', failures.join(' | '));
+  console.log('========================================');
+  process.exit(FAIL > 0 ? 1 : 0);
+})().catch(e => { console.error('ERREUR FATALE DANS LE HARNESS:', e); process.exit(2); });

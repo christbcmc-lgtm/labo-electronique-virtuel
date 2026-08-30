@@ -1,0 +1,13 @@
+{
+  "name": "labo-electronique-virtuel",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Laboratoire d'électronique virtuel — application statique (aucun build requis pour l'utiliser). Ce package.json sert uniquement à faire tourner la suite de tests automatisés dans tests/.",
+  "scripts": {
+    "test": "node tests/verify_catalog.js && node tests/test_app.js",
+    "serve": "python -m http.server 8080"
+  },
+  "devDependencies": {
+    "jsdom": "^30.0.1"
+  }
+}
