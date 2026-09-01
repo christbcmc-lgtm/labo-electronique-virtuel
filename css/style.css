@@ -335,6 +335,10 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:.86em; }
 .ws-svg.tool-select .wire-line:hover{ stroke:var(--cyan); cursor:pointer; }
 .wire-preview{ stroke:var(--amber); stroke-width:1.5; stroke-dasharray:4 3; opacity:.7; }
 .wire-junction{ fill:var(--amber); }
+.wire-crossing{ fill:transparent; stroke:none; cursor:pointer; }
+.wire-crossing:hover{ fill:rgba(245,166,35,.35); stroke:var(--amber); stroke-width:1; }
+.wire-crossing.connected{ fill:var(--amber); }
+.wire-crossing.connected:hover{ fill:#ffb736; }
 .grid-snap-guide{ stroke:var(--amber); stroke-width:1; stroke-dasharray:3 3; opacity:.6; pointer-events:none; }
 
 .zoom-controls{ position:absolute; right:14px; bottom:14px; display:flex; flex-direction:column; gap:4px; z-index:5; }
@@ -382,6 +386,10 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:.86em; }
 .catalog-popover .wiki-link{ display:inline-block; margin-top:.6em; font-size:.85em; }
 
 .props-panel .field select, .props-panel .field input{ margin-bottom:.3em; }
+.pinout-list{ margin:.6em 0; font-size:.8em; border:1px solid var(--panel-border); border-radius:var(--radius); overflow:hidden; }
+.pinout-row{ display:flex; gap:8px; padding:.3em .6em; border-bottom:1px solid var(--trace); }
+.pinout-row:last-child{ border-bottom:none; }
+.pinout-row span:first-child{ color:var(--text-faint); min-width:1.4em; }
 .props-panel .def-text{ font-size:.8em; color:var(--text-muted); margin:.6em 0; }
 
 .type-cards{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:1.2em; }

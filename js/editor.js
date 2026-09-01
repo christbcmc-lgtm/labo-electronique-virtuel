@@ -107,6 +107,87 @@ function orthoPoints(a, b){
 }
 function polylinePoints(pts){ return pts.map(p=>`${p.x},${p.y}`).join(' '); }
 
+/* ==========================================================================
+   NŒUDS ÉLECTRIQUES À UNE INTERSECTION DE FILS (priorité explicitement
+   demandée pour la réalisation des circuits).
+   --------------------------------------------------------------------------
+   Par défaut, deux fils qui se croisent au milieu de leur tracé NE sont PAS
+   électriquement reliés (convention IEC/IEEE moderne : un point plein = nœud,
+   une simple croix sans point = pas de connexion — plus simple et moins
+   ambiguë que l'ancien symbole en "saut" par-dessus l'autre fil, qui oblige à
+   deviner quel fil passe au-dessus). L'utilisateur choisit lui-même, en
+   cliquant sur le point de croisement, s'il doit devenir un vrai nœud
+   (schema.junctions) ou rester une simple superposition visuelle.
+   Ceci est indépendant des jonctions "automatiques" (≥3 fils qui partagent
+   réellement la même borne de composant) : celles-là sont toujours des nœuds
+   réels, puisqu'elles sont physiquement la même broche.
+   ========================================================================== */
+function wireSegments(schema, wire){
+  const ai = schema.items.find(i=>i.id===wire.a.itemId), bi = schema.items.find(i=>i.id===wire.b.itemId);
+  if (!ai || !bi) return [];
+  const pts = orthoPoints(terminalAbsPos(ai, wire.a.term), terminalAbsPos(bi, wire.b.term));
+  const segs = [];
+  for (let i=0;i<pts.length-1;i++) segs.push([pts[i], pts[i+1]]);
+  return segs;
+}
+// Intersection de deux segments alignés sur les axes, strictement à l'intérieur des deux
+// (les croisements aux extrémités sont déjà couverts par les jonctions automatiques ci-dessus).
+function segCrossPoint(s1, s2){
+  const EPS = 0.5;
+  const isHoriz = (s) => Math.abs(s[0].y-s[1].y) < EPS;
+  const isVert  = (s) => Math.abs(s[0].x-s[1].x) < EPS;
+  let H, V;
+  if (isHoriz(s1) && isVert(s2)){ H = s1; V = s2; }
+  else if (isVert(s1) && isHoriz(s2)){ H = s2; V = s1; }
+  else return null; // parallèles (ou l'un des deux segments est dégénéré) — ignoré
+  const y = H[0].y, x = V[0].x;
+  const hx0 = Math.min(H[0].x,H[1].x), hx1 = Math.max(H[0].x,H[1].x);
+  const vy0 = Math.min(V[0].y,V[1].y), vy1 = Math.max(V[0].y,V[1].y);
+  if (x > hx0+EPS && x < hx1-EPS && y > vy0+EPS && y < vy1-EPS) return { x, y };
+  return null;
+}
+function pointOnSegment(seg, pt, tol=1.5){
+  const [a,b] = seg;
+  const minX = Math.min(a.x,b.x)-tol, maxX = Math.max(a.x,b.x)+tol;
+  const minY = Math.min(a.y,b.y)-tol, maxY = Math.max(a.y,b.y)+tol;
+  if (pt.x < minX || pt.x > maxX || pt.y < minY || pt.y > maxY) return false;
+  if (Math.abs(a.y-b.y) < 0.5) return Math.abs(pt.y-a.y) <= tol; // segment horizontal
+  if (Math.abs(a.x-b.x) < 0.5) return Math.abs(pt.x-a.x) <= tol; // segment vertical
+  return false;
+}
+// Toutes les intersections géométriques entre deux fils DIFFÉRENTS (hors extrémités partagées).
+function computeWireCrossings(schema){
+  const wires = schema.wires;
+  const segsByWire = wires.map(w => wireSegments(schema, w));
+  const crossings = [];
+  for (let i=0;i<wires.length;i++){
+    for (let j=i+1;j<wires.length;j++){
+      segsByWire[i].forEach(s1 => segsByWire[j].forEach(s2 => {
+        const pt = segCrossPoint(s1, s2);
+        if (pt) crossings.push({ x:Math.round(pt.x), y:Math.round(pt.y), wireA:wires[i].id, wireB:wires[j].id });
+      }));
+    }
+  }
+  return crossings;
+}
+function junctionAt(schema, x, y){
+  return (schema.junctions||[]).find(j => Math.abs(j.x-x)<3 && Math.abs(j.y-y)<3);
+}
+function toggleJunctionAt(x, y){
+  if (guardReadOnly()) return;
+  if (!wsState.schema.junctions) wsState.schema.junctions = [];
+  const existing = junctionAt(wsState.schema, x, y);
+  if (existing){ wsState.schema.junctions = wsState.schema.junctions.filter(j=>j!==existing); toast('Nœud retiré — ces fils ne sont plus reliés à cette intersection.'); }
+  else { wsState.schema.junctions.push({ id:'j_'+Math.random().toString(36).slice(2,8), x, y }); toast('Nœud ajouté — ces fils sont maintenant électriquement reliés.'); }
+  persistSchema(); redrawCanvas();
+}
+function crossingsSvg(){
+  return computeWireCrossings(wsState.schema).map(c => {
+    const connected = !!junctionAt(wsState.schema, c.x, c.y);
+    return `<circle class="wire-crossing ${connected?'connected':''}" data-cx="${c.x}" data-cy="${c.y}" cx="${c.x}" cy="${c.y}" r="${connected?3:6}"/>`;
+  }).join('');
+}
+
 async function viewProject(id){
   const { data: project } = await db.getProject(id);
   if (!project) return `<div class="empty">Projet introuvable. <a href="#/dashboard">Retour</a></div>`;
@@ -310,6 +391,12 @@ function buildWireUnion(schema){
   const find = (k) => { if (!parent.has(k)) parent.set(k,k); let r=k; while (parent.get(r)!==r) r=parent.get(r); parent.set(k,r); return r; };
   const union = (a,b) => { const ra=find(a), rb=find(b); if (ra!==rb) parent.set(ra,rb); };
   schema.wires.forEach(w => union(w.a.itemId+'#'+w.a.term, w.b.itemId+'#'+w.b.term));
+  // Nœuds explicites à une intersection de fils (§2 des notes en cours) : deux fils qui se
+  // croisent ne sont électriquement communs que si l'utilisateur a placé un nœud à ce point.
+  (schema.junctions||[]).forEach(j => {
+    const touching = schema.wires.filter(w => wireSegments(schema, w).some(seg => pointOnSegment(seg, j)));
+    for (let i=1;i<touching.length;i++) union(touching[0].a.itemId+'#'+touching[0].a.term, touching[i].a.itemId+'#'+touching[i].a.term);
+  });
   return { find, union };
 }
 // Détecte si les deux bornes d'un composant 2 bornes sont reliées par un AUTRE chemin
@@ -367,7 +454,8 @@ function diagnosticHTML(schema){
   const warnLines = warnings.length ? warnings.map(w => `<div class="diag-warn">• ${esc(w)}</div>`).join('') : (errors.length ? '' : `<div class="diag-ok">✓ Toutes les bornes sont connectées.</div>`);
   const replLines = replacementWarnings.length ? `<h4 style="margin-top:14px;font-size:.78em;color:var(--text-faint);text-transform:uppercase">Composants de remplacement</h4>${replacementWarnings.map(w=>`<div class="diag-warn">⚠ ${esc(w)}</div>`).join('')}` : '';
   return `${okLines}${errLines}${warnLines}${replLines}
-     <p style="font-size:.78em;margin-top:10px">Vérification structurelle et de connexité uniquement (bornes reliées, court-circuits directs, sens d'insertion des instruments). Aucun calcul électrique réel (tensions, courants) n'est effectué : ce diagnostic ne remplace pas un moteur de simulation.</p>`;
+     <p style="font-size:.78em;margin-top:10px">Vérification structurelle et de connexité uniquement (bornes reliées, court-circuits directs, sens d'insertion des instruments). Aucun calcul électrique réel (tensions, courants) n'est effectué : ce diagnostic ne remplace pas un moteur de simulation.</p>
+     <p style="font-size:.78em;margin-top:6px">💡 Quand deux fils se croisent sur le canevas sans point plein, ils ne sont <strong>pas</strong> reliés électriquement (ils se superposent juste visuellement). Cliquez sur le croisement pour y ajouter un nœud (point plein) — ou pour le retirer.</p>`;
 }
 function findItem(schema,id){ return schema.items.find(i=>i.id===id); }
 
@@ -418,6 +506,7 @@ function propertiesPanelHTML(){
     <h4 style="margin-bottom:.3em">${esc(def.nom)}</h4>
     ${ro ? `<div class="diag-warn">🔒 Lecture seule — vous consultez ce projet sans droit de modification.</div>` : ''}
     <p class="def-text">${esc(def.def)}</p>
+    ${pinNamesListHTML(def)}
     <a class="wiki-link" href="${wikiUrl(def.wiki)}" target="_blank" rel="noopener">En savoir plus →</a>
     <div class="field" style="margin-top:10px">
       <label>Référence commerciale (remplacement, facultatif)</label>
@@ -521,6 +610,7 @@ function renderCanvasSVG(){
       ${wiresSvg}
       ${junctionsSvg}
       ${itemsSvg}
+      ${crossingsSvg()}
       ${ghostSvg}
       ${peerGhostsSvg}
       <line id="wire-preview-line" class="wire-preview" style="display:none" x1="0" y1="0" x2="0" y2="0"/>
@@ -811,6 +901,14 @@ function wireCanvasEvents(){
     line.addEventListener('contextmenu', (e) => { e.preventDefault(); wsState.selectedWireId = line.dataset.wire; redrawCanvas(); });
   });
 
+  // Nœud à une intersection de fils : clic pour relier/dissocier électriquement (priorité §2 des notes).
+  svg.querySelectorAll('.wire-crossing').forEach(dot => {
+    dot.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleJunctionAt(Number(dot.dataset.cx), Number(dot.dataset.cy));
+    });
+  });
+
   // Poignées de reconnexion sur le fil sélectionné : glisser une extrémité vers une autre borne.
   if (wsState.selectedWireId){
     const w = wsState.schema.wires.find(w=>w.id===wsState.selectedWireId);
@@ -890,6 +988,8 @@ function redrawCanvasLight(){
   }).join('');
   const junctionsSvg = [...endpointCount.entries()].filter(([,n])=>n>=3).map(([k]) => { const [x,y]=k.split(',').map(Number); return `<circle class="wire-junction" cx="${x}" cy="${y}" r="3"/>`; }).join('');
   viewport.insertAdjacentHTML('afterbegin', wiresSvg + junctionsSvg);
+  viewport.querySelectorAll('.wire-crossing').forEach(c=>c.remove());
+  viewport.insertAdjacentHTML('beforeend', crossingsSvg());
   viewport.querySelectorAll('.peer-ghost').forEach(g=>g.remove());
   viewport.insertAdjacentHTML('beforeend', remotePeerGhostsSvg());
 }
@@ -1220,6 +1320,15 @@ function afterProjectView(){
   }
 }
 
+// Brochage réel (nom de chaque broche, dans l'ordre des bornes du composant) pour les références
+// précises qui en déclarent un (§7 des notes en cours : le brochage réel reste rattaché au modèle,
+// affiché ici en toutes lettres plutôt que seulement numéroté sur le petit symbole du canevas).
+function pinNamesListHTML(def){
+  if (!def.pinNames || !def.pinNames.length) return '';
+  return `<div class="pinout-list"><strong style="font-size:.85em">Brochage :</strong>
+    ${def.pinNames.map((n,i) => `<div class="pinout-row"><span class="mono">${i+1}</span><span>${esc(n)}</span></div>`).join('')}
+  </div>`;
+}
 function showCatalogPopover(def, anchorEl){
   document.querySelectorAll('.catalog-popover').forEach(p=>p.remove());
   const rect = anchorEl.getBoundingClientRect ? anchorEl.getBoundingClientRect() : { left:anchorEl.style?.left?parseFloat(anchorEl.style.left):200, bottom:200 };
@@ -1227,7 +1336,7 @@ function showCatalogPopover(def, anchorEl){
   pop.className = 'catalog-popover';
   pop.style.left = Math.min(rect.left, window.innerWidth-280) + 'px';
   pop.style.top = (rect.bottom+6) + 'px';
-  pop.innerHTML = `<h4>${esc(def.nom)}</h4><p style="margin:0">${esc(def.def)}</p><a class="wiki-link" href="${wikiUrl(def.wiki)}" target="_blank" rel="noopener">En savoir plus (source externe) →</a>`;
+  pop.innerHTML = `<h4>${esc(def.nom)}</h4><p style="margin:0">${esc(def.def)}</p>${pinNamesListHTML(def)}<a class="wiki-link" href="${wikiUrl(def.wiki)}" target="_blank" rel="noopener">En savoir plus (source externe) →</a>`;
   document.body.appendChild(pop);
   const close = (ev) => { if (!pop.contains(ev.target) && ev.target!==anchorEl){ pop.remove(); document.removeEventListener('click',close); } };
   setTimeout(()=>document.addEventListener('click', close), 10);

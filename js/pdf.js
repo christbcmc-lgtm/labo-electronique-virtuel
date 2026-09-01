@@ -47,6 +47,18 @@ function renderTechnicalSchema(schema, refs){
     return `<polyline points="${polylinePoints(orthoPoints(a,b))}" fill="none" stroke="${esc(w2.color||'#111')}" stroke-width="1.6"/>`;
   }).join('');
 
+  // Nœuds réels : bornes partagées par ≥3 fils, + nœuds explicitement placés à une intersection.
+  const endpointCount = new Map();
+  const addPt = (p) => { const k = Math.round(p.x)+','+Math.round(p.y); endpointCount.set(k, (endpointCount.get(k)||0)+1); };
+  wires.forEach(w2 => {
+    const ai = items.find(i=>i.id===w2.a.itemId), bi = items.find(i=>i.id===w2.b.itemId);
+    if (ai) addPt(terminalAbsPos(ai, w2.a.term));
+    if (bi) addPt(terminalAbsPos(bi, w2.b.term));
+  });
+  const autoJunctions = [...endpointCount.entries()].filter(([,n])=>n>=3).map(([k]) => { const [x,y]=k.split(',').map(Number); return {x,y}; });
+  const manualJunctions = schema.junctions || [];
+  const junctionsSvg = [...autoJunctions, ...manualJunctions].map(j => `<circle cx="${j.x}" cy="${j.y}" r="3" fill="#111"/>`).join('');
+
   const itemsSvg = items.map(item => {
     const def = findDef(item.typeId);
     const sym = SYM[item.typeId] || '';
@@ -59,7 +71,7 @@ function renderTechnicalSchema(schema, refs){
   }).join('');
 
   return `<svg viewBox="${minX} ${minY} ${w} ${h}" style="width:100%;max-height:520px;background:#fff;border:1px solid #ccc" xmlns="http://www.w3.org/2000/svg">
-    ${wiresSvg}${itemsSvg}
+    ${wiresSvg}${junctionsSvg}${itemsSvg}
   </svg>`;
 }
 

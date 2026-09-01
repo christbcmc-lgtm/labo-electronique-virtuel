@@ -507,6 +507,26 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
     assert(win.wsState.schema.wires[win.wsState.schema.wires.length-1].id === wTest.id, 'le fil peut être renvoyé au premier plan (dernier du tableau = dessiné au-dessus)');
   }
 
+  section('Nœuds à une intersection de fils (priorité explicitement demandée)');
+  const crossSchema = { items:[
+      { id:'R', typeId:'resistance', x:0,   y:85,  rot:0, value:220 },
+      { id:'S', typeId:'resistance', x:300, y:85,  rot:0, value:220 },
+      { id:'P', typeId:'resistance', x:150, y:0,   rot:0, value:220 },
+      { id:'Q', typeId:'resistance', x:150, y:200, rot:0, value:220 },
+    ], wires:[
+      { id:'wh', a:{itemId:'R', term:0}, b:{itemId:'S', term:0} }, // horizontale, y=100, x de 0 à 300
+      { id:'wv', a:{itemId:'P', term:0}, b:{itemId:'Q', term:0} }, // verticale, x=150, y de 15 à 215
+    ] };
+  const crossings = win.computeWireCrossings(crossSchema);
+  assert(crossings.length === 1 && crossings[0].x === 150 && crossings[0].y === 100, 'un croisement géométrique entre deux fils différents est détecté au bon point (résultat: ' + JSON.stringify(crossings) + ')');
+  assert(!win.junctionAt(crossSchema, 150, 100), 'par défaut, un croisement de fils n\'est PAS un nœud électrique (convention IEC : pas de point = pas de connexion)');
+  const ufBefore = win.buildWireUnion(crossSchema);
+  assert(ufBefore.find('R#0') !== ufBefore.find('P#0'), 'sans nœud, les deux fils qui se croisent restent des circuits électriquement séparés');
+  crossSchema.junctions = [{ id:'j1', x:150, y:100 }];
+  assert(!!win.junctionAt(crossSchema, 150, 100), 'un nœud ajouté au point de croisement est bien retrouvé');
+  const ufAfter = win.buildWireUnion(crossSchema);
+  assert(ufAfter.find('R#0') === ufAfter.find('P#0'), 'après ajout d\'un nœud au croisement, les deux fils deviennent électriquement un seul et même circuit');
+
   section('Devis — lignes vides exclues du PDF, lignes partielles conservées (§5 des notes en cours)');
   const devisTest = { lignes:[
     { nom:'', ref:'', qte:0, prix:0, unite:'pièce' },           // totalement vide → doit disparaître
@@ -606,10 +626,22 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   const bobNotifs3 = (await win.db.listNotifications(bobId)).data;
   assert(bobNotifs3.some(n=>n.titre.includes('groupe')), 'Bob est notifié de son ajout au groupe de travail');
 
-  section('Catalogue global — cohérence (164 composants attendus)');
+  section('Catalogue global — cohérence (≥500 composants attendus après expansion §900 des notes en cours)');
   const total = win.COMMON_COMPONENTS.length + Object.values(win.COMPONENT_LIBRARY).reduce((n,l)=>n+l.length,0) + win.INSTRUMENT_LIBRARY.length;
-  assert(total > 150, 'catalogue élargi (total=' + total + ' composants, 5 domaines)');
+  assert(total >= 500, 'catalogue élargi (total=' + total + ' composants, 5 domaines) — garde-fou anti-régression, pas la cible finale de 900');
   assert(Object.keys(win.ESPACES).length === 5, '5 domaines disponibles (électronique, électrotechnique, bâtiment, renouvelables, automatisme)');
+
+  section('Brochage DIP conforme + brochage réel affiché (correction de cette session)');
+  const ne555Def = win.findDef('ne555');
+  assert(ne555Def.terminals.length === 8, 'le NE555 a bien 8 broches');
+  const [l0,l1,l2,l3,r0,r1,r2,r3] = ne555Def.terminals;
+  assert(l0[0]===0 && l3[0]===0 && r0[0]===60 && r3[0]===60, 'les 8 broches du NE555 sont réparties 4 à gauche / 4 à droite du boîtier');
+  assert(l0[1] < l3[1], 'côté gauche : la broche 1 est bien en haut et la broche 4 en bas (ordre DIP)');
+  assert(r0[1] > r3[1], 'côté droit : la broche 5 (bas) et la broche 8 (haut) sont dans l\'ordre DIP réel (on REMONTE le second côté), pas un simple recopiage de haut en bas');
+  assert(Array.isArray(ne555Def.pinNames) && ne555Def.pinNames.length === 8 && ne555Def.pinNames[0]==='GND' && ne555Def.pinNames[7]==='VCC', 'le brochage réel du NE555 (GND en broche 1, VCC en broche 8) est renseigné (résultat: ' + JSON.stringify(ne555Def.pinNames) + ')');
+  const pinoutHtml = win.pinNamesListHTML(ne555Def);
+  assert(pinoutHtml.includes('GND') && pinoutHtml.includes('VCC'), 'le brochage réel est bien affichable (info-bulle catalogue / panneau propriétés)');
+  assert(win.pinNamesListHTML({ pinNames:null }) === '', 'un composant sans brochage connu ne montre pas de liste vide plutôt que d\'inventer un brochage');
 
   console.log('\n=== Erreurs JS non interceptées pendant toute la session ===');
   console.log(win.__jsErrors.length ? win.__jsErrors.join('\n---\n') : '(aucune)');

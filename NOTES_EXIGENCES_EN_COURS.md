@@ -8,6 +8,15 @@
 > N1 de l'addendum pour la justification ; présence temps réel en mode démo limitée aux
 > onglets d'un même navigateur, faute de serveur). Ce fichier reste la trace du
 > raisonnement d'origine ; il n'a pas été réécrit pour refléter l'implémentation.
+>
+> **Mise à jour 2** : suite à vos remarques (nœuds à une intersection de fils, brochage
+> conforme aux boîtiers réels, catalogue élargi), voir `RAPPORT-FINAL.md` section
+> **« ADDENDUM 2 »** — système de nœuds cliquables implémenté (avec une convention
+> différente de celle proposée, expliquée et justifiée dans l'addendum), numérotation de
+> broches corrigée pour suivre l'ordre réel d'un boîtier DIP, brochage réel affiché en
+> toutes lettres pour les références où il est connu avec confiance, catalogue passé de
+> 164 à 500 composants (objectif de 900 non atteint dans cette session — raison détaillée
+> dans l'addendum, ce n'est pas un oubli).
 
 ## Statut de ce document
 
