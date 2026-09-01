@@ -153,6 +153,10 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   const projectId = win.currentRoute().split('/')[1];
   await tick(400);
 
+  section('Statut de projet (§6 des notes en cours) — valeur initiale');
+  const projectJustCreated = (await win.db.getProject(projectId)).data;
+  assert(projectJustCreated.statut === 'brouillon', 'un projet nouvellement créé a le statut "brouillon" (valeur: ' + projectJustCreated.statut + ')');
+
   section('Éditeur — catalogue et familles');
   assert(doc.querySelectorAll('[data-fam-toggle]').length > 5, 'plusieurs familles de composants affichées');
   assert(doc.getElementById('ws-search'), 'champ de recherche présent');
@@ -451,6 +455,156 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   await tick(200);
   const userAfterAccept = (await win.db.listUsers()).data.find(u=>u.id===targetUserId);
   assert(userAfterAccept.storageQuota > quotaBefore, 'quota augmenté après acceptation de la demande par l\'admin');
+
+  section('Statut de projet — transition automatique après édition');
+  const projectAfterEdits = (await win.db.getProject(projectId)).data;
+  assert(projectAfterEdits.statut === 'en_cours', 'le statut passe à "en_cours" après des modifications du schéma (valeur: ' + projectAfterEdits.statut + ')');
+
+  section('Composant de remplacement + avertissement (§1 des notes en cours)');
+  const replItem = win.wsState.schema.items[0];
+  const replDef = win.findDef(replItem.typeId);
+  replItem.customRef = 'CD4017'; // délibérément incohérent avec le composant réellement posé
+  assert(win.customRefMismatch(replItem, replDef) === true, 'une référence de remplacement incohérente avec le composant réellement modélisé est détectée');
+  const replWarnings = win.collectReplacementWarnings(win.wsState.schema);
+  assert(replWarnings.length === 1 && replWarnings[0].includes('CD4017'), 'le diagnostic liste l\'avertissement de remplacement (résultat: ' + JSON.stringify(replWarnings) + ')');
+  replItem.customRef = replDef.nom; // référence cohérente cette fois
+  assert(win.customRefMismatch(replItem, replDef) === false, 'une référence de remplacement cohérente avec le composant n\'est pas signalée');
+  replItem.customRef = '';
+
+  section('Favoris / récents (§1-§2 des notes en cours)');
+  const favBefore = win.getFavoris();
+  assert(!favBefore.includes('led'), 'led non favori au départ (état: ' + JSON.stringify(favBefore) + ')');
+  win.toggleFavorite('led');
+  assert(win.getFavoris().includes('led'), 'led ajouté aux favoris');
+  win.toggleFavorite('led');
+  assert(!win.getFavoris().includes('led'), 'led retiré des favoris (bascule)');
+  win.recordRecentComponent('ne555');
+  win.recordRecentComponent('resistance');
+  assert(win.getRecents()[0] === 'resistance' && win.getRecents()[1] === 'ne555', 'les composants récents sont classés du plus récent au plus ancien (résultat: ' + JSON.stringify(win.getRecents().slice(0,2)) + ')');
+
+  section('Page de recherche de composants dédiée (§1 des notes en cours)');
+  await nav(win, 'composants');
+  await tick(200);
+  assert(!!doc.getElementById('comp-search'), 'champ de recherche de la page dédiée présent');
+  setVal(win, doc.getElementById('comp-search'), 'NE555');
+  await tick(150);
+  assert(doc.getElementById('comp-search-results').textContent.includes('NE555'), 'la page dédiée trouve un composant dans tout le catalogue');
+  const compFavBtn = doc.querySelector('#comp-search-results [data-fav]');
+  assert(!!compFavBtn, 'bouton favori présent sur un résultat de recherche');
+  click(win, compFavBtn);
+  await tick(100);
+  assert(win.getFavoris().includes('ne555'), 'favori ajouté depuis la page de recherche dédiée');
+  win.toggleFavorite('ne555'); // nettoyage
+
+  section('Fils — couleur et premier plan (§2 des notes en cours)');
+  if (win.wsState.schema.wires.length){
+    const wTest = win.wsState.schema.wires[0];
+    wTest.color = '#4FD1C5';
+    win.wsState.selectedWireId = null; // pour que la couleur personnalisée soit bien appliquée au rendu
+    const svgOut = win.renderCanvasSVG();
+    assert(svgOut.includes(`data-wire="${wTest.id}"`) && svgOut.includes('stroke:#4FD1C5'), 'la couleur personnalisée du fil est bien appliquée au rendu SVG');
+    win.wsState.schema.wires.push(win.wsState.schema.wires.shift()); // équivalent de "premier plan" (déplacé en fin de tableau)
+    assert(win.wsState.schema.wires[win.wsState.schema.wires.length-1].id === wTest.id, 'le fil peut être renvoyé au premier plan (dernier du tableau = dessiné au-dessus)');
+  }
+
+  section('Devis — lignes vides exclues du PDF, lignes partielles conservées (§5 des notes en cours)');
+  const devisTest = { lignes:[
+    { nom:'', ref:'', qte:0, prix:0, unite:'pièce' },           // totalement vide → doit disparaître
+    { nom:'Boîtier', ref:'', qte:0, prix:0, unite:'pièce' },    // partiellement rempli → doit rester
+  ], remisePct:0, tauxTaxe:20, taxeActive:false };
+  assert(win.isDevisLigneVide(devisTest.lignes[0]) === true, 'une ligne de devis totalement vide est bien détectée comme telle');
+  assert(win.isDevisLigneVide(devisTest.lignes[1]) === false, 'une ligne de devis partiellement remplie n\'est pas considérée comme vide');
+  const devisHtml = win.renderDevisTableHTML(devisTest);
+  assert(devisHtml.includes('Boîtier'), 'la ligne partiellement remplie apparaît dans le rendu du devis pour le PDF');
+  const emptyRowCount = (devisHtml.match(/<td><\/td><td><\/td><td>0<\/td>/g)||[]).length;
+  assert(emptyRowCount === 0, 'la ligne totalement vide est exclue du rendu du devis pour le PDF');
+
+  section('Partage — permissions "voir seulement" / "voir + modifier" + notifications (§3-§4 des notes en cours)');
+  await win.auth.signOut();
+  await nav(win, 'register');
+  const bobForm = doc.getElementById('form-register');
+  setVal(win, bobForm.querySelector('[name=prenom]'), 'Bob');
+  setVal(win, bobForm.querySelector('[name=nom]'), 'Collabo');
+  setVal(win, bobForm.querySelector('[name=email]'), 'bob@example.com');
+  setVal(win, bobForm.querySelector('[name=password]'), 'motdepasse456');
+  setVal(win, bobForm.querySelector('[name=motMagique]'), 'chienblanc');
+  bobForm.dispatchEvent(new win.Event('submit', { bubbles:true, cancelable:true }));
+  await tick(250);
+  const bobId = win.auth.currentUser.id;
+  assert(!!bobId, 'compte de collaborateur "Bob" créé');
+
+  await win.auth.signOut();
+  await nav(win, 'login');
+  const loginAlice = doc.getElementById('form-login');
+  setVal(win, loginAlice.querySelector('[name=email]'), 'alice@example.com');
+  setVal(win, loginAlice.querySelector('[name=password]'), 'nouveaumdp123');
+  loginAlice.dispatchEvent(new win.Event('submit', { bubbles:true, cancelable:true }));
+  await tick(250);
+  assert(win.auth.currentUser && win.auth.currentUser.email === 'alice@example.com', 'alice reconnectée pour partager son projet');
+
+  let r = await win.db.addCollaborator({ projectId, userId: bobId, permission: 'lecture' });
+  assert(!r.error, 'partage en lecture seule accepté sans erreur' + (r.error?(' — '+r.error.message):''));
+  const bobNotifs1 = (await win.db.listNotifications(bobId)).data;
+  assert(bobNotifs1.some(n => n.type === 'important' && /lecture seule|voir seulement/.test(n.texte)), 'une notification "importante" est créée pour le collaborateur lors du partage (contenu: ' + JSON.stringify(bobNotifs1.map(n=>n.texte)) + ')');
+
+  await win.auth.signOut();
+  await nav(win, 'login');
+  const loginBob = doc.getElementById('form-login');
+  setVal(win, loginBob.querySelector('[name=email]'), 'bob@example.com');
+  setVal(win, loginBob.querySelector('[name=password]'), 'motdepasse456');
+  loginBob.dispatchEvent(new win.Event('submit', { bubbles:true, cancelable:true }));
+  await tick(250);
+  await nav(win, 'project/' + projectId);
+  await tick(300);
+  assert(win.wsState.readOnly === true, 'le projet s\'ouvre bien en lecture seule pour un collaborateur "voir seulement"');
+  const itemsBefore = win.wsState.schema.items.length;
+  win.armComponentForPlacement('resistance');
+  assert(win.wsState.armedType === null, 'un collaborateur en lecture seule ne peut pas armer un composant pour le poser');
+  win.duplicateItem(win.wsState.schema.items[0].id);
+  assert(win.wsState.schema.items.length === itemsBefore, 'un collaborateur en lecture seule ne peut pas dupliquer un composant');
+  assert(!doc.getElementById('btn-save-project') && !doc.getElementById('btn-share'), 'les boutons Enregistrer/Partager sont masqués en lecture seule');
+
+  await win.auth.signOut();
+  await nav(win, 'login');
+  const loginAlice2 = doc.getElementById('form-login');
+  setVal(win, loginAlice2.querySelector('[name=email]'), 'alice@example.com');
+  setVal(win, loginAlice2.querySelector('[name=password]'), 'nouveaumdp123');
+  loginAlice2.dispatchEvent(new win.Event('submit', { bubbles:true, cancelable:true }));
+  await tick(250);
+  r = await win.db.addCollaborator({ projectId, userId: bobId, permission: 'edition' });
+  assert(!r.error, 'passage en "voir + modifier" accepté sans erreur');
+  const bobNotifs2 = (await win.db.listNotifications(bobId)).data;
+  assert(bobNotifs2.length === 2, 'une seconde notification est créée lors du changement de permission (total: ' + bobNotifs2.length + ')');
+
+  await win.auth.signOut();
+  await nav(win, 'login');
+  const loginBob2 = doc.getElementById('form-login');
+  setVal(win, loginBob2.querySelector('[name=email]'), 'bob@example.com');
+  setVal(win, loginBob2.querySelector('[name=password]'), 'motdepasse456');
+  loginBob2.dispatchEvent(new win.Event('submit', { bubbles:true, cancelable:true }));
+  await tick(250);
+  await nav(win, 'project/' + projectId);
+  await tick(300);
+  assert(win.wsState.readOnly === false, 'le même projet devient modifiable pour Bob une fois la permission "voir + modifier" accordée');
+  const itemsBeforeEdit = win.wsState.schema.items.length;
+  win.duplicateItem(win.wsState.schema.items[0].id);
+  assert(win.wsState.schema.items.length === itemsBeforeEdit + 1, 'un collaborateur "voir + modifier" peut bien dupliquer un composant');
+
+  section('Groupes — membres recherchés parmi les utilisateurs inscrits (§3 des notes en cours)');
+  const searchRes = (await win.db.searchUsers('Collabo')).data;
+  assert(searchRes.some(u=>u.id===bobId), 'recherche d\'utilisateurs par nom trouve Bob (résultats: ' + searchRes.map(u=>u.nom).join(',') + ')');
+  await win.auth.signOut();
+  await nav(win, 'login');
+  const loginAlice3 = doc.getElementById('form-login');
+  setVal(win, loginAlice3.querySelector('[name=email]'), 'alice@example.com');
+  setVal(win, loginAlice3.querySelector('[name=password]'), 'nouveaumdp123');
+  loginAlice3.dispatchEvent(new win.Event('submit', { bubbles:true, cancelable:true }));
+  await tick(250);
+  const aliceId = win.auth.currentUser.id;
+  const gm = await win.db.addGroupMember({ userId: aliceId, memberUserId: bobId });
+  assert(!gm.error && gm.data.some(m=>m.memberUserId===bobId), 'membre de groupe ajouté par recherche d\'utilisateur réel, pas par saisie libre');
+  const bobNotifs3 = (await win.db.listNotifications(bobId)).data;
+  assert(bobNotifs3.some(n=>n.titre.includes('groupe')), 'Bob est notifié de son ajout au groupe de travail');
 
   section('Catalogue global — cohérence (164 composants attendus)');
   const total = win.COMMON_COMPONENTS.length + Object.values(win.COMPONENT_LIBRARY).reduce((n,l)=>n+l.length,0) + win.INSTRUMENT_LIBRARY.length;

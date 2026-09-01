@@ -31,6 +31,7 @@ const DB = {
   passwordResetTokens: {},
   storageRequests: [], // { id, userId, montantOctets, motif, statut:'en attente'|'acceptee'|'refusee', createdAt }
   devis: {},           // projectId -> { lignes:[], remisePct, tauxTaxe, taxeActive }
+  notifications: [],   // { id, userId, type:'important'|'normal', titre, texte, lien, lu, notified, createdAt }
 };
 
 // Persistance locale du mock (localStorage) : évite de tout perdre à chaque rechargement de page.
@@ -48,6 +49,14 @@ function loadDB(){
         role:'admin', avatar:'AD', accountType:'solo', members:[], createdAt:'2026-01-01', suspended:false, storageQuota: DEFAULT_STORAGE_QUOTA_BYTES });
     }
     DB.users.forEach(u => { if (u.storageQuota === undefined) u.storageQuota = DEFAULT_STORAGE_QUOTA_BYTES; if (u.suspended === undefined) u.suspended = false; });
+    // Compatibilité : les anciennes sauvegardes stockaient collaborateurs comme un tableau d'ids
+    // (accès systématiquement en édition). Nouveau format : { userId, permission } — voir §4 des notes.
+    DB.projects.forEach(p => {
+      if (!Array.isArray(p.collaborateurs)) p.collaborateurs = [];
+      p.collaborateurs = p.collaborateurs.map(c => typeof c === 'string' ? { userId:c, permission:'edition' } : c);
+      if (!p.statut) p.statut = 'brouillon';
+    });
+    if (!Array.isArray(DB.notifications)) DB.notifications = [];
   }catch(e){}
 }
 loadDB();
@@ -138,19 +147,20 @@ function maskEmail(email){
 const mockDb = {
   async listProjects({ userId, espace }={}){
     await wait();
-    let rows = DB.projects.filter(p => p.ownerId === userId || p.collaborateurs.includes(userId));
+    let rows = DB.projects.filter(p => p.ownerId === userId || p.collaborateurs.some(c=>c.userId===userId));
     if (espace) rows = rows.filter(p => p.espace === espace);
     return { data: rows, error:null };
   },
 
   async listSharedProjects(userId){
     await wait();
-    return { data: DB.projects.filter(p => p.ownerId !== userId && p.collaborateurs.includes(userId)), error:null };
+    return { data: DB.projects.filter(p => p.ownerId !== userId && p.collaborateurs.some(c=>c.userId===userId))
+      .map(p => ({ ...p, monAcces: p.collaborateurs.find(c=>c.userId===userId)?.permission || 'lecture' })), error:null };
   },
 
   async createProject({ ownerId, titre, espace }){
     await wait();
-    const p = { id:uid('p'), ownerId, titre, espace, updatedAt:new Date().toISOString().slice(0,10), collaborateurs:[], erreurs:0, schema:{ items:[], wires:[] } };
+    const p = { id:uid('p'), ownerId, titre, espace, updatedAt:new Date().toISOString().slice(0,10), collaborateurs:[], erreurs:0, statut:'brouillon', schema:{ items:[], wires:[] } };
     DB.projects.unshift(p);
     persistDB();
     return { data:p, error:null };
@@ -161,19 +171,58 @@ const mockDb = {
   async saveSchema(id, schema){
     await wait(80);
     const p = DB.projects.find(p => p.id === id);
-    if (p){ p.schema = schema; p.updatedAt = new Date().toISOString().slice(0,10); persistDB(); }
+    if (p){ p.schema = schema; p.updatedAt = new Date().toISOString().slice(0,10); if (p.statut === 'brouillon' || p.statut === 'exporte') p.statut = 'en_cours'; persistDB(); }
     return { error:null };
   },
 
-  async addCollaborator({ projectId, email }){
-    await wait();
-    const p = DB.projects.find(p => p.id === projectId);
-    const u = DB.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+  async setProjectStatut(id, statut){
+    await wait(80);
+    const p = DB.projects.find(p => p.id === id);
     if (!p) return { error:{ message:'Projet introuvable.' } };
-    if (!u) return { error:{ message:'Aucun utilisateur avec cet e-mail.' } };
-    if (!p.collaborateurs.includes(u.id)) p.collaborateurs.push(u.id);
+    p.statut = statut;
     persistDB();
     return { data:p, error:null };
+  },
+
+  // Partage (§3 des notes en cours) : userId + permission ('lecture'|'edition') au lieu d'un simple id.
+  async addCollaborator({ projectId, userId, permission }){
+    await wait();
+    const p = DB.projects.find(p => p.id === projectId);
+    const u = DB.users.find(u => u.id === userId);
+    if (!p) return { error:{ message:'Projet introuvable.' } };
+    if (!u) return { error:{ message:'Utilisateur introuvable.' } };
+    if (userId === p.ownerId) return { error:{ message:'Cette personne est déjà propriétaire du projet.' } };
+    const existing = p.collaborateurs.find(c=>c.userId===userId);
+    const isNew = !existing;
+    if (existing) existing.permission = permission; else p.collaborateurs.push({ userId, permission });
+    persistDB();
+    const owner = DB.users.find(u=>u.id===p.ownerId);
+    this.createNotification({
+      userId, type:'important',
+      titre: isNew ? 'Accès à un projet partagé' : 'Permission modifiée',
+      texte: `${owner?.prenom||''} ${owner?.nom||''} vous a ${isNew?'donné accès':'accordé l\'accès'} « ${permission==='edition'?'voir et modifier':'voir seulement'} » sur le projet « ${p.titre} ».`,
+      lien: `project/${p.id}`,
+    });
+    return { data:p, error:null };
+  },
+  async removeCollaborator({ projectId, userId }){
+    await wait();
+    const p = DB.projects.find(p => p.id === projectId);
+    if (!p) return { error:{ message:'Projet introuvable.' } };
+    p.collaborateurs = p.collaborateurs.filter(c=>c.userId!==userId);
+    persistDB();
+    return { data:p, error:null };
+  },
+  async listCollaborators(projectId){
+    await wait(80);
+    const p = DB.projects.find(p => p.id === projectId);
+    return { data: (p && p.collaborateurs) || [], error:null };
+  },
+  async searchUsers(query){
+    await wait(150);
+    const q = (query||'').trim().toLowerCase();
+    if (q.length < 2) return { data:[], error:null };
+    return { data: DB.users.filter(u => `${u.prenom} ${u.nom}`.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)).slice(0,10), error:null };
   },
 
   async deleteProject(id){ await wait(); DB.projects = DB.projects.filter(p => p.id !== id); persistDB(); return { error:null }; },
@@ -182,7 +231,7 @@ const mockDb = {
     await wait();
     const p = DB.projects.find(p => p.id === id);
     if (!p) return { data:null, error:{ message:'Projet introuvable.' } };
-    const copy = { ...p, id:uid('p'), titre: p.titre + ' (copie)', collaborateurs:[], updatedAt:new Date().toISOString().slice(0,10), schema: JSON.parse(JSON.stringify(p.schema||{items:[],wires:[]})) };
+    const copy = { ...p, id:uid('p'), titre: p.titre + ' (copie)', collaborateurs:[], statut:'brouillon', updatedAt:new Date().toISOString().slice(0,10), schema: JSON.parse(JSON.stringify(p.schema||{items:[],wires:[]})) };
     DB.projects.unshift(copy);
     persistDB();
     return { data:copy, error:null };
@@ -240,23 +289,69 @@ const mockDb = {
   async answerSuggestion({ id, reponse }){
     await wait(120);
     const s = DB.suggestions.find(s => s.id === id);
-    if (s){ s.reponseAdmin = reponse; s.statut = 'traitée'; persistDB(); }
+    if (s){
+      s.reponseAdmin = reponse; s.statut = 'traitée'; persistDB();
+      this.createNotification({ userId:s.userId, type:'normal', titre:'Réponse à votre suggestion', texte:reponse, lien:'discussion' });
+    }
     return { data:s, error:null };
   },
 
-  async addGroupMember({ userId, nom, email }){
+  // Membres de groupe (§3 des notes en cours) : recherchés parmi les utilisateurs déjà inscrits,
+  // pas saisis librement — nom/e-mail restent stockés pour l'affichage mais dérivent du profil réel.
+  async addGroupMember({ userId, memberUserId }){
     await wait(120);
-    const u = DB.users.find(u => u.id === userId);
-    if (!u) return { error:{ message:'Utilisateur introuvable.' } };
-    u.members.push({ id:uid('mb'), nom, email });
+    const owner = DB.users.find(u => u.id === userId);
+    const member = DB.users.find(u => u.id === memberUserId);
+    if (!owner) return { error:{ message:'Utilisateur introuvable.' } };
+    if (!member) return { error:{ message:'Utilisateur à ajouter introuvable.' } };
+    if (memberUserId === userId) return { error:{ message:'Vous ne pouvez pas vous ajouter vous-même.' } };
+    if (owner.members.some(m=>m.memberUserId===memberUserId)) return { error:{ message:'Déjà membre de votre groupe.' } };
+    owner.members.push({ id:uid('mb'), memberUserId, nom:`${member.prenom} ${member.nom}`.trim(), email:member.email });
     persistDB();
-    return { data:u.members, error:null };
+    this.createNotification({ userId:memberUserId, type:'normal', titre:'Ajout à un groupe de travail', texte:`${owner.prenom} ${owner.nom} vous a ajouté à son groupe de travail.` });
+    return { data:owner.members, error:null };
+  },
+  async removeGroupMember({ userId, memberId }){
+    await wait(120);
+    const owner = DB.users.find(u => u.id === userId);
+    if (!owner) return { error:{ message:'Utilisateur introuvable.' } };
+    owner.members = (owner.members||[]).filter(m=>m.id!==memberId);
+    persistDB();
+    return { data:owner.members, error:null };
   },
 
   async listGroupMembers(userId){
     await wait(120);
     const u = DB.users.find(u => u.id === userId);
     return { data: (u && u.members) || [], error:null };
+  },
+
+  // Notifications (§4 des notes en cours) : "importantes" déclenchent en plus une apparition
+  // temporaire côté client (voir app.js) — ce module ne gère que le stockage/historique.
+  async createNotification({ userId, type, titre, texte, lien }){
+    const n = { id:uid('n'), userId, type: type||'normal', titre, texte, lien: lien||null, lu:false, notified:false, createdAt:new Date().toISOString() };
+    DB.notifications.push(n);
+    persistDB();
+    return n;
+  },
+  async listNotifications(userId){
+    await wait(80);
+    return { data: DB.notifications.filter(n=>n.userId===userId).slice().sort((a,b)=> b.createdAt.localeCompare(a.createdAt)), error:null };
+  },
+  async markNotificationRead(id){
+    const n = DB.notifications.find(n=>n.id===id);
+    if (n){ n.lu = true; persistDB(); }
+    return { error:null };
+  },
+  async markNotificationNotified(id){
+    const n = DB.notifications.find(n=>n.id===id);
+    if (n){ n.notified = true; persistDB(); }
+    return { error:null };
+  },
+  async markAllNotificationsRead(userId){
+    DB.notifications.forEach(n => { if (n.userId===userId) n.lu = true; });
+    persistDB();
+    return { error:null };
   },
 
   async adminStats(){
@@ -295,6 +390,12 @@ const mockDb = {
       if (u) u.storageQuota = (u.storageQuota||DEFAULT_STORAGE_QUOTA_BYTES) + r.montantOctets;
     }
     persistDB();
+    this.createNotification({
+      userId:r.userId, type:'important',
+      titre: accepter ? 'Demande de stockage acceptée' : 'Demande de stockage refusée',
+      texte: accepter ? `Votre demande de +${fmtBytes(r.montantOctets)} a été acceptée.` : "Votre demande d'augmentation de stockage a été refusée.",
+      lien:'compte',
+    });
     return { data:r, error:null };
   },
   async setUserQuota({ userId, quotaOctets }){
@@ -364,8 +465,9 @@ function projectRowToProject(row){
   return {
     id: row.id, ownerId: row.owner_id, titre: row.titre, espace: row.espace,
     schema: row.schema || { items:[], wires:[] }, erreurs: row.erreurs || 0,
+    statut: row.statut || 'brouillon',
     updatedAt: (row.updated_at || '').slice(0,10),
-    collaborateurs: (row.project_collaborators || []).map(c => c.user_id),
+    collaborateurs: (row.project_collaborators || []).map(c => ({ userId: c.user_id, permission: c.permission || 'edition' })),
   };
 }
 
@@ -434,46 +536,82 @@ const supabaseAuth = {
 
 const supabaseDb = {
   async listProjects({ userId, espace }={}){
-    let q = supabaseClient.from('projects').select('*, project_collaborators(user_id)');
+    let q = supabaseClient.from('projects').select('*, project_collaborators(user_id,permission)');
     if (espace) q = q.eq('espace', espace);
     const { data, error } = await q;
     if (error) return { data:[], error:{ message:error.message } };
-    const rows = (data||[]).map(projectRowToProject).filter(p => p.ownerId===userId || p.collaborateurs.includes(userId));
+    const rows = (data||[]).map(projectRowToProject).filter(p => p.ownerId===userId || p.collaborateurs.some(c=>c.userId===userId));
     return { data: rows, error:null };
   },
 
   async listSharedProjects(userId){
-    const { data, error } = await supabaseClient.from('projects').select('*, project_collaborators(user_id)');
+    const { data, error } = await supabaseClient.from('projects').select('*, project_collaborators(user_id,permission)');
     if (error) return { data:[], error:{ message:error.message } };
-    const rows = (data||[]).map(projectRowToProject).filter(p => p.ownerId!==userId && p.collaborateurs.includes(userId));
+    const rows = (data||[]).map(projectRowToProject).filter(p => p.ownerId!==userId && p.collaborateurs.some(c=>c.userId===userId))
+      .map(p => ({ ...p, monAcces: p.collaborateurs.find(c=>c.userId===userId)?.permission || 'lecture' }));
     return { data: rows, error:null };
   },
 
   async createProject({ ownerId, titre, espace }){
     const { data, error } = await supabaseClient.from('projects')
       .insert({ owner_id: ownerId, titre, espace, schema:{ items:[], wires:[] } })
-      .select('*, project_collaborators(user_id)').single();
+      .select('*, project_collaborators(user_id,permission)').single();
     if (error) return { data:null, error:{ message:error.message } };
     return { data: projectRowToProject(data), error:null };
   },
 
   async getProject(id){
-    const { data, error } = await supabaseClient.from('projects').select('*, project_collaborators(user_id)').eq('id', id).single();
+    const { data, error } = await supabaseClient.from('projects').select('*, project_collaborators(user_id,permission)').eq('id', id).single();
     if (error) return { data:null, error:null }; // introuvable ou non autorisé (RLS) → traité comme "absent" par l'UI
     return { data: projectRowToProject(data), error:null };
   },
 
   async saveSchema(id, schema){
-    const { error } = await supabaseClient.from('projects').update({ schema, updated_at:new Date().toISOString() }).eq('id', id);
+    const { data: cur } = await supabaseClient.from('projects').select('statut').eq('id', id).single();
+    const nextStatut = (!cur || cur.statut === 'brouillon' || cur.statut === 'exporte') ? 'en_cours' : (cur.statut || 'en_cours');
+    const { error } = await supabaseClient.from('projects').update({ schema, statut: nextStatut, updated_at:new Date().toISOString() }).eq('id', id);
+    return { error: error ? { message:error.message } : null };
+  },
+  async setProjectStatut(id, statut){
+    const { error } = await supabaseClient.from('projects').update({ statut }).eq('id', id);
     return { error: error ? { message:error.message } : null };
   },
 
-  async addCollaborator({ projectId, email }){
-    const { data: user } = await supabaseClient.from('profiles').select('id').eq('email', email).single();
-    if (!user) return { error:{ message:'Aucun utilisateur avec cet e-mail.' } };
-    const { error } = await supabaseClient.from('project_collaborators').insert({ project_id: projectId, user_id: user.id });
-    if (error) return { error:{ message: error.code === '23505' ? 'Déjà collaborateur sur ce projet.' : error.message } };
+  // Partage (§3 des notes en cours) : userId + permission ('lecture'|'edition') au lieu d'un e-mail seul.
+  async addCollaborator({ projectId, userId, permission }){
+    const { data: existing } = await supabaseClient.from('project_collaborators').select('user_id').eq('project_id', projectId).eq('user_id', userId).single();
+    let error;
+    if (existing){
+      ({ error } = await supabaseClient.from('project_collaborators').update({ permission }).eq('project_id', projectId).eq('user_id', userId));
+    } else {
+      ({ error } = await supabaseClient.from('project_collaborators').insert({ project_id: projectId, user_id: userId, permission }));
+    }
+    if (error) return { error:{ message:error.message } };
+    const { data: project } = await supabaseClient.from('projects').select('titre').eq('id', projectId).single();
+    const owner = this.userById ? this.userById(auth.currentUser?.id) : null;
+    this.createNotification({
+      userId, type:'important',
+      titre: existing ? 'Permission modifiée' : 'Accès à un projet partagé',
+      texte: `${owner?.prenom||''} ${owner?.nom||''} vous a ${existing?'accordé l\'accès':'donné accès'} « ${permission==='edition'?'voir et modifier':'voir seulement'} » sur le projet « ${project?.titre||''} ».`.trim(),
+      lien: `project/${projectId}`,
+    });
     return { data:true, error:null };
+  },
+  async removeCollaborator({ projectId, userId }){
+    const { error } = await supabaseClient.from('project_collaborators').delete().eq('project_id', projectId).eq('user_id', userId);
+    return { error: error ? { message:error.message } : null };
+  },
+  async listCollaborators(projectId){
+    const { data, error } = await supabaseClient.from('project_collaborators').select('user_id,permission').eq('project_id', projectId);
+    if (error) return { data:[], error:{ message:error.message } };
+    return { data:(data||[]).map(r=>({ userId:r.user_id, permission:r.permission })), error:null };
+  },
+  async searchUsers(query){
+    const q = (query||'').trim().replace(/[,()%]/g,'');
+    if (q.length < 2) return { data:[], error:null };
+    const { data, error } = await supabaseClient.from('profiles').select('*').or(`nom.ilike.%${q}%,prenom.ilike.%${q}%,email.ilike.%${q}%`).limit(10);
+    if (error) return { data:[], error:{ message:error.message } };
+    return { data:(data||[]).map(profileRowToUser), error:null };
   },
 
   async deleteProject(id){
@@ -487,7 +625,7 @@ const supabaseDb = {
     return this.createProjectFull({ ownerId:p.ownerId, titre:p.titre+' (copie)', espace:p.espace, schema:p.schema });
   },
   async createProjectFull({ ownerId, titre, espace, schema }){
-    const { data, error } = await supabaseClient.from('projects').insert({ owner_id:ownerId, titre, espace, schema }).select('*, project_collaborators(user_id)').single();
+    const { data, error } = await supabaseClient.from('projects').insert({ owner_id:ownerId, titre, espace, schema }).select('*, project_collaborators(user_id,permission)').single();
     if (error) return { data:null, error:{ message:error.message } };
     return { data: projectRowToProject(data), error:null };
   },
@@ -555,18 +693,54 @@ const supabaseDb = {
   async answerSuggestion({ id, reponse }){
     const { data, error } = await supabaseClient.from('suggestions').update({ reponse_admin:reponse, statut:'traitée' }).eq('id', id).select().single();
     if (error) return { data:null, error:{ message:error.message } };
+    this.createNotification({ userId:data.user_id, type:'normal', titre:'Réponse à votre suggestion', texte:reponse, lien:'discussion' });
     return { data: suggestionRowToSuggestion(data), error:null };
   },
 
-  async addGroupMember({ userId, nom, email }){
-    const { data, error } = await supabaseClient.from('group_members').insert({ owner_id:userId, nom, email }).select();
-    if (error) return { error:{ message:error.message } };
+  // Membres de groupe (§3 des notes en cours) : recherchés parmi les utilisateurs déjà inscrits (member_id),
+  // nom/email restent recopiés pour l'affichage sans requête supplémentaire.
+  async addGroupMember({ userId, memberUserId }){
+    const { data: member } = await supabaseClient.from('profiles').select('*').eq('id', memberUserId).single();
+    if (!member) return { error:{ message:'Utilisateur à ajouter introuvable.' } };
+    const { data, error } = await supabaseClient.from('group_members')
+      .insert({ owner_id:userId, member_id:memberUserId, nom:`${member.prenom} ${member.nom}`.trim(), email:member.email }).select();
+    if (error) return { error:{ message: error.code === '23505' ? 'Déjà membre de votre groupe.' : error.message } };
+    this.createNotification({ userId:memberUserId, type:'normal', titre:'Ajout à un groupe de travail', texte:`Vous avez été ajouté à un groupe de travail.` });
     return { data, error:null };
+  },
+  async removeGroupMember({ memberId }){
+    const { error } = await supabaseClient.from('group_members').delete().eq('id', memberId);
+    return { error: error ? { message:error.message } : null };
   },
   async listGroupMembers(userId){
     const { data, error } = await supabaseClient.from('group_members').select('*').eq('owner_id', userId);
     if (error) return { data:[], error:{ message:error.message } };
-    return { data:(data||[]).map(m=>({ id:m.id, nom:m.nom, email:m.email })), error:null };
+    return { data:(data||[]).map(m=>({ id:m.id, memberUserId:m.member_id, nom:m.nom, email:m.email })), error:null };
+  },
+
+  // Notifications (§4 des notes en cours).
+  async createNotification({ userId, type, titre, texte, lien }){
+    const { data, error } = await supabaseClient.from('notifications')
+      .insert({ user_id:userId, type: type||'normal', titre, texte, lien: lien||null }).select().single();
+    if (error) return null;
+    return data;
+  },
+  async listNotifications(userId){
+    const { data, error } = await supabaseClient.from('notifications').select('*').eq('user_id', userId).order('created_at',{ascending:false});
+    if (error) return { data:[], error:{ message:error.message } };
+    return { data:(data||[]).map(n=>({ id:n.id, userId:n.user_id, type:n.type, titre:n.titre, texte:n.texte, lien:n.lien, lu:n.lu, notified:n.notified, createdAt:n.created_at })), error:null };
+  },
+  async markNotificationRead(id){
+    const { error } = await supabaseClient.from('notifications').update({ lu:true }).eq('id', id);
+    return { error: error ? { message:error.message } : null };
+  },
+  async markNotificationNotified(id){
+    const { error } = await supabaseClient.from('notifications').update({ notified:true }).eq('id', id);
+    return { error: error ? { message:error.message } : null };
+  },
+  async markAllNotificationsRead(userId){
+    const { error } = await supabaseClient.from('notifications').update({ lu:true }).eq('user_id', userId);
+    return { error: error ? { message:error.message } : null };
   },
 
   async adminStats(){
@@ -609,6 +783,12 @@ const supabaseDb = {
       const newQuota = (profile?.storage_quota || DEFAULT_STORAGE_QUOTA_BYTES) + reqRow.montant_octets;
       await supabaseClient.from('profiles').update({ storage_quota:newQuota }).eq('id', reqRow.user_id);
     }
+    this.createNotification({
+      userId: reqRow.user_id, type:'important',
+      titre: accepter ? 'Demande de stockage acceptée' : 'Demande de stockage refusée',
+      texte: accepter ? `Votre demande de +${fmtBytes(reqRow.montant_octets)} a été acceptée.` : "Votre demande d'augmentation de stockage a été refusée.",
+      lien:'compte',
+    });
     return { data: storageRequestRow(reqRow), error:null };
   },
   async setUserQuota({ userId, quotaOctets }){

@@ -44,7 +44,7 @@ function renderTechnicalSchema(schema, refs){
     const ai = items.find(i=>i.id===w2.a.itemId), bi = items.find(i=>i.id===w2.b.itemId);
     if (!ai || !bi) return '';
     const a = terminalAbsPos(ai, w2.a.term), b = terminalAbsPos(bi, w2.b.term);
-    return `<polyline points="${polylinePoints(orthoPoints(a,b))}" fill="none" stroke="#111" stroke-width="1.6"/>`;
+    return `<polyline points="${polylinePoints(orthoPoints(a,b))}" fill="none" stroke="${esc(w2.color||'#111')}" stroke-width="1.6"/>`;
   }).join('');
 
   const itemsSvg = items.map(item => {
@@ -67,7 +67,9 @@ function buildBOM(items, refs){
   return items.map(item => {
     const def = findDef(item.typeId);
     const valeur = def.unit ? `${item.value} ${def.unit.split(' ')[0]}` : '—';
-    return { ref: refs.get(item.id), nom: def.nom, famille: def.famille||'', valeur };
+    const mismatch = customRefMismatch(item, def);
+    const nom = item.customRef ? `${def.nom} (étiqueté « ${item.customRef} »)${mismatch ? ' ⚠' : ''}` : def.nom;
+    return { ref: refs.get(item.id), nom, famille: def.famille||'', valeur, mismatch };
   });
 }
 
@@ -110,7 +112,7 @@ async function exportProjectPDF(projectId, schema){
 
     <h2>2. Nomenclature des composants</h2>
     <table><tr><th>Réf.</th><th>Désignation</th><th>Famille</th><th>Valeur</th></tr>
-      ${bom.map(r=>`<tr><td>${esc(r.ref)}</td><td>${esc(r.nom)}</td><td>${esc(r.famille)}</td><td>${esc(r.valeur)}</td></tr>`).join('') || '<tr><td colspan="4">Aucun composant.</td></tr>'}
+      ${bom.map(r=>`<tr><td>${esc(r.ref)}</td><td${r.mismatch?' class="warn"':''}>${esc(r.nom)}</td><td>${esc(r.famille)}</td><td>${esc(r.valeur)}</td></tr>`).join('') || '<tr><td colspan="4">Aucun composant.</td></tr>'}
     </table>
     <p class="note">${items.length} composant(s) · ${wires.length} connexion(s).</p>
 
@@ -126,7 +128,7 @@ async function exportProjectPDF(projectId, schema){
     <h2>6. Interprétation IA</h2>
     ${aiResult ? `<p style="white-space:pre-wrap">${esc(aiResult)}</p>` : '<p>Interprétation IA non demandée pour ce projet (bouton « Interpréter (IA) » non utilisé, ou fonction IA non configurée).</p>'}
 
-    ${devis && devis.lignes && devis.lignes.length ? `<h2>7. Devis</h2>${renderDevisTableHTML(devis)}` : ''}
+    ${devis && devis.lignes && devis.lignes.some(l=>!isDevisLigneVide(l)) ? `<h2>7. Devis</h2>${renderDevisTableHTML(devis)}` : ''}
     ${dimResult ? `<h2>8. Dimensionnement</h2>${dimResult.html}` : ''}
 
     <h2>Conclusion</h2>
@@ -149,7 +151,8 @@ function buildDiagnosticText(schema){
     def.terminals.forEach((t,idx) => { if (!connected.has(item.id+'#'+idx)) warnings.push(`${def.nom} — borne ${idx+1} non connectée.`); });
   });
   const shorts = wires.filter(w=>w.a.itemId===w.b.itemId).map(w => `${findDef(findItem(schema,w.a.itemId)?.typeId)?.nom||'Composant'} : fil reliant deux de ses propres bornes (court-circuit direct).`);
-  const lines = [...shorts.map(s=>`<div class="err">⚠ ${esc(s)}</div>`), ...warnings.map(w=>`<div class="warn">• ${esc(w)}</div>`)];
+  const replacementWarnings = collectReplacementWarnings(schema);
+  const lines = [...shorts.map(s=>`<div class="err">⚠ ${esc(s)}</div>`), ...warnings.map(w=>`<div class="warn">• ${esc(w)}</div>`), ...replacementWarnings.map(w=>`<div class="warn">⚠ ${esc(w)}</div>`)];
   return lines.length ? lines.join('') : '<p>Toutes les bornes sont connectées, aucun court-circuit direct détecté.</p>';
 }
 

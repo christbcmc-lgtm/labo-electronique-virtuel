@@ -40,6 +40,114 @@ function themeSwitchHTML(){
 }
 
 /* ==========================================================================
+   NOTIFICATIONS (§4 des notes en cours) — importantes (apparition temporaire +
+   son optionnel) vs ordinaires (badge + historique dans le centre de notifs).
+   Le "temps réel" ici est un sondage périodique (pas de push serveur dans ce
+   dépôt) : suffisant en mode démo (relit le même localStorage que l'onglet qui
+   a créé la notification) et fonctionnel en mode Supabase réel, mais ce n'est
+   pas du Supabase Realtime — voir le rapport final pour ce qui resterait à
+   améliorer.
+   ========================================================================== */
+const NOTIF_SOUND_KEY = 'labo_notif_son';
+function notifSoundEnabled(){ try{ return localStorage.getItem(NOTIF_SOUND_KEY) !== 'off'; }catch(e){ return true; } }
+function setNotifSoundEnabled(v){ try{ localStorage.setItem(NOTIF_SOUND_KEY, v ? 'on':'off'); }catch(e){} }
+
+function playNotifSound(){
+  if (!notifSoundEnabled()) return;
+  try{
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const osc = ctx.createOscillator(), gain = ctx.createGain();
+    osc.type = 'sine'; osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime+0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+0.35);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(); osc.stop(ctx.currentTime+0.36);
+  }catch(e){}
+}
+
+function showImportantNotifPopup(n){
+  const el = document.createElement('div');
+  el.className = 'notif-popup';
+  el.style.top = (74 + document.querySelectorAll('.notif-popup').length * 92) + 'px';
+  el.innerHTML = `<div class="notif-popup-title">🔔 ${esc(n.titre)}</div><div class="notif-popup-text">${esc(n.texte)}</div>`;
+  el.addEventListener('click', () => { db.markNotificationRead(n.id); if (n.lien) go(n.lien); el.remove(); });
+  document.body.appendChild(el);
+  playNotifSound();
+  setTimeout(()=>el.remove(), 7000);
+}
+
+let __notifPollTimer = null, __notifPopped = new Set();
+function startNotifPolling(){
+  if (__notifPollTimer) return;
+  pollNotifications();
+  __notifPollTimer = setInterval(pollNotifications, 8000);
+}
+function stopNotifPolling(){ if (__notifPollTimer){ clearInterval(__notifPollTimer); __notifPollTimer = null; } __notifPopped = new Set(); }
+async function pollNotifications(){
+  if (!auth.currentUser) return;
+  const { data } = await db.listNotifications(auth.currentUser.id);
+  updateNotifBadge(data);
+  (data||[]).filter(n => n.type==='important' && !n.notified && !__notifPopped.has(n.id)).forEach(n => {
+    __notifPopped.add(n.id);
+    showImportantNotifPopup(n);
+    db.markNotificationNotified(n.id);
+  });
+}
+function updateNotifBadge(list){
+  const badge = document.getElementById('notif-badge');
+  if (!badge) return;
+  const n = (list||[]).filter(n=>!n.lu).length;
+  badge.textContent = n>9 ? '9+' : String(n);
+  badge.classList.toggle('hidden', n===0);
+}
+function renderNotifDropdown(list){
+  return `<div class="notif-dropdown" id="notif-dropdown">
+    <div class="notif-dropdown-head"><strong>Notifications</strong>
+      <label style="display:flex;align-items:center;gap:4px;font-size:.72em;font-weight:400"><input type="checkbox" id="notif-sound-toggle" ${notifSoundEnabled()?'checked':''}> Son</label>
+    </div>
+    <div class="notif-dropdown-list">${list.length ? list.map(n => `
+      <div class="notif-row ${n.lu?'':'unread'}" data-notif="${n.id}" data-lien="${n.lien||''}">
+        <div class="notif-row-title">${n.type==='important'?'🔔 ':''}${esc(n.titre)}</div>
+        <div class="notif-row-text">${esc(n.texte)}</div>
+        <div class="notif-row-when">${new Date(n.createdAt).toLocaleString('fr-FR')}</div>
+      </div>`).join('') : '<div class="empty" style="padding:16px">Aucune notification.</div>'}
+    </div>
+    ${list.length ? `<button class="btn btn-ghost btn-sm" id="notif-mark-all" style="width:100%">Tout marquer comme lu</button>` : ''}
+  </div>`;
+}
+function wireNotifBell(){
+  const bell = document.getElementById('notif-bell');
+  if (!bell) return;
+  bell.onclick = async (e) => {
+    e.stopPropagation();
+    const existing = document.getElementById('notif-dropdown');
+    if (existing){ existing.remove(); return; }
+    const { data } = await db.listNotifications(auth.currentUser.id);
+    bell.parentElement.insertAdjacentHTML('beforeend', renderNotifDropdown(data));
+    document.getElementById('notif-sound-toggle').onchange = (ev) => setNotifSoundEnabled(ev.target.checked);
+    document.getElementById('notif-mark-all').onclick = async () => {
+      await db.markAllNotificationsRead(auth.currentUser.id);
+      document.getElementById('notif-dropdown')?.remove();
+      pollNotifications();
+    };
+    document.querySelectorAll('.notif-row').forEach(row => row.onclick = async () => {
+      await db.markNotificationRead(row.dataset.notif);
+      document.getElementById('notif-dropdown')?.remove();
+      pollNotifications();
+      if (row.dataset.lien) go(row.dataset.lien);
+    });
+    const closeOnOutside = (ev) => {
+      const dd = document.getElementById('notif-dropdown');
+      if (dd && !dd.contains(ev.target) && ev.target !== bell){ dd.remove(); document.removeEventListener('click', closeOnOutside); }
+    };
+    setTimeout(()=>document.addEventListener('click', closeOnOutside), 10);
+  };
+}
+
+/* ==========================================================================
    ROUTEUR
    ========================================================================== */
 const PUBLIC_ROUTES = ['', 'login', 'register', 'forgot', 'reset-email', 'change-password'];
@@ -50,7 +158,7 @@ window.go = go;
 const AFTER = {
   login: () => afterLoginView(), register: () => afterRegisterView(), forgot: () => afterForgotView(),
   'reset-email': () => afterResetEmailView(), 'change-password': () => afterChangePasswordView(),
-  dashboard: () => afterDashboardView(), 'shared': () => afterDashboardView(),
+  dashboard: () => afterDashboardView(), 'shared': () => afterDashboardView(), 'composants': () => afterComposantsView(),
   project: () => afterProjectView(), devis: () => afterDevisView(), dimensionnement: () => afterDimensionnementView(),
   discussion: () => afterDiscussionView(), messages: () => afterMessagesView(),
   admin: () => afterAdminView(), compte: () => afterCompteView(),
@@ -62,6 +170,7 @@ async function render(){
   const route = currentRoute();
   const [base, param] = route.split('/');
   const needsAuth = !PUBLIC_ROUTES.includes(base);
+  if (base !== 'project') closePresenceChannel();
   if (needsAuth && !auth.currentUser){ go('login'); return; }
   if (auth.currentUser && auth.currentUser.mustChangePassword && base !== 'change-password'){ go('change-password'); return; }
   if (base === 'admin' && auth.currentUser?.role !== 'admin'){ go('dashboard'); toast("Accès réservé à l'administrateur."); return; }
@@ -69,7 +178,7 @@ async function render(){
   const routes = {
     ''          : viewLanding, 'login':viewLogin, 'register':viewRegister, 'forgot':viewForgot,
     'reset-email': viewResetEmail, 'change-password': viewChangePassword,
-    'dashboard' : () => viewDashboard(param), 'shared': viewShared,
+    'dashboard' : () => viewDashboard(param), 'shared': viewShared, 'composants': viewComposants,
     'project'   : () => viewProject(param), 'devis': () => viewDevis(param), 'dimensionnement': () => viewDimensionnement(param),
     'discussion': viewDiscussion, 'messages': viewMessages,
     'compte'    : viewCompte, 'admin': () => viewAdmin(param || 'overview'),
@@ -118,18 +227,21 @@ function renderTopbar(route){
     wireThemeSwitch();
     return;
   }
-  const links = [['dashboard','Mon espace'],['discussion','Discussion & suggestions'],['messages','Messagerie']];
+  const links = [['dashboard','Mon espace'],['composants','Composants'],['discussion','Discussion & suggestions'],['messages','Messagerie']];
   if (user.role === 'admin') links.push(['admin','Admin']);
   bar.innerHTML = `<a href="#/dashboard" class="brand"><span class="brand-mark">◈</span> Labo Électronique Virtuel</a>
     <nav>${links.map(([r,l]) => `<a href="#/${r}" class="navlink ${base===r?'active':''}">${l}</a>`).join('')}</nav>
     <div class="right">
       ${themeSwitchHTML()}
       ${MODE_PILL}
+      <div class="notif-bell-wrap"><button class="notif-bell" id="notif-bell" title="Notifications">🔔<span class="notif-badge hidden" id="notif-badge">0</span></button></div>
       <a href="#/compte" class="avatar" title="${esc(user.prenom)} ${esc(user.nom)}">${initials(user)}</a>
       <button class="btn btn-ghost btn-sm" id="btn-logout">Se déconnecter</button>
     </div>`;
-  bar.querySelector('#btn-logout').onclick = async () => { await auth.signOut(); toast('Déconnecté.'); go(''); };
+  bar.querySelector('#btn-logout').onclick = async () => { stopNotifPolling(); await auth.signOut(); toast('Déconnecté.'); go(''); };
   wireThemeSwitch();
+  wireNotifBell();
+  startNotifPolling();
 }
 function wireThemeSwitch(){
   document.querySelectorAll('[data-theme-pick]').forEach(b => b.onclick = () => { applyTheme(b.dataset.themePick); render(); });
@@ -360,6 +472,7 @@ function renderSidebar(active){
   return `<aside class="sidebar">
     <a href="#/dashboard" class="sb-link ${active==='mine'?'active':''}">📁 Mes projets</a>
     <a href="#/shared" class="sb-link ${active==='shared'?'active':''}">🤝 Partagés avec moi</a>
+    <a href="#/composants" class="sb-link ${active==='composants'?'active':''}">🔍 Composants</a>
     <div class="sb-label">Espaces</div>
     ${Object.entries(ESPACES).map(([k,e]) => `<a href="#/dashboard/${k}" class="sb-link ${active===k?'active':''}">${e.icon} ${e.nom}</a>`).join('')}
     <div class="sb-label">Compte</div>
@@ -391,15 +504,67 @@ async function viewShared(){
       ${projects.length === 0 ? `<div class="empty">Aucun projet partagé avec vous pour l'instant.</div>` : ''}
     </div></div>`;
 }
+/* ==========================================================================
+   RECHERCHE DE COMPOSANTS — page dédiée (§1 des notes en cours), indépendante
+   de tout projet ouvert : parcourir/rechercher toute la bibliothèque et gérer
+   ses favoris (repris ensuite dans le panneau flottant de l'éditeur).
+   ========================================================================== */
+async function viewComposants(){
+  const q = state.compQuery || '';
+  const favoris = getFavoris().map(id => findDef(id)).filter(Boolean);
+  return `<div class="app-shell">${renderSidebar('composants')}
+    <div class="main">
+      <div class="main-header"><div><h2>Composants</h2><p style="margin:0;font-size:.85em">Recherche indépendante de tout projet — parcourez toute la bibliothèque et mettez des composants en favoris.</p></div></div>
+      <div class="card">
+        <div class="field"><input id="comp-search" placeholder="Rechercher (ex: BC547, transfo 230/12, capteur infrarouge…)" value="${esc(q)}"></div>
+        <div id="comp-search-results">${q.trim() ? renderCompResultRows(searchCatalog(q)) : '<p style="font-size:.85em">Tapez un nom, une référence, un alias ou une famille.</p>'}</div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h3>Mes favoris</h3>
+        <div id="comp-fav-list">${favoris.length ? renderCompResultRows(favoris) : '<div class="empty">Aucun favori pour l\'instant — cherchez un composant et cliquez sur ☆.</div>'}</div>
+      </div>
+    </div></div>`;
+}
+function renderCompResultRows(list){
+  return list.map(c => `
+    <div class="catalog-item comp-result-row">
+      <div><strong>${esc(c.nom)}</strong> <span style="opacity:.6;font-size:.85em">— ${esc(c.famille||'')}${c.groupe && ESPACES[c.groupe] ? (' · '+ESPACES[c.groupe].nom) : ''}</span>
+        <p style="margin:.2em 0 0;font-size:.78em">${esc(c.def||'')}</p></div>
+      <div style="display:flex;gap:10px;align-items:center;flex-shrink:0">
+        <button class="fav-btn static ${isFavorite(c.id)?'active':''}" data-fav="${c.id}" title="Favori">${isFavorite(c.id)?'★':'☆'}</button>
+        <a class="wiki-link" href="${wikiUrl(c.wiki)}" target="_blank" rel="noopener">En savoir plus →</a>
+      </div>
+    </div>`).join('') || '<div class="empty">Aucun résultat.</div>';
+}
+function afterComposantsView(){
+  document.getElementById('comp-search')?.addEventListener('input', (e) => {
+    state.compQuery = e.target.value;
+    const results = e.target.value.trim() ? searchCatalog(e.target.value) : null;
+    document.getElementById('comp-search-results').innerHTML = results
+      ? renderCompResultRows(results)
+      : '<p style="font-size:.85em">Tapez un nom, une référence, un alias ou une famille.</p>';
+  });
+  document.querySelector('.main')?.addEventListener('click', (e) => {
+    const favBtn = e.target.closest('[data-fav]');
+    if (!favBtn) return;
+    const nowFav = toggleFavorite(favBtn.dataset.fav);
+    favBtn.textContent = nowFav ? '★' : '☆';
+    favBtn.classList.toggle('active', nowFav);
+    const favList = document.getElementById('comp-fav-list');
+    if (favList) favList.innerHTML = renderCompResultRows(getFavoris().map(id => findDef(id)).filter(Boolean));
+  });
+}
+
 function projectCard(p, showOwner){
   const owner = db.userById(p.ownerId);
   return `<div class="project-card">
     <div class="thumb" data-open="${p.id}" style="cursor:pointer"></div>
     <div data-open="${p.id}" style="cursor:pointer"><strong style="font-size:.94em">${esc(p.titre)}</strong>
       <div class="meta"><span>${ESPACES[p.espace]?.nom || p.espace}</span><span>${p.updatedAt}</span></div>
-      ${showOwner ? `<div class="meta" style="margin-top:4px">Propriétaire : ${esc(owner?.prenom)} ${esc(owner?.nom)}</div>` : ''}
+      ${showOwner ? `<div class="meta" style="margin-top:4px">Propriétaire : ${esc(owner?.prenom)} ${esc(owner?.nom)}${p.monAcces ? ` · ${p.monAcces==='edition'?'voir + modifier':'voir seulement'}` : ''}</div>` : ''}
     </div>
-    <div style="display:flex;justify-content:space-between;align-items:center">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:4px;flex-wrap:wrap">
+      ${(() => { const s = PROJECT_STATUTS[p.statut||'brouillon']||PROJECT_STATUTS.brouillon; return `<span class="pill ${s.cls}">${esc(s.label)}</span>`; })()}
       ${p.erreurs > 0 ? `<span class="pill" style="color:var(--danger);border-color:var(--danger-dim)">⚠ ${p.erreurs} erreur(s)</span>` : `<span class="pill"><span class="pill-dot"></span> OK</span>`}
       ${showOwner ? '' : `<div style="display:flex;gap:4px">
         <button class="btn btn-ghost btn-sm" data-dup="${p.id}" title="Dupliquer">⧉</button>
@@ -546,22 +711,45 @@ async function viewCompte(){
       ${u.accountType !== 'solo' ? `
       <div class="card" style="margin-top:16px">
         <h3>Membres de votre ${u.accountType === 'groupe' ? 'groupe' : 'communauté'}</h3>
-        <p style="font-size:.85em">Vous êtes responsable — ajoutez ici les personnes qui travailleront avec vous.</p>
-        <div id="members-list">${(members||[]).map(m => `<div class="member-row"><span>${esc(m.nom)}</span><span style="color:var(--text-faint)">${esc(m.email)}</span></div>`).join('') || '<div class="empty">Aucun membre ajouté.</div>'}</div>
-        <form class="composer" id="form-add-member" style="margin-top:12px">
-          <input name="nom" placeholder="Nom du membre" required style="flex:1">
-          <input name="email" type="email" placeholder="E-mail du membre" required style="flex:1">
-          <button class="btn btn-primary btn-sm">Ajouter</button>
-        </form>
+        <p style="font-size:.85em">Vous êtes responsable de ce groupe de travail — recherchez ici des personnes déjà inscrites pour les y ajouter.</p>
+        <div id="members-list">${renderMemberRows(members)}</div>
+        <div class="field" style="margin-top:12px">
+          <label>Ajouter un membre (nom, prénom ou e-mail)</label>
+          <input type="text" id="member-search" placeholder="Rechercher un utilisateur inscrit…" autocomplete="off">
+          <div id="member-search-results"></div>
+        </div>
       </div>` : ''}
     </div></div>`;
 }
+function renderMemberRows(members){
+  return (members||[]).map(m => `<div class="member-row" data-member-row="${m.id}"><span>${esc(m.nom)} <span style="color:var(--text-faint)">${esc(m.email)}</span></span><button class="btn btn-ghost btn-sm" data-remove-member="${m.id}" title="Retirer">✕</button></div>`).join('') || '<div class="empty">Aucun membre ajouté.</div>';
+}
 function afterCompteView(){
-  document.getElementById('form-add-member')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const f = new FormData(e.target);
-    await db.addGroupMember({ userId:auth.currentUser.id, nom:f.get('nom'), email:f.get('email') });
-    toast('Membre ajouté.'); render();
+  document.getElementById('members-list')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-remove-member]');
+    if (!btn) return;
+    await db.removeGroupMember({ userId:auth.currentUser.id, memberId:btn.dataset.removeMember });
+    toast('Membre retiré.'); render();
+  });
+  const memberSearch = document.getElementById('member-search');
+  const memberResults = document.getElementById('member-search-results');
+  let memberSearchTimer = null;
+  memberSearch?.addEventListener('input', () => {
+    clearTimeout(memberSearchTimer);
+    const q = memberSearch.value;
+    memberSearchTimer = setTimeout(async () => {
+      if (q.trim().length < 2){ memberResults.innerHTML = ''; return; }
+      const { data: users } = await db.searchUsers(q);
+      const options = users.filter(u => u.id !== auth.currentUser.id);
+      memberResults.innerHTML = options.length ? options.map(u => `
+        <div class="member-row"><span>${esc(u.prenom)} ${esc(u.nom)} <span style="color:var(--text-faint);font-size:.85em">${esc(u.email)}</span></span>
+          <button class="btn btn-sm" data-add-member="${u.id}">Ajouter</button></div>`).join('') : '<div class="empty" style="padding:8px 0">Aucun utilisateur trouvé.</div>';
+      memberResults.querySelectorAll('[data-add-member]').forEach(b => b.addEventListener('click', async () => {
+        const { error } = await db.addGroupMember({ userId:auth.currentUser.id, memberUserId:b.dataset.addMember });
+        if (error){ toast(error.message); return; }
+        toast('Membre ajouté.'); render();
+      }));
+    }, 300);
   });
   document.getElementById('form-storage-request')?.addEventListener('submit', async (e) => {
     e.preventDefault();

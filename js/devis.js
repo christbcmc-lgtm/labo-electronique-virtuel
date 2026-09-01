@@ -68,10 +68,16 @@ function renderDevisRows(devis){
   </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text-faint)">Aucune ligne — ajoutez-en une, ou importez les composants du schéma.</td></tr>';
 }
 
+// Une ligne totalement vide (aucune désignation/référence/quantité/prix) est exclue du PDF ;
+// une ligne partiellement remplie est conservée telle quelle (§5 des notes en cours).
+function isDevisLigneVide(l){
+  return !(l.nom||'').trim() && !(l.ref||'').trim() && !(Number(l.qte)||0) && !(Number(l.prix)||0);
+}
 function renderDevisTableHTML(devis){
   const t = computeDevisTotals(devis);
+  const lignes = devis.lignes.filter(l => !isDevisLigneVide(l));
   return `<table><tr><th>Désignation</th><th>Réf.</th><th>Qté</th><th>Unité</th><th>Prix unit.</th><th>Total</th></tr>
-    ${devis.lignes.map(l=>`<tr><td>${esc(l.nom)}</td><td>${esc(l.ref||'')}</td><td>${l.qte}</td><td>${esc(l.unite||'')}</td><td>${fmtMoney(l.prix)}</td><td>${fmtMoney((Number(l.qte)||0)*(Number(l.prix)||0))}</td></tr>`).join('')}
+    ${lignes.map(l=>`<tr><td>${esc(l.nom)}</td><td>${esc(l.ref||'')}</td><td>${l.qte}</td><td>${esc(l.unite||'')}</td><td>${fmtMoney(l.prix)}</td><td>${fmtMoney((Number(l.qte)||0)*(Number(l.prix)||0))}</td></tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#888">Aucune ligne renseignée.</td></tr>'}
   </table>
   <p style="margin-top:8px">Sous-total : ${fmtMoney(t.subtotal)} · Remise : ${fmtMoney(t.remise)} · ${devis.taxeActive?`Taxe (${devis.tauxTaxe}%) : ${fmtMoney(t.taxe)} · `:''}<strong>Total général : ${fmtMoney(t.total)}</strong></p>`;
 }

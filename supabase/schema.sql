@@ -88,6 +88,7 @@ create table if not exists public.projects (
   schema        jsonb not null default '{"items":[],"wires":[]}'::jsonb,
   devis         jsonb not null default '{"lignes":[],"remisePct":0,"tauxTaxe":20,"taxeActive":false}'::jsonb, -- §22/§23
   erreurs       integer not null default 0,
+  statut        text not null default 'brouillon' check (statut in ('brouillon','en_cours','verification','finalise','exporte')), -- §6 des notes en cours
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
@@ -95,6 +96,7 @@ create table if not exists public.projects (
 create table if not exists public.project_collaborators (
   project_id  uuid not null references public.projects(id) on delete cascade,
   user_id     uuid not null references public.profiles(id) on delete cascade,
+  permission  text not null default 'edition' check (permission in ('lecture','edition')), -- §3 des notes en cours
   added_at    timestamptz not null default now(),
   primary key (project_id, user_id)
 );
@@ -163,10 +165,14 @@ create table if not exists public.suggestions (
 
 -- ----------------------------------------------------------------------------
 -- 7. MEMBRES DE GROUPE (comptes de type groupe/communaute)
+-- Depuis §3 des notes en cours : les membres sont recherchés parmi les utilisateurs
+-- déjà inscrits (member_id), pas saisis librement — nom/email restent recopiés pour
+-- l'affichage sans requête supplémentaire.
 -- ----------------------------------------------------------------------------
 create table if not exists public.group_members (
   id          uuid primary key default gen_random_uuid(),
   owner_id    uuid not null references public.profiles(id) on delete cascade,
+  member_id   uuid references public.profiles(id) on delete cascade,
   nom         text not null,
   email       text not null,
   created_at  timestamptz not null default now()
@@ -185,6 +191,23 @@ create table if not exists public.storage_requests (
 );
 
 -- ----------------------------------------------------------------------------
+-- 9. NOTIFICATIONS (§4 des notes en cours)
+-- "importantes" déclenchent en plus une apparition temporaire côté client (voir
+-- app.js) — cette table ne gère que le stockage/historique/badge de lecture.
+-- ----------------------------------------------------------------------------
+create table if not exists public.notifications (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+  type        text not null default 'normal' check (type in ('normal','important')),
+  titre       text not null,
+  texte       text not null,
+  lien        text,
+  lu          boolean not null default false,
+  notified    boolean not null default false,
+  created_at  timestamptz not null default now()
+);
+
+-- ----------------------------------------------------------------------------
 -- COMPATIBILITÉ : si ce script a déjà été exécuté avec une version antérieure
 -- (sans suspended/storage_quota/devis, ou avec seulement 3 domaines), ces
 -- instructions idempotentes mettent la base à niveau sans perte de données.
@@ -193,6 +216,7 @@ create table if not exists public.storage_requests (
 alter table public.profiles add column if not exists suspended boolean not null default false;
 alter table public.profiles add column if not exists storage_quota bigint not null default 2097152;
 alter table public.projects add column if not exists devis jsonb not null default '{"lignes":[],"remisePct":0,"tauxTaxe":20,"taxeActive":false}'::jsonb;
+alter table public.projects add column if not exists statut text not null default 'brouillon';
 do $$
 begin
   if exists (select 1 from pg_constraint where conname = 'projects_espace_check') then
@@ -200,6 +224,25 @@ begin
   end if;
   alter table public.projects add constraint projects_espace_check
     check (espace in ('electronique','electrotechnique','batiment','energies-renouvelables','automatisme'));
+  if not exists (select 1 from pg_constraint where conname = 'projects_statut_check') then
+    alter table public.projects add constraint projects_statut_check
+      check (statut in ('brouillon','en_cours','verification','finalise','exporte'));
+  end if;
+end $$;
+alter table public.project_collaborators add column if not exists permission text not null default 'edition';
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'project_collaborators_permission_check') then
+    alter table public.project_collaborators add constraint project_collaborators_permission_check
+      check (permission in ('lecture','edition'));
+  end if;
+end $$;
+alter table public.group_members add column if not exists member_id uuid references public.profiles(id) on delete cascade;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'group_members_owner_member_unique') then
+    alter table public.group_members add constraint group_members_owner_member_unique unique (owner_id, member_id);
+  end if;
 end $$;
 
 -- ============================================================================
@@ -218,6 +261,7 @@ alter table public.private_messages      enable row level security;
 alter table public.suggestions           enable row level security;
 alter table public.group_members         enable row level security;
 alter table public.storage_requests      enable row level security;
+alter table public.notifications         enable row level security;
 
 -- PROFILES : lecture ouverte à tout utilisateur connecté (annuaire nécessaire
 -- pour la messagerie, les noms d'auteurs de commentaires/suggestions, etc. —
@@ -267,6 +311,14 @@ create policy "projects_insert_own" on public.projects
 create policy "projects_update_owner" on public.projects
   for update using (owner_id = auth.uid());
 
+-- §3 des notes en cours : un collaborateur avec la permission "edition" peut aussi enregistrer
+-- le schéma/statut — sans cette policy, "voir + modifier" resterait purement décoratif côté UI
+-- (RLS aurait silencieusement rejeté sa sauvegarde, seul le propriétaire pouvait écrire jusqu'ici).
+create policy "projects_update_editor_collab" on public.projects
+  for update using (
+    exists (select 1 from public.project_collaborators pc where pc.project_id = id and pc.user_id = auth.uid() and pc.permission = 'edition')
+  );
+
 create policy "projects_delete_owner_or_admin" on public.projects
   for delete using (owner_id = auth.uid() or public.is_admin());
 
@@ -278,6 +330,8 @@ create policy "collab_select" on public.project_collaborators
   );
 create policy "collab_insert_by_owner" on public.project_collaborators
   for insert with check (exists (select 1 from public.projects p where p.id = project_id and p.owner_id = auth.uid()));
+create policy "collab_update_by_owner" on public.project_collaborators
+  for update using (exists (select 1 from public.projects p where p.id = project_id and p.owner_id = auth.uid()));
 create policy "collab_delete_by_owner" on public.project_collaborators
   for delete using (exists (select 1 from public.projects p where p.id = project_id and p.owner_id = auth.uid()));
 
@@ -322,9 +376,10 @@ create policy "suggestions_insert_own" on public.suggestions
 create policy "suggestions_update_admin_only" on public.suggestions
   for update using (public.is_admin());
 
--- GROUP_MEMBERS : visibles/gérés uniquement par le responsable du groupe (owner_id).
-create policy "group_members_select_owner" on public.group_members
-  for select using (owner_id = auth.uid());
+-- GROUP_MEMBERS : gérés par le responsable du groupe (owner_id) ; visibles aussi par la
+-- personne ajoutée (member_id), pour qu'elle sache de quel groupe elle fait partie.
+create policy "group_members_select_owner_or_member" on public.group_members
+  for select using (owner_id = auth.uid() or member_id = auth.uid());
 create policy "group_members_insert_owner" on public.group_members
   for insert with check (owner_id = auth.uid());
 create policy "group_members_delete_owner" on public.group_members
@@ -340,6 +395,18 @@ create policy "storage_requests_insert_own" on public.storage_requests
   for insert with check (user_id = auth.uid());
 create policy "storage_requests_update_admin_only" on public.storage_requests
   for update using (public.is_admin());
+
+-- NOTIFICATIONS (§4 des notes en cours) : chacun ne voit/marque comme lues que les siennes.
+-- L'insertion reste ouverte à tout utilisateur authentifié (même principe de confiance que
+-- common_messages/private_messages dans ce schéma) car c'est toujours un TIERS qui notifie un
+-- utilisateur (le propriétaire d'un projet en le partageant, l'admin en répondant à une demande...),
+-- jamais le destinataire lui-même — il n'y a pas de fonction serveur dédiée dans ce dépôt.
+create policy "notifications_select_own_or_admin" on public.notifications
+  for select using (user_id = auth.uid() or public.is_admin());
+create policy "notifications_insert_authenticated" on public.notifications
+  for insert with check (auth.role() = 'authenticated');
+create policy "notifications_update_own" on public.notifications
+  for update using (user_id = auth.uid());
 
 -- ============================================================================
 -- FIN DU SCHÉMA.

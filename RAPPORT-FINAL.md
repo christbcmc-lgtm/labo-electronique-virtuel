@@ -504,3 +504,208 @@ Rien de caché :
 - **Symboles génériques par gabarit** (~130 des 164 composants, voir section D) : schématiquement
   corrects et clairement étiquetés, mais pas des symboles IEC 60617 dessinés individuellement à la
   main — un choix de compromis assumé (section D), pas un oubli.
+
+---
+
+# ADDENDUM — SESSION SUIVANTE (mise en œuvre de `NOTES_EXIGENCES_EN_COURS.md`, §1 à §7)
+
+Cette session a implémenté les sept points accumulés dans `NOTES_EXIGENCES_EN_COURS.md` (matière
+première rassemblée avant cette intervention, à la demande explicite : « fais tout, code tout »).
+Comme pour les sections précédentes de ce rapport, rien n'est présenté comme fonctionnel s'il ne
+l'a pas été réellement — voir « Tests » ci-dessous pour ce qui a été vérifié par exécution.
+
+## N1. Composants — référence de remplacement, favoris/récents, page de recherche
+
+- **Référence de remplacement avec avertissement** (`js/editor.js`, `customRefMismatch()`,
+  `collectReplacementWarnings()`) : chaque composant posé peut recevoir une étiquette commerciale
+  libre (`item.customRef`, panneau Propriétés). Si elle ne correspond à aucun nom/alias/identifiant
+  du composant réellement modélisé, un avertissement apparaît sur le canevas (libellé en rouge +
+  ⚠), dans le panneau Propriétés, dans l'onglet Diagnostic et dans la nomenclature du PDF. Le
+  brochage/comportement simulés restent toujours ceux du composant réellement posé, jamais ceux
+  suggérés par l'étiquette — exactement le scénario « CD4017 renommé » décrit dans les notes.
+- **Broches numérotées** : un petit numéro (1, 2, 3…) est maintenant affiché à côté de chaque borne
+  sur le canevas, en plus de la position déjà correcte.
+- **Favoris et récents** (`favStorageKey()`, `getFavoris()`, `getRecents()`, `toggleFavorite()`,
+  `recordRecentComponent()`) : persistés par utilisateur dans `localStorage`. Panneau flottant
+  (`renderFavPanel()`) déplaçable (glisser l'en-tête), réductible (▾) et escamotable (✕ + bouton de
+  réouverture ★), superposé au canevas. Étoile de favori ajoutée à chaque ligne du catalogue et des
+  résultats de recherche.
+- **Page de recherche dédiée** (`#/composants`, `viewComposants()` dans `js/app.js`) : recherche
+  indépendante de tout projet ouvert dans toute la bibliothèque, plus liste de favoris consultable
+  et modifiable directement depuis cette page.
+- **Non fait délibérément** : la déduplication complète des symboles SVG en une architecture à
+  « 4 couches » strictes (référence / symbole / modèle fonctionnel / paramètres) proposée au §7 des
+  notes n'a **pas** été réécrite en profondeur sur les 164 composants existants. Le catalogue
+  sépare déjà symbole (`SYM[id]`, gabarits `TPL`/`icTemplate`) et données (fiche `defRow`), et
+  plusieurs familles partagent déjà des gabarits de rendu identiques (§16, décision de la session
+  précédente) — réécrire cela en un identifiant de symbole partagé explicite aurait représenté un
+  risque de régression important (164 fiches déjà vérifiées par `tests/verify_catalog.js`) pour un
+  gain principalement cosmétique. La partie **utile** de cette demande — qu'un composant garde son
+  propre modèle/comportement même quand son étiquette ou son symbole est partagé — est couverte
+  concrètement par le mécanisme de référence de remplacement ci-dessus, qui est le cas d'usage
+  explicitement donné en exemple dans les notes.
+
+## N2. Maquette / schématique — fils
+
+- **Couleur de fil** : un fil sélectionné affiche une barre d'outils (`renderWireToolbar()`) avec 6
+  couleurs ; la couleur est stockée sur `wire.color` et appliquée au rendu (canevas et PDF).
+- **Premier plan** : bouton « ⤒ Premier plan » qui déplace le fil sélectionné en fin du tableau
+  `schema.wires` — les fils étant dessinés dans l'ordre du tableau, cela le fait passer visuellement
+  au-dessus des autres à une intersection.
+- **Poursuivre une connexion depuis une borne déjà utilisée** : déjà possible dans le code hérité de
+  la session précédente (aucune restriction sur le nombre de fils par borne) — vérifié et confirmé
+  plutôt que réécrit.
+- **Panneau récents/favoris déplaçable/réductible/escamotable** : voir N1.
+
+## N3. Travail individuel et partagé
+
+- **Permissions de partage réelles** (`voir seulement` / `voir + modifier`) : `project.collaborateurs`
+  est passé d'un simple tableau d'identifiants à un tableau `{ userId, permission }`. Modale de
+  partage (`openShareModal()`) remplaçant l'ancien `prompt()` : recherche d'utilisateurs déjà
+  inscrits par nom/prénom/e-mail (`db.searchUsers()`), attribution/​modification/​retrait de
+  permission par personne.
+- **Application réelle de la restriction "voir seulement"**, pas seulement décorative : un garde-fou
+  central (`guardReadOnly()`) bloque toute action de modification (placer, déplacer, tracer un fil,
+  changer une valeur, pivoter, dupliquer, supprimer, changer le statut) dans l'éditeur ; les boutons
+  Enregistrer/Partager/Ranger le schéma sont masqués ; le panneau Propriétés passe en lecture seule.
+  **Correction d'un défaut préexistant important** : en mode Supabase réel, la policy RLS
+  `projects_update_owner` héritée n'autorisait QUE le propriétaire à enregistrer un projet — un
+  collaborateur, même en « voir + modifier », ne pouvait donc jamais réellement sauvegarder ses
+  modifications côté serveur (silencieusement rejeté par RLS). Une policy `projects_update_editor_collab`
+  a été ajoutée pour que « voir + modifier » soit réellement fonctionnel, pas seulement une case
+  cochée côté interface.
+- **Groupes avec de vrais membres** : `addGroupMember()` recherche désormais parmi les utilisateurs
+  déjà inscrits (`db.searchUsers()`) au lieu d'accepter un nom/e-mail saisis librement ; le lien vers
+  le compte réel (`memberUserId` / colonne `member_id`) est conservé en plus du nom/e-mail affichés.
+- **Consultation en temps réel / voir les composants bougés par un collaborateur** :
+  `openPresenceChannel()` dans `js/editor.js`. En mode Supabase configuré, utilise un canal Realtime
+  (`broadcast`) — fonctionne entre navigateurs/appareils différents. **En mode démo locale (sans
+  Supabase), utilise `BroadcastChannel`, qui ne fonctionne QU'ENTRE ONGLETS DU MÊME NAVIGATEUR** —
+  il n'existe pas de serveur en mode démo pour relayer un message entre deux ordinateurs différents ;
+  ceci est indiqué explicitement dans le badge de présence affiché (« mode démo »), pour ne jamais
+  laisser croire à un temps réel multi-appareils qui n'existe pas dans ce mode. Le déplacement en
+  cours d'un composant par un pair apparaît comme un contour pointillé + son prénom sur le canevas ;
+  un accusé « schéma enregistré » déclenche un rechargement du schéma local si on n'est pas
+  soi-même en train de glisser un composant.
+- **Non fait / limite assumée** : ce canal de présence ne remplace pas un vrai moteur de
+  synchronisation collaborative (type CRDT/OT) — deux personnes modifiant le même composant au même
+  instant peuvent encore s'écraser mutuellement au moment de l'enregistrement (dernier enregistré
+  gagne). Une vraie résolution de conflit collaborative serait un chantier à part entière, hors
+  périmètre raisonnable de cette session.
+
+## N4. Notifications
+
+- **Stockage** (`DB.notifications` en mode démo, table `public.notifications` en mode Supabase) :
+  `{ userId, type:'important'|'normal', titre, texte, lien, lu, notified, createdAt }`.
+- **Affichage** (`js/app.js`) : cloche dans la barre supérieure avec badge (nombre de notifications
+  non lues), menu déroulant listant l'historique complet, bouton « Tout marquer comme lu ». Une
+  notification « importante » déclenche EN PLUS une apparition temporaire en haut à droite de
+  l'écran (disparition automatique après 7 s, façon notification mobile), avec un signal sonore
+  bref (Web Audio, un seul bip) désactivable via une case à cocher dans le menu de notifications
+  (préférence retenue en `localStorage`, aucune donnée envoyée au serveur).
+- **Déclencheurs implémentés** : partage d'un projet ou changement de permission (importante),
+  décision sur une demande de stockage (importante), réponse de l'administrateur à une suggestion
+  (ordinaire), ajout à un groupe de travail (ordinaire).
+- **Honnêteté sur le "temps réel"** : la détection de nouvelles notifications utilise un sondage
+  périodique (`setInterval`, toutes les 8 s) plutôt qu'un vrai canal de notification poussée par le
+  serveur — un choix volontairement simple qui fonctionne de façon identique en mode démo et en
+  mode Supabase réel (relit la même source de données), mais qui n'est PAS du Supabase Realtime.
+  Une vraie amélioration future serait de brancher les notifications sur `postgres_changes` de
+  Supabase Realtime pour un affichage instantané plutôt qu'à ±8 s près.
+
+## N5. PDF — devis et confirmation
+
+- **Confirmation finale avant génération** : le bouton « Exporter PDF » ouvre désormais une boîte de
+  confirmation (`confirm()`) avant de générer le rapport.
+- **Lignes de devis vides exclues du PDF, lignes partielles conservées** (`isDevisLigneVide()`,
+  `js/devis.js`) : une ligne sans désignation, référence, quantité ni prix est retirée du tableau
+  affiché dans le PDF ; toute ligne où au moins un de ces champs est renseigné reste affichée telle
+  quelle. L'éditeur de devis lui-même (`#/devis/:id`) n'est pas affecté — il continue d'afficher
+  toutes les lignes, y compris vides, pendant la saisie.
+- La structure en 10 sections du PDF (page de garde → schéma → nomenclature → mesures → calculs →
+  diagnostic → IA → devis → dimensionnement → conclusion) était déjà en place depuis la session
+  précédente et n'a pas été modifiée dans sa structure, seulement dans le contenu du devis.
+
+## N6. Statut de projet
+
+- Champ `project.statut` ajouté (`brouillon` / `en_cours` / `verification` / `finalise` / `exporte`),
+  valeur par défaut `brouillon` à la création. Sélecteur dans la barre d'outils de l'éditeur
+  (masqué, remplacé par une puce non modifiable en lecture seule). Transitions automatiques :
+  passe à `en_cours` à la première modification du schéma après un état `brouillon`/`exporte` ;
+  passe à `exporte` après une génération de PDF confirmée (uniquement si l'utilisateur a le droit de
+  modifier le projet). `verification`/`finalise` restent des choix manuels de l'utilisateur — le
+  logiciel ne prétend jamais deviner qu'une vérification a réellement eu lieu. Affiché aussi sur les
+  cartes de projet du tableau de bord.
+
+## Décisions d'architecture (addendum)
+
+- **Pas de nouveau fichier JS** : les fonctions de notifications ont été ajoutées à `js/app.js`
+  (propriétaire déjà de la barre supérieure) plutôt que dans un nouveau fichier, pour ne pas avoir à
+  modifier la liste des scripts chargés à trois endroits différents (page HTML, harnais de test) et
+  risquer un oubli silencieux de l'un des trois.
+- **Présence en `BroadcastChannel`/Realtime plutôt qu'un service tiers** : cohérent avec le principe
+  déjà établi dans ce projet (§38 du cahier) de rester une plateforme unique sans multiplier les
+  services externes ; le mode Supabase réutilise l'infrastructure déjà présente (le même projet
+  Supabase que l'authentification/les données), sans dépendance supplémentaire.
+- **RLS étendue plutôt que fonctions Edge** : les nouvelles permissions de partage et notifications
+  restent gérées par des policies PostgreSQL (RLS), cohérent avec l'architecture de sécurité déjà en
+  place, sans introduire de nouvelle fonction serveur.
+
+## Base de données — ce qui a changé (`supabase/schema.sql`)
+
+Toutes les modifications sont apportées via des instructions idempotentes (`add column if not
+exists`, vérification d'existence de contrainte avant création) — réexécutable sans danger sur un
+projet déjà initialisé, sans perte de données, comme pour le reste de ce fichier.
+
+- `projects.statut` (texte, défaut `'brouillon'`, contrainte de valeurs).
+- `project_collaborators.permission` (texte, défaut `'edition'`, contrainte `'lecture'|'edition'`).
+- `group_members.member_id` (uuid, référence `profiles`) — vient compléter les colonnes `nom`/`email`
+  déjà existantes, qui restent pour l'affichage sans requête supplémentaire.
+- Nouvelle table `public.notifications`.
+- Nouvelles policies : `projects_update_editor_collab` (voir N3), `collab_update_by_owner`,
+  `group_members_select_owner_or_member`, `notifications_select_own_or_admin`,
+  `notifications_insert_authenticated`, `notifications_update_own`.
+- **Limite de sécurité assumée et documentée en commentaire dans le fichier SQL** :
+  `notifications_insert_authenticated` autorise tout utilisateur authentifié à créer une notification
+  pour n'importe quel autre utilisateur (nécessaire puisque c'est toujours un tiers — propriétaire de
+  projet, administrateur — qui notifie quelqu'un d'autre, jamais le destinataire lui-même, et qu'il
+  n'existe pas de fonction serveur `service_role` dans ce dépôt). C'est exactement le même niveau de
+  confiance que celui déjà accepté pour `private_messages`/`common_messages` dans ce schéma : un
+  utilisateur authentifié malveillant pourrait envoyer de fausses notifications à un autre — un
+  risque à traiter via une fonction Postgres dédiée si ce projet évolue vers une mise en production
+  réelle avec des utilisateurs non approuvés.
+
+## Tests
+
+`npm test` exécute maintenant **111 vérifications, 0 échec, 0 erreur JavaScript non interceptée**
+(77 précédemment + 34 ajoutées cette session), toujours contre le code réellement livré (aucune
+logique dupliquée dans les tests). Nouveaux parcours vérifiés par exécution réelle (pas seulement
+relus) :
+- statut initial `brouillon` puis transition automatique vers `en_cours` après édition ;
+- détection d'une référence de remplacement incohérente puis cohérente ;
+- ajout/retrait d'un favori, ordre des composants récents (plus récent en premier) ;
+- recherche et mise en favori depuis la page `#/composants` dédiée ;
+- couleur personnalisée d'un fil appliquée au rendu SVG, réordonnancement "premier plan" ;
+- ligne de devis totalement vide exclue du rendu PDF, ligne partielle conservée ;
+- **partage complet** : création d'un second compte, partage en lecture seule avec notification
+  générée, vérification qu'un collaborateur "lecture" ne peut ni placer ni dupliquer de composant et
+  ne voit pas les boutons Enregistrer/Partager, changement vers "voir + modifier" avec seconde
+  notification, vérification que la duplication fonctionne alors réellement ;
+- recherche d'utilisateurs par nom pour l'ajout à un groupe (pas de saisie libre), notification de
+  l'ajout.
+
+**Non testé automatiquement** (comme pour le reste du mode Supabase déjà signalé section K/M) :
+mode Supabase réel pour l'ensemble des nouvelles fonctionnalités (permissions, notifications,
+présence Realtime) — aucun projet Supabase n'a été fourni pendant le développement. Le canal de
+présence n'a par ailleurs pas pu être vérifié dans un vrai navigateur (voir section M) : sa logique
+de diffusion/réception est correcte par lecture de code et par le fait que `BroadcastChannel` est
+absent de l'environnement jsdom utilisé pour les tests (le code s'y désactive proprement, sans
+erreur), mais son rendu visuel réel (contour du pair, position du panneau flottant glissé à la
+souris) n'a pas pu être observé à l'écran dans cet environnement de développement.
+
+## Configuration nécessaire pour l'utilisateur (mise à jour)
+
+Aucune nouvelle variable de configuration : les mêmes valeurs qu'en section L suffisent. Si vous
+avez déjà un projet Supabase configuré depuis la session précédente, ré-exécutez l'intégralité de
+`supabase/schema.sql` dans l'éditeur SQL de votre projet (le fichier reste réexécutable sans danger)
+pour obtenir les colonnes/table/policies ajoutées ci-dessus.
