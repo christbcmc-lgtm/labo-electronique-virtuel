@@ -67,16 +67,23 @@ function computePv(){
   const puissanceCrete = rendement>0 && irrad>0 ? besoin / (irrad * rendement) : 0;
   const nbPanneaux = ppanneau>0 ? Math.ceil(puissanceCrete / ppanneau) : 0;
   const capaciteAh = (vbat>0 && dod>0) ? (besoin * autonomie) / (vbat * dod) : 0;
-  const html = `
+  const hypotheses = "Estimation de dimensionnement pédagogique (méthode des heures de soleil équivalentes). Les pertes réelles (câblage, température, salissure, onduleur) sont globalisées dans le rendement système — affinez-le selon votre installation réelle.";
+  // Formules avec substitution des valeurs saisies (§12 des mises à jour reçues : le PDF doit
+  // contenir "remplacement des valeurs dans les formules", pas seulement le résultat final) —
+  // construites une seule fois et réutilisées à l'identique à l'écran et dans le PDF, pour que le
+  // PDF ne soit jamais moins détaillé que ce qui est déjà affiché.
+  const formulesHtml = `
     <div class="dim-formula">Pc = Besoin ÷ (Irradiation × Rendement) = ${besoin} ÷ (${irrad} × ${(rendement*100).toFixed(0)}%) = <span class="dim-result">${puissanceCrete.toFixed(0)} Wc</span></div>
     <div class="dim-formula">Nb panneaux = ⌈Pc ÷ Ppanneau⌉ = ⌈${puissanceCrete.toFixed(0)} ÷ ${ppanneau}⌉ = <span class="dim-result">${nbPanneaux} panneau(x)</span></div>
-    <div class="dim-formula">Capacité batterie = (Besoin × Autonomie) ÷ (Vbat × DoD) = (${besoin} × ${autonomie}) ÷ (${vbat} × ${(dod*100).toFixed(0)}%) = <span class="dim-result">${capaciteAh.toFixed(0)} Ah</span></div>
-    <p style="font-size:.82em">Estimation de dimensionnement pédagogique (méthode des heures de soleil équivalentes). Les pertes réelles (câblage, température, salissure, onduleur) sont globalisées dans le rendement système — affinez-le selon votre installation réelle.</p>
+    <div class="dim-formula">Capacité batterie = (Besoin × Autonomie) ÷ (Vbat × DoD) = (${besoin} × ${autonomie}) ÷ (${vbat} × ${(dod*100).toFixed(0)}%) = <span class="dim-result">${capaciteAh.toFixed(0)} Ah</span></div>`;
+  document.getElementById('pv-result').innerHTML = `${formulesHtml}
+    <p style="font-size:.82em">${hypotheses}</p>
     <button class="btn btn-ghost btn-sm" id="pv-use-in-pdf">Inclure ce résultat dans le rapport PDF</button>
     <button class="btn btn-ghost btn-sm" id="pv-export-pdf">Exporter ce dimensionnement (PDF)</button>`;
-  document.getElementById('pv-result').innerHTML = html;
-  window.__pvLastHTML = `<p><strong>Photovoltaïque</strong> — Besoin : ${besoin} Wh/j, Irradiation : ${irrad} h/j, Rendement : ${(rendement*100).toFixed(0)}%.</p>
-    <p>Puissance crête nécessaire : ${puissanceCrete.toFixed(0)} Wc → ${nbPanneaux} panneau(x) de ${ppanneau} Wc. Capacité batterie recommandée : ${capaciteAh.toFixed(0)} Ah sous ${vbat} V (autonomie ${autonomie} j, DoD ${(dod*100).toFixed(0)}%).</p>`;
+  window.__pvLastHTML = `<p><strong>Photovoltaïque</strong> — Données d'entrée : Besoin ${besoin} Wh/j, Irradiation ${irrad} h/j, Rendement ${(rendement*100).toFixed(0)}%, Puissance panneau ${ppanneau} Wc, Batterie ${vbat} V, Autonomie ${autonomie} j, DoD ${(dod*100).toFixed(0)}%.</p>
+    ${formulesHtml}
+    <p>Conclusion : ${nbPanneaux} panneau(x) de ${ppanneau} Wc et une batterie de ${capaciteAh.toFixed(0)} Ah sous ${vbat} V couvrent le besoin saisi.</p>
+    <p style="font-size:.85em;font-style:italic">Hypothèses/remarques : ${hypotheses}</p>`;
 }
 
 /* ---- Électrotechnique / Bâtiment ---- */
@@ -107,16 +114,19 @@ function computeEt(){
     : (2 * rho * l * courant * cosphi) / deltaU;
   const sectionNorm = sectionAuDessus(section);
   const calibre = calibreAuDessus(courant);
-  const html = `
+  const hypotheses = "ρ (résistivité du cuivre en service) prise à 0,0225 Ω·mm²/m. Vérifiez toujours le résultat avec la norme applicable (NF C 15-100 ou équivalent local) avant réalisation : ce calcul est une estimation pédagogique de premier ordre, pas une note de calcul certifiée.";
+  const formulesHtml = `
     <div class="dim-formula">In = P ÷ (${tri?'U×√3×cosφ':'U×cosφ'}) = ${p} ÷ (${tri?`${u}×√3×${cosphi}`:`${u}×${cosphi}`}) = <span class="dim-result">${courant.toFixed(1)} A</span></div>
     <div class="dim-formula">S = (${tri?'√3':'2'}×ρ×L×In×cosφ) ÷ ΔU = (${tri?'√3':'2'}×${rho}×${l}×${courant.toFixed(1)}×${cosphi}) ÷ ${deltaU.toFixed(1)} = ${section.toFixed(2)} mm² → section normalisée : <span class="dim-result">${sectionNorm} mm²</span></div>
-    <div class="dim-formula">Calibre de protection ≥ In = ${courant.toFixed(1)} A → calibre normalisé : <span class="dim-result">${calibre} A</span></div>
-    <p style="font-size:.82em">ρ (résistivité du cuivre en service) prise à 0,0225 Ω·mm²/m. Vérifiez toujours le résultat avec la norme applicable (NF C 15-100 ou équivalent local) avant réalisation : ce calcul est une estimation pédagogique de premier ordre, pas une note de calcul certifiée.</p>
+    <div class="dim-formula">Calibre de protection ≥ In = ${courant.toFixed(1)} A → calibre normalisé : <span class="dim-result">${calibre} A</span></div>`;
+  document.getElementById('et-result').innerHTML = `${formulesHtml}
+    <p style="font-size:.82em">${hypotheses}</p>
     <button class="btn btn-ghost btn-sm" id="et-use-in-pdf">Inclure ce résultat dans le rapport PDF</button>
     <button class="btn btn-ghost btn-sm" id="et-export-pdf">Exporter ce dimensionnement (PDF)</button>`;
-  document.getElementById('et-result').innerHTML = html;
-  window.__etLastHTML = `<p><strong>Électrotechnique / Bâtiment</strong> — P = ${p} W, U = ${u} V (${tri?'triphasé':'monophasé'}), cos φ = ${cosphi}, longueur = ${l} m.</p>
-    <p>Courant nominal : ${courant.toFixed(1)} A. Section de câble recommandée : ${sectionNorm} mm² (pour une chute de tension ≤ ${chutePct}%). Calibre de protection recommandé : ${calibre} A.</p>`;
+  window.__etLastHTML = `<p><strong>Électrotechnique / Bâtiment</strong> — Données d'entrée : P = ${p} W, U = ${u} V (${tri?'triphasé':'monophasé'}), cos φ = ${cosphi}, longueur = ${l} m, chute de tension max ${chutePct}%.</p>
+    ${formulesHtml}
+    <p>Conclusion : section de câble ${sectionNorm} mm² avec protection ${calibre} A recommandées pour ce circuit.</p>
+    <p style="font-size:.85em;font-style:italic">Hypothèses/remarques : ${hypotheses}</p>`;
 }
 
 /* ---- Électronique ---- */

@@ -248,6 +248,29 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   await tick(150);
   assert(!win.wsState.schema.items.some(i=>i.id===dupId), 'composant dupliqué supprimé');
 
+  section('Éditeur — Annuler / Rétablir (Ctrl+Z / Ctrl+Y, demandé explicitement par le client)');
+  assert(!!doc.getElementById('btn-undo') && !!doc.getElementById('btn-redo'), 'boutons Annuler/Rétablir présents dans la barre d\'outils');
+  const nAfterDelete = win.wsState.schema.items.length; // == nBefore (le doublon a été supprimé)
+  win.undoSchema(); // annule la suppression du doublon
+  await tick(100);
+  assert(win.wsState.schema.items.length === nAfterDelete+1, 'annuler restaure le composant dupliqué supprimé (résultat: ' + win.wsState.schema.items.length + ' composants)');
+  win.undoSchema(); // annule la duplication elle-même
+  await tick(100);
+  assert(win.wsState.schema.items.length === nAfterDelete, 'annuler à nouveau retire aussi la duplication (résultat: ' + win.wsState.schema.items.length + ' composants)');
+  win.undoSchema(); // annule la rotation
+  await tick(100);
+  assert(win.wsState.schema.items.find(i=>i.id===item1.id).rot !== 90, 'annuler défait aussi la rotation appliquée plus tôt (rot=' + win.wsState.schema.items.find(i=>i.id===item1.id).rot + ')');
+  win.redoSchema(); // rétablit la rotation
+  win.redoSchema(); // rétablit la duplication
+  win.redoSchema(); // rétablit la suppression du doublon
+  await tick(100);
+  assert(win.wsState.schema.items.length === nAfterDelete, 'rétablir trois fois de suite retrouve exactement l\'état d\'avant les annulations (résultat: ' + win.wsState.schema.items.length + ' composants)');
+  assert(win.wsState.schema.items.find(i=>i.id===item1.id).rot === 90, 'rétablir retrouve aussi la rotation à 90°');
+  let undoEmptyError = null;
+  win.wsState.undoStack = [];
+  try { win.undoSchema(); } catch(e){ undoEmptyError = e; }
+  assert(!undoEmptyError, 'annuler sur une pile vide ne lève pas d\'exception (résultat: ' + (undoEmptyError ? undoEmptyError.message : 'ok') + ')');
+
   section('Éditeur — "Ranger le schéma" (ne casse pas les connexions)');
   win.wsState.schema.items.forEach(it => { it.x += 3; it.y += 7; }); // désaligne volontairement
   win.wsState.schema.wires.push({ id:'w_re', a:{itemId:item1.id, term:0}, b:{itemId:item2.id, term:0} });
@@ -389,6 +412,9 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   win.confirm = origConfirmDim;
   assert(!dimPdfError, 'exportDimensionnementPDF ne lève pas d\'exception' + (dimPdfError ? ' — ERREUR: ' + dimPdfError.message : ''));
   assert(win.__lastDimResult && win.__lastDimResult.type === 'Électrotechnique / Bâtiment', 'le type de dimensionnement est bien renseigné pour l\'export');
+  assert(win.__etLastHTML.includes('dim-formula') && win.__etLastHTML.includes('In = P'), 'le PDF du dimensionnement contient les formules avec substitution des valeurs, pas seulement un résumé court (§12 des mises à jour reçues)');
+  assert(win.__etLastHTML.includes('Conclusion'), 'le PDF du dimensionnement contient une conclusion explicite');
+  assert(win.__etLastHTML.includes('Hypothèses'), 'le PDF du dimensionnement documente ses hypothèses/remarques');
 
   section('Export PDF (4 types indépendants — §15 de la mise à jour, ne doivent pas planter même si popup bloqué)');
   const origConfirmPdf = win.confirm; win.confirm = () => true;

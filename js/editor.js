@@ -85,6 +85,50 @@ function guardReadOnly(){
   return false;
 }
 
+/* ==========================================================================
+   ANNULER / RÉTABLIR (Ctrl+Z / Ctrl+Y) — demandé explicitement par le client.
+   Pile d'instantanés du schéma (items+wires+junctions), sérialisés en JSON :
+   assez petit et sans référence circulaire pour que cloner ainsi soit fiable
+   et rapide, plutôt que de suivre chaque mutation en détail (undo/redo par
+   "commande" serait plus économe en mémoire mais beaucoup plus risqué à
+   maintenir correctement partout où le schéma est modifié).
+   `pushUndoSnapshot(pre)` doit être appelé AVANT chaque mutation discrète
+   (un `pre` déjà sérialisé peut être fourni quand l'état "avant" a été capturé
+   plus tôt, ex. avant un glisser — voir le gestionnaire de déplacement).
+   ========================================================================== */
+const UNDO_STACK_MAX = 50;
+function pushUndoSnapshot(pre){
+  if (!wsState.schema) return;
+  wsState.undoStack = wsState.undoStack || [];
+  wsState.redoStack = [];
+  wsState.undoStack.push(pre || JSON.stringify(wsState.schema));
+  if (wsState.undoStack.length > UNDO_STACK_MAX) wsState.undoStack.shift();
+}
+function undoSchema(){
+  if (guardReadOnly()) return;
+  if (!wsState.undoStack || !wsState.undoStack.length){ toast('Rien à annuler.'); return; }
+  wsState.redoStack = wsState.redoStack || [];
+  wsState.redoStack.push(JSON.stringify(wsState.schema));
+  wsState.schema = JSON.parse(wsState.undoStack.pop());
+  wsState.selectedId = null; wsState.selectedWireId = null;
+  persistSchema(); redrawCanvas();
+  const panel = document.getElementById('ws-panel');
+  if (panel && window.__wsPanels) panel.innerHTML = window.__wsPanels.proprietes();
+  toast('Action annulée.');
+}
+function redoSchema(){
+  if (guardReadOnly()) return;
+  if (!wsState.redoStack || !wsState.redoStack.length){ toast('Rien à rétablir.'); return; }
+  wsState.undoStack = wsState.undoStack || [];
+  wsState.undoStack.push(JSON.stringify(wsState.schema));
+  wsState.schema = JSON.parse(wsState.redoStack.pop());
+  wsState.selectedId = null; wsState.selectedWireId = null;
+  persistSchema(); redrawCanvas();
+  const panel = document.getElementById('ws-panel');
+  if (panel && window.__wsPanels) panel.innerHTML = window.__wsPanels.proprietes();
+  toast('Action rétablie.');
+}
+
 function snap(v){ return Math.round(v/GRID_SIZE)*GRID_SIZE; }
 
 function rotatePointAround(px,py,cx,cy,angleDeg){
@@ -175,6 +219,7 @@ function junctionAt(schema, x, y){
 }
 function toggleJunctionAt(x, y){
   if (guardReadOnly()) return;
+  pushUndoSnapshot();
   if (!wsState.schema.junctions) wsState.schema.junctions = [];
   const existing = junctionAt(wsState.schema, x, y);
   if (existing){ wsState.schema.junctions = wsState.schema.junctions.filter(j=>j!==existing); toast('Nœud retiré — ces fils ne sont plus reliés à cette intersection.'); }
@@ -228,7 +273,12 @@ async function viewProject(id){
       <button class="ws-comp" data-tool="select">↖ Sélection / déplacer</button>
       <button class="ws-comp" data-tool="fil">⎯ Tracer un fil (Échap pour annuler)</button>
       <button class="ws-comp" data-tool="supprimer">✕ Supprimer (cliquer un élément)</button>
-      ${wsState.readOnly ? '' : `<button class="ws-comp" id="btn-declutter">▦ Ranger le schéma</button>`}
+      ${wsState.readOnly ? '' : `
+      <div style="display:flex;gap:4px">
+        <button class="ws-comp" id="btn-undo" title="Annuler (Ctrl+Z)" style="flex:1">↺ Annuler</button>
+        <button class="ws-comp" id="btn-redo" title="Rétablir (Ctrl+Y)" style="flex:1">↻ Rétablir</button>
+      </div>
+      <button class="ws-comp" id="btn-declutter">▦ Ranger le schéma</button>`}
     </aside>
 
     <div class="ws-canvas-wrap mobile-active">
@@ -750,6 +800,7 @@ function wireCanvasEvents(){
     e.stopPropagation();
     const w = wsState.schema.wires.find(w=>w.id===wsState.selectedWireId);
     if (!w) return;
+    pushUndoSnapshot();
     w.color = sw.dataset.wireColor;
     persistSchema(); redrawCanvas();
   }));
@@ -757,6 +808,7 @@ function wireCanvasEvents(){
     e.stopPropagation();
     const idx = wsState.schema.wires.findIndex(w=>w.id===wsState.selectedWireId);
     if (idx === -1) return;
+    pushUndoSnapshot();
     const [w] = wsState.schema.wires.splice(idx,1);
     wsState.schema.wires.push(w);
     persistSchema(); redrawCanvas(); toast('Fil envoyé au premier plan.');
@@ -794,8 +846,14 @@ function wireCanvasEvents(){
       if ((e.key === 'Delete' || e.key === 'Backspace') && wsState.selectedWireId && document.getElementById('ws-svg') && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){
         e.preventDefault();
         if (guardReadOnly()) return;
+        pushUndoSnapshot();
         wsState.schema.wires = wsState.schema.wires.filter(w=>w.id!==wsState.selectedWireId);
         wsState.selectedWireId = null; persistSchema(); redrawCanvas(); toast('Fil supprimé.');
+      }
+      // Ctrl+Z / Ctrl+Y (ou Ctrl+Maj+Z) : annuler/rétablir la dernière action sur le schéma.
+      if ((e.ctrlKey || e.metaKey) && document.getElementById('ws-svg') && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){
+        if (e.key === 'z' || e.key === 'Z'){ e.preventDefault(); if (e.shiftKey) redoSchema(); else undoSchema(); }
+        else if (e.key === 'y' || e.key === 'Y'){ e.preventDefault(); redoSchema(); }
       }
     });
   }
@@ -806,6 +864,7 @@ function wireCanvasEvents(){
     if (wsState.armedType){
       const cur = svgUserToCanvas(clientToSvgUser(e, svg));
       const def = findDef(wsState.armedType);
+      pushUndoSnapshot();
       wsState.schema.items.push({ id:'i_'+Math.random().toString(36).slice(2,8), typeId:wsState.armedType, x:snap(cur.x-30), y:snap(cur.y-15), rot:0, value: def.defaultValue ?? '' });
       recordRecentComponent(wsState.armedType);
       wsState.armedType = null; wsState.ghostPos = null;
@@ -824,13 +883,14 @@ function wireCanvasEvents(){
       if (wsState.dragWireEnd){
         if (guardReadOnly()) { wsState.dragWireEnd = null; return; }
         const w = wsState.schema.wires.find(w=>w.id===wsState.dragWireEnd.wireId);
-        if (w){ w[wsState.dragWireEnd.end] = { itemId, term }; persistSchema(); }
+        if (w){ pushUndoSnapshot(); w[wsState.dragWireEnd.end] = { itemId, term }; persistSchema(); }
         wsState.dragWireEnd = null; redrawCanvas(); return;
       }
       if (wsState.tool !== 'fil') return;
       if (guardReadOnly()) return;
       if (!wsState.wireStart){ wsState.wireStart = { itemId, term }; redrawCanvas(); return; }
       if (wsState.wireStart.itemId === itemId && wsState.wireStart.term === term){ wsState.wireStart = null; redrawCanvas(); return; }
+      pushUndoSnapshot();
       wsState.schema.wires.push({ id:'w_'+Math.random().toString(36).slice(2,8), a:wsState.wireStart, b:{itemId,term} });
       wsState.wireStart = null; persistSchema(); redrawCanvas();
     });
@@ -850,6 +910,10 @@ function wireCanvasEvents(){
       if (wsState.readOnly){ selectItem(node.dataset.item); return; } // consultation seule : pas de déplacement
       const item = wsState.schema.items.find(i=>i.id===node.dataset.item);
       dragging = true; moved = false; startPt = clientToSvgUser(e, svg); orig = { x:item.x, y:item.y };
+      // Capturé AVANT toute modification (item.x/y n'ont pas encore bougé ici) — poussé sur la pile
+      // d'annulation seulement si le geste se révèle être un vrai déplacement (voir onUp), pas un
+      // simple clic de sélection.
+      const preDragSnapshot = JSON.stringify(wsState.schema);
       wsState.__draggingLocally = true;
       let lastBroadcast = 0;
       const onMove = (ev) => {
@@ -865,6 +929,7 @@ function wireCanvasEvents(){
         dragging=false; wsState.__draggingLocally = false;
         if (!moved){ selectItem(item.id); return; }
         item.x = snap(item.x); item.y = snap(item.y);
+        pushUndoSnapshot(preDragSnapshot);
         persistSchema(); redrawCanvas();
       };
       document.addEventListener('mousemove',onMove); document.addEventListener('mouseup',onUp);
@@ -892,6 +957,7 @@ function wireCanvasEvents(){
       const id = line.dataset.wire;
       if (wsState.tool === 'supprimer'){
         if (guardReadOnly()) return;
+        pushUndoSnapshot();
         wsState.schema.wires = wsState.schema.wires.filter(w=>w.id!==id);
         persistSchema(); redrawCanvas(); toast('Fil supprimé.');
         return;
@@ -961,6 +1027,7 @@ function wireCanvasEvents(){
 
 function deleteItem(id){
   if (guardReadOnly()) return;
+  pushUndoSnapshot();
   wsState.schema.items = wsState.schema.items.filter(i=>i.id!==id);
   wsState.schema.wires = wsState.schema.wires.filter(w=>w.a.itemId!==id && w.b.itemId!==id);
   if (wsState.selectedId===id) wsState.selectedId=null;
@@ -1008,6 +1075,10 @@ function selectItem(id){
 }
 
 function wirePropsPanel(){
+  // customref/value-custom : évènement `input` (une entrée par frappe clavier) — on capture l'état
+  // AVANT modification une seule fois, au premier focus de cette instance du champ, pour que toute
+  // une saisie compte comme UNE seule étape d'annulation plutôt qu'une par caractère tapé.
+  document.getElementById('prop-customref')?.addEventListener('focus', () => { if (!guardReadOnly()) pushUndoSnapshot(); }, { once:true });
   document.getElementById('prop-customref')?.addEventListener('input', (e) => {
     if (guardReadOnly()) return;
     const item = wsState.schema.items.find(i=>i.id===wsState.selectedId);
@@ -1023,8 +1094,10 @@ function wirePropsPanel(){
     const customInput = document.getElementById('prop-value-custom');
     if (e.target.value === '__custom__'){ customInput.classList.remove('hidden'); customInput.focus(); return; }
     customInput.classList.add('hidden');
+    pushUndoSnapshot();
     item.value = e.target.value; persistSchema(); redrawCanvas();
   });
+  document.getElementById('prop-value-custom')?.addEventListener('focus', () => { if (!guardReadOnly()) pushUndoSnapshot(); }, { once:true });
   document.getElementById('prop-value-custom')?.addEventListener('input', (e) => {
     if (guardReadOnly()) return;
     const item = wsState.schema.items.find(i=>i.id===wsState.selectedId);
@@ -1037,6 +1110,7 @@ function wirePropsPanel(){
   document.getElementById('prop-rotate')?.addEventListener('click', () => {
     if (guardReadOnly()) return;
     const item = wsState.schema.items.find(i=>i.id===wsState.selectedId);
+    pushUndoSnapshot();
     item.rot = ((item.rot||0)+90)%360; persistSchema(); redrawCanvas();
   });
   document.getElementById('prop-duplicate')?.addEventListener('click', () => duplicateItem(wsState.selectedId));
@@ -1047,6 +1121,7 @@ function duplicateItem(id){
   if (guardReadOnly()) return;
   const item = wsState.schema.items.find(i=>i.id===id);
   if (!item) return;
+  pushUndoSnapshot();
   const copy = { ...item, id:'i_'+Math.random().toString(36).slice(2,8), x:snap(item.x+40), y:snap(item.y+40) };
   wsState.schema.items.push(copy);
   wsState.selectedId = copy.id;
@@ -1064,6 +1139,7 @@ function replaceVariant(itemId, newTypeId){
   const item = wsState.schema.items.find(i=>i.id===itemId);
   const newDef = findDef(newTypeId);
   if (!item || !newDef) return;
+  pushUndoSnapshot();
   item.typeId = newTypeId;
   if (item.value === undefined || !newDef.valueOptions?.length) item.value = newDef.defaultValue ?? '';
   wsState.schema.wires = wsState.schema.wires.filter(w =>
@@ -1173,7 +1249,7 @@ function openComponentContextMenu(itemId, x, y){
     <button data-act="supprimer" class="danger">✕ Supprimer</button>`;
   document.body.appendChild(menu);
   menu.querySelector('[data-act="proprietes"]').onclick = () => { close(); selectItem(itemId); };
-  menu.querySelector('[data-act="pivoter"]').onclick = () => { close(); if (guardReadOnly()) return; item.rot=((item.rot||0)+90)%360; persistSchema(); redrawCanvas(); };
+  menu.querySelector('[data-act="pivoter"]').onclick = () => { close(); if (guardReadOnly()) return; pushUndoSnapshot(); item.rot=((item.rot||0)+90)%360; persistSchema(); redrawCanvas(); };
   menu.querySelector('[data-act="dupliquer"]').onclick = () => { close(); duplicateItem(itemId); };
   menu.querySelector('[data-act="info"]').onclick = (e) => { close(); showCatalogPopover(def, menu); };
   menu.querySelector('[data-act="supprimer"]').onclick = () => { close(); deleteItem(itemId); };
@@ -1199,7 +1275,11 @@ function afterProjectView(){
   });
   wireCommentForm();
 
+  document.getElementById('btn-undo')?.addEventListener('click', () => undoSchema());
+  document.getElementById('btn-redo')?.addEventListener('click', () => redoSchema());
+
   document.getElementById('btn-declutter')?.addEventListener('click', () => {
+    pushUndoSnapshot();
     wsState.schema.items.forEach(it => { it.x = snap(it.x); it.y = snap(it.y); });
     persistSchema(); redrawCanvas(); toast('Schéma rangé sur la grille — les connexions sont conservées.');
   });
