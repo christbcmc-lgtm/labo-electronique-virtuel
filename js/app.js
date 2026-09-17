@@ -222,14 +222,14 @@ function renderTopbar(route){
   const base = route.split('/')[0];
   const user = auth.currentUser;
   if (!user){
-    bar.innerHTML = `<a href="#/" class="brand"><span class="brand-mark">${LAB_LOGO_SVG}</span> Labo Électronique Virtuel</a>
+    bar.innerHTML = `<a href="#/" class="brand" title="Christ BCMC"><span class="brand-mark">${LAB_LOGO_SVG}</span><span class="brand-text">Labo Électronique Virtuel<span class="brand-signature">Christ BCMC</span></span></a>
       <div class="right">${themeSwitchHTML()}${MODE_PILL}<a href="#/login" class="btn btn-ghost btn-sm">Connexion</a><a href="#/register" class="btn btn-primary btn-sm">Créer un compte</a></div>`;
     wireThemeSwitch();
     return;
   }
   const links = [['dashboard','Mon espace'],['composants','Composants'],['discussion','Discussion & suggestions'],['messages','Messagerie']];
   if (user.role === 'admin') links.push(['admin','Admin']);
-  bar.innerHTML = `<a href="#/dashboard" class="brand"><span class="brand-mark">${LAB_LOGO_SVG}</span> Labo Électronique Virtuel</a>
+  bar.innerHTML = `<a href="#/dashboard" class="brand" title="Christ BCMC"><span class="brand-mark">${LAB_LOGO_SVG}</span><span class="brand-text">Labo Électronique Virtuel<span class="brand-signature">Christ BCMC</span></span></a>
     <nav>${links.map(([r,l]) => `<a href="#/${r}" class="navlink ${base===r?'active':''}">${l}</a>`).join('')}</nav>
     <div class="right">
       ${themeSwitchHTML()}

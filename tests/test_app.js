@@ -49,7 +49,7 @@ async function boot(){
   // ce harnais puisse les inspecter/manipuler facilement via `win.X`.
   const bridge = doc0.createElement('script');
   bridge.textContent = `window.__t = { SUPABASE_CONFIGURED, auth, db, wsState, state, GRID_SIZE,
-    MOCK_ADMIN_EMAIL, DB_STORAGE_KEY, DB, COMMON_COMPONENTS, COMPONENT_LIBRARY, INSTRUMENT_LIBRARY, ESPACES };`;
+    MOCK_ADMIN_EMAIL, DB_STORAGE_KEY, DB, COMMON_COMPONENTS, COMPONENT_LIBRARY, INSTRUMENT_LIBRARY, ESPACES, SYM };`;
   doc0.body.appendChild(bridge);
   Object.assign(dom.window, dom.window.__t);
   dom.window.__jsErrors = [];
@@ -86,6 +86,7 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(doc.body.textContent.includes('Concevez'), 'page d\'accueil affichée par défaut');
   assert(win.SUPABASE_CONFIGURED === false, 'mode démo locale actif (pas de config Supabase)');
   assert(doc.querySelector('.brand .brand-mark svg'), 'le logo vectoriel (même symbole que dans les PDF) est affiché dans la barre supérieure (§17 des mises à jour reçues)');
+  assert(doc.querySelector('.brand').textContent.includes('Christ BCMC'), 'la signature "Christ BCMC" demandée par le client apparaît dans le logo de la barre supérieure');
 
   section('Inscription');
   await nav(win, 'register');
@@ -762,6 +763,14 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(permDef && permDef.terminals.length === 4, 'le permutateur (Schéma 7/C7), absent avant cette session, existe maintenant avec 4 bornes');
   const telDef = win.findDef('telerupteur');
   assert(Array.isArray(telDef.pinNames) && telDef.pinNames.some(p=>p.startsWith('A1')) && telDef.pinNames.some(p=>p.startsWith('A2')), 'le télérupteur affiche désormais le brochage réel de sa bobine (A1/A2), en plus du contact de puissance (résultat: ' + JSON.stringify(telDef.pinNames) + ')');
+
+  section('Instruments de mesure — multimètre redessiné, voltmètre et alimentation ajoutés (retour du client)');
+  const multiDef = win.findDef('multimetre');
+  assert(multiDef.terminals.length === 2, 'le multimètre a bien 2 bornes de sonde (au lieu d\'un simple cercle décoratif)');
+  assert(Array.isArray(multiDef.pinNames) && multiDef.pinNames.some(p=>p.startsWith('COM')), 'le multimètre affiche le brochage réel de ses sondes (COM + V/Ω/A)');
+  assert(win.SYM['multimetre'].includes('<rect') && !win.SYM['multimetre'].includes('<circle'), 'le symbole du multimètre est un boîtier avec afficheur (rectangle), pas un cercle générique avec une lettre (résultat brut: ' + win.SYM['multimetre'].replace(/\s+/g,' ').slice(0,120) + ')');
+  assert(!!win.findDef('voltmetre'), 'un voltmètre existe désormais comme instrument séparé du multimètre');
+  assert(!!win.findDef('alimentation'), 'une alimentation stabilisée existe désormais dans les instruments de banc');
 
   console.log('\n=== Erreurs JS non interceptées pendant toute la session ===');
   console.log(win.__jsErrors.length ? win.__jsErrors.join('\n---\n') : '(aucune)');

@@ -1222,8 +1222,19 @@ const COMPONENT_LIBRARY = {
 };
 
 const INSTRUMENT_LIBRARY = [
-  defRow('multimetre','Multimètre', T2, `${leadLine(0,15,7,15)}${leadLine(53,15,60,15)}<circle cx="30" cy="15" r="13" fill="none" stroke="currentColor" stroke-width="2"/><text x="25" y="20" font-size="11" fill="currentColor">V</text>`,
-    { famille:'Instruments', def:'Mesure tension, courant ou résistance selon le mode choisi.', wiki:'Multimètre', instrument:'tension' }),
+  // Multimètre : instrument portatif à sondes (pas un appareil câblé en permanence dans le
+  // circuit) — une simple lettre dans un cercle (convention correcte pour un appareil de mesure
+  // EMBARQUÉ, voir voltmètre/ampèremètre/wattmètre/ohmmètre ci-dessous) ne convient pas ici.
+  // Redessiné en boîtier avec afficheur (modes V / Ω·A) et ses deux VRAIES bornes de sonde
+  // (COM + V/Ω/A), utilisables comme n'importe quelle autre borne par le système de connexion.
+  defRow('multimetre','Multimètre', [[20,30],[40,30]],
+    `<rect x="8" y="1" width="44" height="23" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><text x="30" y="12" font-size="9" text-anchor="middle" fill="currentColor">V</text><line x1="12" y1="15" x2="48" y2="15" stroke="currentColor" stroke-width="0.8"/><text x="30" y="22" font-size="6.5" text-anchor="middle" fill="currentColor">Ω · A</text><line x1="20" y1="24" x2="20" y2="30" stroke="currentColor" stroke-width="2"/><line x1="40" y1="24" x2="40" y2="30" stroke="currentColor" stroke-width="2"/>`,
+    { famille:'Instruments', pinNames:['COM (sonde noire)','V/Ω/A (sonde rouge)'], def:'Instrument portatif à sondes mesurant tension, courant ou résistance selon le mode choisi et la borne utilisée (COM + V/Ω/A).', wiki:'Multimètre', instrument:'tension' }),
+  // Voltmètre embarqué : à la différence du multimètre ci-dessus, un voltmètre câblé en
+  // permanence dans un schéma se représente en IEC 60617 par une simple lettre dans un cercle —
+  // manquait comme fiche séparée (seul le mode "multimètre" existait).
+  defRow('voltmetre','Voltmètre', T2, `${leadLine(0,15,7,15)}${leadLine(53,15,60,15)}<circle cx="30" cy="15" r="13" fill="none" stroke="currentColor" stroke-width="2"/><text x="25" y="20" font-size="11" fill="currentColor">V</text>`,
+    { famille:'Instruments', def:'Mesure une tension (se branche en parallèle aux bornes du dipôle mesuré).', wiki:'Voltmètre', instrument:'tension' }),
   defRow('amperemetre','Ampèremètre', T2, `${leadLine(0,15,7,15)}${leadLine(53,15,60,15)}<circle cx="30" cy="15" r="13" fill="none" stroke="currentColor" stroke-width="2"/><text x="25" y="20" font-size="11" fill="currentColor">A</text>`,
     { famille:'Instruments', def:"Mesure l'intensité du courant qui le traverse (se branche en série).", wiki:'Ampèremètre', instrument:'courant' }),
   defRow('wattmetre','Wattmètre', T2, `${leadLine(0,15,7,15)}${leadLine(53,15,60,15)}<circle cx="30" cy="15" r="13" fill="none" stroke="currentColor" stroke-width="2"/><text x="23" y="20" font-size="10" fill="currentColor">W</text>`,
@@ -1240,6 +1251,13 @@ const INSTRUMENT_LIBRARY = [
     { famille:'Instruments', def:"Visualise l'évolution d'une tension dans le temps (forme d'onde).", wiki:'Oscilloscope' }),
   defRow('generateur_fonctions','Générateur de fonctions (GBF)', T2, `${leadLine(0,15,7,15)}${leadLine(53,15,60,15)}<rect x="7" y="4" width="46" height="22" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M14,15 Q20,6 26,15 T38,15" fill="none" stroke="currentColor" stroke-width="1.4"/>`,
     { unit:'Hz', defaultValue:1000, valueOptions:[50,1000,10000,100000], famille:'Instruments', def:"Génère un signal périodique (sinus, carré, triangle) à fréquence et amplitude réglables.", wiki:'Générateur_de_fonctions' }),
+  // Alimentation stabilisée : manquait alors qu'elle était explicitement demandée avec les
+  // autres instruments de banc (multimètre, oscilloscope, générateur...). Bornes de sortie
+  // réelles = les deux fils latéraux (même convention que le générateur/l'oscilloscope
+  // ci-dessus) ; + / − ne sont que des repères de polarité imprimés sur la façade.
+  defRow('alimentation','Alimentation stabilisée (banc)', T2,
+    `${leadLine(0,15,7,15)}${leadLine(53,15,60,15)}<rect x="7" y="3" width="46" height="24" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><text x="30" y="14" font-size="8" text-anchor="middle" fill="currentColor">ALIM</text><text x="16" y="24" font-size="8" text-anchor="middle" fill="currentColor">+</text><text x="44" y="24" font-size="9" text-anchor="middle" fill="currentColor">−</text>`,
+    { unit:'V', defaultValue:12, valueOptions:[3.3,5,9,12,15,24], famille:'Instruments', pinNames:['Sortie + (côté gauche)','Sortie − (côté droit)'], def:"Fournit une tension continue régulée réglable, utilisée pour alimenter un montage en essai.", wiki:'Alimentation_stabilisée' }),
 ];
 
 /* ==========================================================================

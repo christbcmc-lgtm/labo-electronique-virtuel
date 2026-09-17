@@ -157,6 +157,9 @@ html[data-theme="gris"] .topbar{ background:rgba(30,34,38,.92); }
 .brand{ display:flex; align-items:center; gap:.6em; font-family:var(--font-display); font-weight:700; font-size:1.05em; color:var(--text); }
 .brand .brand-mark{ color:var(--amber); line-height:1; display:inline-flex; }
 .brand .brand-mark svg{ width:24px; height:24px; }
+.brand .brand-text{ display:flex; flex-direction:column; line-height:1.15; }
+.brand .brand-signature{ font-family:var(--font-body); font-weight:500; font-size:.42em; letter-spacing:.04em; color:var(--text-faint); text-transform:none; }
+@media (max-width:640px){ .brand .brand-signature{ display:none; } }
 .topbar nav{ display:flex; align-items:center; gap:6px; }
 .navlink{ padding:.5em .8em; border-radius:var(--radius); color:var(--text-muted); font-size:.88em; font-weight:500; }
 .navlink.active{ color:var(--text); background:var(--panel); }

@@ -145,6 +145,7 @@ const PDF_STYLE = `
   .conclusion{ background:#f4f4f4; padding:14px 16px; border-radius:6px; }
   .pdf-head{ display:flex; align-items:center; gap:14px; padding:20px 0 14px; border-bottom:3px solid #173b5e; margin-bottom:6px; color:#173b5e; }
   .pdf-brand{ font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:#173b5e; font-weight:bold; }
+  .pdf-signature{ font-weight:normal; letter-spacing:.02em; opacity:.75; text-transform:none; }
   .pdf-foot{ margin-top:36px; padding-top:8px; border-top:1px solid #ccc; display:flex; justify-content:space-between; font-size:10.5px; color:#888; }
   @media print{ .no-print{ display:none; } }
 `;
@@ -153,7 +154,7 @@ function pdfHeaderHTML(title, subtitle){
   return `<header class="pdf-head">
     ${LAB_LOGO_SVG}
     <div>
-      <div class="pdf-brand">Laboratoire Électronique Virtuel</div>
+      <div class="pdf-brand">Laboratoire Électronique Virtuel <span class="pdf-signature">— Christ BCMC</span></div>
       <h1>${esc(title)}</h1>
       ${subtitle ? `<p class="meta">${subtitle}</p>` : ''}
     </div>
