@@ -245,7 +245,8 @@ async function viewProject(id){
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           ${wsState.isOwner ? `<button class="btn btn-ghost btn-sm" id="btn-share">Partager</button>` : ''}
-          <button class="btn btn-ghost btn-sm" id="btn-export-pdf">Exporter PDF</button>
+          <button class="btn btn-ghost btn-sm" id="btn-export-pdf">Exporter le schéma (PDF)</button>
+          <button class="btn btn-ghost btn-sm" id="btn-export-pdf-full">Rapport complet (PDF)</button>
           <button class="btn btn-ghost btn-sm" id="btn-ai-interpret">🤖 Interpréter (IA)</button>
           <button class="btn btn-ghost btn-sm" id="btn-test-circuit">Tester le circuit</button>
           ${wsState.readOnly ? '' : `<button class="btn btn-primary btn-sm" id="btn-save-project">Enregistrer</button>`}
@@ -1221,8 +1222,13 @@ function afterProjectView(){
   document.getElementById('btn-share')?.addEventListener('click', () => openShareModal(wsState.projectId));
 
   document.getElementById('btn-export-pdf')?.addEventListener('click', async () => {
-    if (!confirm('Générer le rapport PDF maintenant ? Le contenu reflétera l\'état actuel du schéma, du devis et du dimensionnement.')) return;
-    await exportProjectPDF(wsState.projectId, wsState.schema);
+    if (!confirm('Exporter le schéma en PDF maintenant ? Le contenu reflétera l\'état actuel du schéma (composants, connexions, diagnostic).')) return;
+    await exportSchemaPDF(wsState.projectId, wsState.schema);
+    if (!wsState.readOnly){ await db.setProjectStatut(wsState.projectId, 'exporte'); render(); }
+  });
+  document.getElementById('btn-export-pdf-full')?.addEventListener('click', async () => {
+    if (!confirm('Générer le rapport complet en PDF maintenant ? Le contenu reflétera l\'état actuel du schéma, du devis et du dimensionnement.')) return;
+    await exportRapportCompletPDF(wsState.projectId, wsState.schema);
     if (!wsState.readOnly){ await db.setProjectStatut(wsState.projectId, 'exporte'); render(); }
   });
 

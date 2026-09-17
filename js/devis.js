@@ -39,6 +39,7 @@ async function viewDevis(projectId){
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
           <button class="btn btn-sm" id="btn-devis-add">+ Ajouter une ligne</button>
           <button class="btn btn-ghost btn-sm" id="btn-devis-import">Importer les composants du schéma</button>
+          <button class="btn btn-ghost btn-sm" id="btn-devis-export-pdf">Exporter le devis (PDF)</button>
         </div>
         <div style="overflow-x:auto">
         <table class="data-table devis-table" id="devis-table">
@@ -141,6 +142,11 @@ function afterDevisView(){
     refreshDevisTotals();
     saveDevisDebounced();
     toast(`${counts.size} ligne(s) importée(s) depuis le schéma.`);
+  });
+
+  document.getElementById('btn-devis-export-pdf')?.addEventListener('click', async () => {
+    if (!confirm('Exporter le devis en PDF maintenant ?')) return;
+    await exportDevisPDF(window.__devisState.projectId);
   });
 
   document.getElementById('devis-remise')?.addEventListener('input', (e) => { window.__devisState.devis.remisePct = Number(e.target.value); refreshDevisTotals(); saveDevisDebounced(); });

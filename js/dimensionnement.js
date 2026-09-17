@@ -72,7 +72,8 @@ function computePv(){
     <div class="dim-formula">Nb panneaux = ⌈Pc ÷ Ppanneau⌉ = ⌈${puissanceCrete.toFixed(0)} ÷ ${ppanneau}⌉ = <span class="dim-result">${nbPanneaux} panneau(x)</span></div>
     <div class="dim-formula">Capacité batterie = (Besoin × Autonomie) ÷ (Vbat × DoD) = (${besoin} × ${autonomie}) ÷ (${vbat} × ${(dod*100).toFixed(0)}%) = <span class="dim-result">${capaciteAh.toFixed(0)} Ah</span></div>
     <p style="font-size:.82em">Estimation de dimensionnement pédagogique (méthode des heures de soleil équivalentes). Les pertes réelles (câblage, température, salissure, onduleur) sont globalisées dans le rendement système — affinez-le selon votre installation réelle.</p>
-    <button class="btn btn-ghost btn-sm" id="pv-use-in-pdf">Inclure ce résultat dans le rapport PDF</button>`;
+    <button class="btn btn-ghost btn-sm" id="pv-use-in-pdf">Inclure ce résultat dans le rapport PDF</button>
+    <button class="btn btn-ghost btn-sm" id="pv-export-pdf">Exporter ce dimensionnement (PDF)</button>`;
   document.getElementById('pv-result').innerHTML = html;
   window.__pvLastHTML = `<p><strong>Photovoltaïque</strong> — Besoin : ${besoin} Wh/j, Irradiation : ${irrad} h/j, Rendement : ${(rendement*100).toFixed(0)}%.</p>
     <p>Puissance crête nécessaire : ${puissanceCrete.toFixed(0)} Wc → ${nbPanneaux} panneau(x) de ${ppanneau} Wc. Capacité batterie recommandée : ${capaciteAh.toFixed(0)} Ah sous ${vbat} V (autonomie ${autonomie} j, DoD ${(dod*100).toFixed(0)}%).</p>`;
@@ -111,7 +112,8 @@ function computeEt(){
     <div class="dim-formula">S = (${tri?'√3':'2'}×ρ×L×In×cosφ) ÷ ΔU = (${tri?'√3':'2'}×${rho}×${l}×${courant.toFixed(1)}×${cosphi}) ÷ ${deltaU.toFixed(1)} = ${section.toFixed(2)} mm² → section normalisée : <span class="dim-result">${sectionNorm} mm²</span></div>
     <div class="dim-formula">Calibre de protection ≥ In = ${courant.toFixed(1)} A → calibre normalisé : <span class="dim-result">${calibre} A</span></div>
     <p style="font-size:.82em">ρ (résistivité du cuivre en service) prise à 0,0225 Ω·mm²/m. Vérifiez toujours le résultat avec la norme applicable (NF C 15-100 ou équivalent local) avant réalisation : ce calcul est une estimation pédagogique de premier ordre, pas une note de calcul certifiée.</p>
-    <button class="btn btn-ghost btn-sm" id="et-use-in-pdf">Inclure ce résultat dans le rapport PDF</button>`;
+    <button class="btn btn-ghost btn-sm" id="et-use-in-pdf">Inclure ce résultat dans le rapport PDF</button>
+    <button class="btn btn-ghost btn-sm" id="et-export-pdf">Exporter ce dimensionnement (PDF)</button>`;
   document.getElementById('et-result').innerHTML = html;
   window.__etLastHTML = `<p><strong>Électrotechnique / Bâtiment</strong> — P = ${p} W, U = ${u} V (${tri?'triphasé':'monophasé'}), cos φ = ${cosphi}, longueur = ${l} m.</p>
     <p>Courant nominal : ${courant.toFixed(1)} A. Section de câble recommandée : ${sectionNorm} mm² (pour une chute de tension ≤ ${chutePct}%). Calibre de protection recommandé : ${calibre} A.</p>`;
@@ -186,10 +188,26 @@ function afterDimensionnementView(){
   wireDimHandlers();
 }
 function wireDimHandlers(){
-  document.getElementById('pv-calc')?.addEventListener('click', () => { computePv(); document.getElementById('pv-use-in-pdf')?.addEventListener('click', () => {
-    window.__lastDimResult = { projectId: window.__dimProjectId, html: window.__pvLastHTML }; toast('Résultat ajouté au rapport PDF de ce projet.'); }); });
-  document.getElementById('et-calc')?.addEventListener('click', () => { computeEt(); document.getElementById('et-use-in-pdf')?.addEventListener('click', () => {
-    window.__lastDimResult = { projectId: window.__dimProjectId, html: window.__etLastHTML }; toast('Résultat ajouté au rapport PDF de ce projet.'); }); });
+  document.getElementById('pv-calc')?.addEventListener('click', () => {
+    computePv();
+    document.getElementById('pv-use-in-pdf')?.addEventListener('click', () => {
+      window.__lastDimResult = { projectId: window.__dimProjectId, type:'Photovoltaïque', html: window.__pvLastHTML }; toast('Résultat ajouté au rapport PDF de ce projet.'); });
+    document.getElementById('pv-export-pdf')?.addEventListener('click', async () => {
+      window.__lastDimResult = { projectId: window.__dimProjectId, type:'Photovoltaïque', html: window.__pvLastHTML };
+      if (!confirm('Exporter ce dimensionnement en PDF maintenant ?')) return;
+      exportDimensionnementPDF(window.__dimProjectId);
+    });
+  });
+  document.getElementById('et-calc')?.addEventListener('click', () => {
+    computeEt();
+    document.getElementById('et-use-in-pdf')?.addEventListener('click', () => {
+      window.__lastDimResult = { projectId: window.__dimProjectId, type:'Électrotechnique / Bâtiment', html: window.__etLastHTML }; toast('Résultat ajouté au rapport PDF de ce projet.'); });
+    document.getElementById('et-export-pdf')?.addEventListener('click', async () => {
+      window.__lastDimResult = { projectId: window.__dimProjectId, type:'Électrotechnique / Bâtiment', html: window.__etLastHTML };
+      if (!confirm('Exporter ce dimensionnement en PDF maintenant ?')) return;
+      exportDimensionnementPDF(window.__dimProjectId);
+    });
+  });
   document.getElementById('el-calc')?.addEventListener('click', computeEl);
   document.getElementById('dv-calc')?.addEventListener('click', computeDv);
   document.getElementById('rg-calc')?.addEventListener('click', computeRg);

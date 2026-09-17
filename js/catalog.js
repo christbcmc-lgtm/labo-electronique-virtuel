@@ -44,6 +44,7 @@ const T4_RGB        = [[0,4],[0,15],[0,26],[60,15]];            // LED RGB : R,G
 const T4_OPTOTRIAC  = [[0,10],[0,20],[60,8],[60,22]];           // LED d'entrée (10/20) + triac de sortie (8/22)
 const T4_WIDE       = [[0,4],[0,26],[60,4],[60,26]];            // boîtier large (afficheur 7 segments)
 const T2_COLE       = [[42,-4],[42,34]];                        // phototransistor : collecteur/émetteur (pas de base électrique)
+const T3_SPDT       = [[0,15],[60,6],[60,24]];                  // commutateur unipolaire bidirectionnel : commune (L) + 2 sorties (navettes 1/2)
 
 // ---- Gabarit IC générique : n broches réparties gauche/droite, calculées
 //      en même temps que le tracé pour garantir bornes ↔ traits toujours alignés
@@ -837,10 +838,24 @@ const BATIMENT = [
     { unit:'A', defaultValue:16, valueOptions:[2,10,16,20,32], famille:'Distribution', def:"Protège un circuit terminal de l'installation (éclairage, prises...) contre les surintensités.", wiki:'Disjoncteur' }),
   defRow('differentiel','Interrupteur différentiel', T2, `${leadLine(0,15,18,15)}${leadLine(42,15,60,15)}<rect x="14" y="6" width="32" height="18" fill="none" stroke="currentColor" stroke-width="1.8"/>${ctext(30,20,'Δ',10)}`,
     { unit:'mA', defaultValue:30, valueOptions:[10,30,300,500], famille:'Distribution', def:"Détecte une fuite de courant vers la terre et coupe le circuit pour protéger les personnes.", wiki:'Disjoncteur_différentiel', alias:'dispositif differentiel residuel' }),
-  defRow('interrupteur_va_et_vient','Va-et-vient', T2, TPL.switchLike(true),
-    { famille:'Commande éclairage', def:"Commutateur unipolaire bidirectionnel : utilisé par paire pour commander un même point lumineux depuis deux endroits différents.", wiki:'Va-et-vient_(électricité)', alias:'commutateur double allumage' }),
+  defRow('interrupteur_va_et_vient','Va-et-vient (Schéma 6 / C6)', T3_SPDT,
+    `${leadLine(0,15,16,15)}<circle cx="16" cy="15" r="2.2" fill="currentColor"/>${leadLine(44,6,60,6)}${leadLine(44,24,60,24)}<circle cx="44" cy="6" r="2" fill="currentColor"/><circle cx="44" cy="24" r="2" fill="currentColor"/><line x1="16" y1="15" x2="42" y2="7" stroke="currentColor" stroke-width="2"/>`,
+    { famille:'Commande éclairage', pinNames:['L (commun)','1 (navette)','2 (navette)'],
+      def:"Commutateur unipolaire à un contact inverseur (SPDT) : la commune L bascule vers la navette 1 ou 2. Utilisé par paire (relié par les deux navettes) pour commander un même point lumineux depuis deux endroits différents.", wiki:'Va-et-vient_(électricité)', alias:'commutateur va et vient schema 6 c6' }),
+  defRow('interrupteur_double','Interrupteur double / double allumage (Schéma 5 / C5)', T3_SPDT,
+    `${leadLine(0,15,10,15)}${leadLine(10,8,10,22)}<circle cx="10" cy="8" r="2" fill="currentColor"/><circle cx="10" cy="22" r="2" fill="currentColor"/>${leadLine(44,6,60,6)}${leadLine(44,24,60,24)}<circle cx="44" cy="6" r="2" fill="currentColor"/><circle cx="44" cy="24" r="2" fill="currentColor"/><line x1="10" y1="8" x2="40" y2="7" stroke="currentColor" stroke-width="2"/><line x1="10" y1="22" x2="40" y2="23" stroke="currentColor" stroke-width="2"/>`,
+    { famille:'Commande éclairage', pinNames:['L (commun)','1 (sortie zone 1)','2 (sortie zone 2)'],
+      def:"Deux contacts simples indépendants sous un même mécanisme, partageant une phase commune : commande séparément deux zones d'éclairage depuis un seul point.", wiki:'Va-et-vient_(électricité)', alias:'commutateur double allumage schema 5 c5' }),
+  defRow('interrupteur_bipolaire','Interrupteur bipolaire (Schéma 2 / C2)', T4,
+    `${leadLine(0,8,16,8)}${leadLine(0,22,16,22)}<circle cx="16" cy="8" r="2" fill="currentColor"/><circle cx="16" cy="22" r="2" fill="currentColor"/>${leadLine(44,8,60,8)}${leadLine(44,22,60,22)}<circle cx="44" cy="8" r="2" fill="currentColor"/><circle cx="44" cy="22" r="2" fill="currentColor"/><line x1="16" y1="8" x2="40" y2="4" stroke="currentColor" stroke-width="2"/><line x1="16" y1="22" x2="40" y2="18" stroke="currentColor" stroke-width="2"/><line x1="30" y1="4" x2="30" y2="18" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2"/>`,
+    { famille:'Commande éclairage', pinNames:['L1 (entrée)','L2 (entrée)','1 (sortie L1)','2 (sortie L2)'],
+      def:"Coupe simultanément phase et neutre (2 contacts couplés) : isolation totale d'un circuit, utilisé en milieu humide ou extérieur.", wiki:'Interrupteur_(électricité)', alias:'interrupteur bipolaire schema 2 c2' }),
+  defRow('permutateur','Permutateur (Schéma 7 / C7)', T4, `${leadLine(0,8,16,8)}${leadLine(0,22,16,22)}${leadLine(44,8,60,8)}${leadLine(44,22,60,22)}<rect x="16" y="3" width="28" height="24" fill="none" stroke="currentColor" stroke-width="1.8"/>${ctext(30,17,'PERM',5.5)}`,
+    { famille:'Commande éclairage', pinNames:['L1 (entrée navette)','L2 (entrée navette)','1 (sortie navette)','2 (sortie navette)'],
+      def:"Double inverseur croisé s'intercalant entre deux va-et-vient pour ajouter un 3ᵉ point de commande (ou plus) sur une même ligne d'éclairage.", wiki:'Va-et-vient_(électricité)', alias:'permutateur schema 7 c7 troisieme point commande' }),
   defRow('telerupteur','Télérupteur', T4, `${leadLine(0,8,16,8)}${leadLine(0,22,16,22)}${leadLine(44,8,60,8)}${leadLine(44,22,60,22)}<rect x="16" y="3" width="28" height="24" fill="none" stroke="currentColor" stroke-width="1.8"/>${ctext(30,17,'TL',7)}`,
-    { famille:'Commande éclairage', def:"Bascule un circuit d'éclairage à chaque impulsion reçue d'un ou plusieurs boutons-poussoirs.", wiki:'Télérupteur', alias:'telerupteur bistable' }),
+    { famille:'Commande éclairage', pinNames:['1 (puissance, entrée)','A1 (bobine, commande poussoirs)','2 (puissance, sortie vers lampe)','A2 (bobine, neutre)'],
+      def:"Bascule un circuit d'éclairage à chaque impulsion reçue d'un ou plusieurs boutons-poussoirs (relais bistable) : contact de puissance 1-2, bobine de commande A1-A2.", wiki:'Télérupteur', alias:'telerupteur bistable' }),
   defRow('contacteur_jour_nuit','Contacteur jour/nuit', T2, `${leadLine(0,15,18,15)}${leadLine(42,15,60,15)}<circle cx="18" cy="15" r="2.2" fill="currentColor"/><circle cx="42" cy="15" r="2.2" fill="currentColor"/><line x1="18" y1="15" x2="40" y2="6" stroke="currentColor" stroke-width="2"/>`,
     { famille:'Distribution', def:"Bascule automatiquement une charge (ex. chauffe-eau) selon le signal tarifaire heures pleines/creuses.", wiki:'Contacteur_jour/nuit' }),
   defRow('luminaire','Luminaire', T2, `${leadLine(0,15,10,15)}${leadLine(50,15,60,15)}<circle cx="30" cy="15" r="10" fill="none" stroke="currentColor" stroke-width="2"/><line x1="23" y1="8" x2="37" y2="22" stroke="currentColor" stroke-width="1.4"/><line x1="37" y1="8" x2="23" y2="22" stroke="currentColor" stroke-width="1.4"/>`,

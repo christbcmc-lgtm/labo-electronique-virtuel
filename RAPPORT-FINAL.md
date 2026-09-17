@@ -876,3 +876,139 @@ limite :
   deux côtés) ;
 - brochage réel (`pinNames`) présent et affichable pour une référence connue, absent (et non inventé)
   par défaut.
+
+---
+
+# ADDENDUM 3 — REPRISE CIBLÉE À PARTIR DU CAHIER « REPRISE, ORGANISATION ET ÉVOLUTION »
+
+Cette session fait suite à un nouveau document reçu du client : un cahier des charges de
+**reprise et de réorganisation** (~8600 lignes), explicitement écrit pour une IA prenant le
+relais sans connaître le code existant, avec un ordre de priorités précis (analyser →
+cartographier → identifier l'existant → doublons → réorganiser fichiers → bibliothèque →
+interface/canevas → mobile → PDF → tester sans casser).
+
+## P1-P4. Ce qui a été analysé avant toute modification
+
+Conformément à ce document, rien n'a été modifié avant d'avoir lu et vérifié l'état réel du
+dépôt : `RAPPORT-FINAL.md` (sections A à O ci-dessus) et `NOTES_EXIGENCES_EN_COURS.md` ont
+été relus intégralement, puis leurs affirmations ont été spot-vérifiées directement contre
+`js/catalog.js` (structure des gabarits `T2`/`T4`/`TPL`, mécanisme `pinNames`) plutôt que
+supposées exactes. Conclusion : la cartographie déjà écrite dans ce rapport est fidèle à
+l'état réel du code — priorités 1 à 4 déjà couvertes par les sessions précédentes, pas
+refaites de zéro.
+
+Un écart entre le dépôt et le nouveau cahier a cependant été détecté par cette relecture
+croisée (voir P6 ci-dessous) : `js/config.js`/`js/catalog.js`/etc. étaient bien chargés
+depuis `index.html` (30 lignes, coquille), mais **`tests/test_app.js` référençait encore
+l'ancien nom de fichier `labo-electronique-virtuel.html`**, supprimé lors du renommage vers
+`index.html` (commit `cdb2916`). Conséquence concrète : `npm test` échouait immédiatement
+(`ENOENT`) depuis ce renommage — corrigé (2 occurrences dans `tests/test_app.js`). C'est un
+bug réel trouvé par exécution, pas seulement par lecture.
+
+## P6. Bibliothèque de composants — 4 défauts de brochage corrigés/comblés
+
+Le nouveau cahier donne le détail exact (bornes, désignations IEC) des mécanismes de
+commande de l'électricité du bâtiment (Schémas C1/C2/C5/C6/C7, montages va-et-vient/
+permutateur/télérupteur). Comparé à ce détail, `js/catalog.js` présentait :
+
+1. **`interrupteur_va_et_vient` modélisé avec seulement 2 bornes** (`T2`, gabarit
+   `TPL.switchLike`) alors qu'un vrai va-et-vient (Schéma 6/C6) est un inverseur unipolaire à
+   **3 bornes** (commune `L` + 2 navettes). Avec 2 bornes seulement, le montage va-et-vient
+   classique (deux commutateurs reliés par deux navettes) ne pouvait pas être câblé
+   correctement dans l'éditeur. Corrigé : nouveau gabarit de bornes `T3_SPDT`, nouveau
+   symbole (commune + 2 contacts + lame), `pinNames:['L (commun)','1 (navette)','2 (navette)']`.
+2. **Aucun composant `permutateur` (Schéma 7/C7) n'existait** — impossible de représenter un
+   3ᵉ point de commande sur un circuit va-et-vient, pourtant un cas explicitement décrit dans
+   le nouveau cahier. Ajouté (4 bornes `L1,L2,1,2` sur le gabarit `T4` déjà utilisé par le
+   télérupteur, `pinNames` correspondants).
+3. **`interrupteur_double` (Schéma 5/C5, double allumage)** et **`interrupteur_bipolaire`
+   (Schéma 2/C2, coupure phase+neutre)** n'existaient pas non plus comme fiches distinctes
+   (seul un interrupteur générique à 2 bornes existait). Ajoutés avec leurs bornes et
+   symboles propres (visuellement distincts du va-et-vient : deux lames indépendantes plutôt
+   qu'un seul inverseur, conformément à la règle du cahier « le nombre de broches ne définit
+   jamais à lui seul le symbole »).
+4. **`telerupteur` avait déjà les 4 bonnes bornes mais aucun `pinNames`** — ajouté
+   (`1`/`2` = contact de puissance, `A1`/`A2` = bobine de commande), conforme au tableau du
+   cahier et cohérent avec le mécanisme `pinNames` déjà utilisé pour le NE555 etc.
+
+**Non fait délibérément** : le nouveau cahier demande aussi un audit de brochage beaucoup
+plus large (les ~500 composants du catalogue) et un modèle de données à 4 couches
+(référence/symbole/modèle/paramètres) avec des champs supplémentaires (sous-famille,
+référence technique, niveau de vérification, source). Ce n'est pas fait cette session — voir
+`NOTES_REPRISE_2026.md` pour la justification et le report explicite de ce chantier, qui
+exigerait sa propre session de planification (risque de régression sur un catalogue déjà
+vérifié par `tests/verify_catalog.js`, comme cela avait déjà été expliqué pour une demande
+similaire dans l'addendum 1, section N1).
+
+## P9. PDF — 4 exports indépendants au lieu d'un seul rapport imposé
+
+Le nouveau cahier (§15) est explicite : « le choix du type de PDF doit appartenir à
+l'utilisateur ». Avant cette session, `js/pdf.js` n'exposait qu'un seul export
+(`exportProjectPDF`, un unique bouton dans l'éditeur) assemblant systématiquement schéma +
+devis + dimensionnement + IA en un seul document ; le devis et le dimensionnement n'avaient
+aucun export qui leur soit propre.
+
+Refonte, sans changer le contenu déjà existant :
+- `exportRapportCompletPDF` (renommage de l'ancien `exportProjectPDF`) : **contenu et ordre
+  des sections strictement identiques** à avant — aucune régression sur le seul export déjà
+  utilisé jusqu'ici.
+- `exportSchemaPDF` (nouveau) : schéma redessiné + nomenclature + diagnostic seuls, bouton
+  dédié dans l'éditeur (« Exporter le schéma (PDF) »).
+- `exportDevisPDF` (nouveau) : devis seul, indépendant du schéma, bouton dédié dans la vue
+  Devis.
+- `exportDimensionnementPDF` (nouveau) : dernier résultat de dimensionnement calculé seul,
+  indépendant du schéma, bouton dédié à côté de chaque calculateur (photovoltaïque,
+  électrotechnique) qui alimente déjà `window.__lastDimResult`.
+
+Les 4 exports partagent désormais la même mise en page (voir ci-dessous) au lieu que seul le
+rapport complet ait un habillage soigné.
+
+## Logo et mise en page « professionnelle » des PDF (demande explicite du client en cours de
+## session — décision prise sans revalidation, comme autorisé explicitement)
+
+Demande reçue en cours de session : un logo sur les PDF, et une présentation plus
+professionnelle, avec autorisation explicite de décider seul sans redemander. Décisions
+prises :
+- **Logo 100% vectoriel** (`LAB_LOGO_SVG` dans `js/pdf.js`) : un pictogramme de boîtier à
+  broches dessiné en SVG inline, dans le même style (`<line>`/`<rect>`) que tous les
+  symboles de composants déjà utilisés ailleurs dans l'app — aucune image importée, aucune
+  dépendance ajoutée, cohérent avec le principe déjà établi « pas de bibliothèque PDF, pas de
+  stockage serveur » (§26).
+- **En-tête/pied de page partagés** (`pdfHeaderHTML`/`pdfFooterHTML`/`openPdfWindow`) :
+  logo + nom du laboratoire + titre + métadonnées en en-tête, mention de génération en pied
+  de page, appliqués identiquement aux 4 types d'export via une fonction d'ouverture de
+  fenêtre commune (`openPdfWindow`) qui a remplacé la duplication de code
+  `window.open/document.write/close/focus` qui existait dans l'ancien `exportProjectPDF`.
+- Feuille de style imprimable légèrement resserrée (`PDF_STYLE`), toujours sans bibliothèque
+  ajoutée.
+
+## Tests (addendum 3)
+
+`npm test` exécute maintenant **136 vérifications, 0 échec, 0 erreur JavaScript non
+interceptée** (123 précédemment + 13 ajoutées cette session), en plus de
+`tests/verify_catalog.js` qui confirme les 503 composants (500 + 3 nouveaux : interrupteur
+double, interrupteur bipolaire, permutateur) sans aucune anomalie de brochage. Nouveaux
+parcours vérifiés par exécution réelle (pas seulement relus) :
+- le va-et-vient a bien 3 bornes (pas 2), le permutateur et l'interrupteur double/bipolaire
+  existent avec le bon nombre de bornes, le télérupteur affiche bien A1/A2 ;
+- `exportSchemaPDF`, `exportDevisPDF`, `exportDimensionnementPDF`, `exportRapportCompletPDF`
+  s'exécutent tous les quatre sans exception (y compris le cas « popup bloqué », déjà le cas
+  pour l'ancien export) ;
+- le type de dimensionnement (« Électrotechnique / Bâtiment ») est bien renseigné pour
+  l'export indépendant ;
+- l'en-tête partagé des PDF contient bien un `<svg>` et le nom de la marque.
+
+**Non testé automatiquement** (nécessiterait un vrai navigateur, comme déjà signalé section
+M) : rendu visuel réel du logo et de la mise en page à l'impression/export PDF réel. La
+logique (contenu HTML généré, absence d'exception) est vérifiée par exécution ; l'apparence
+pixel-exacte ne l'est pas.
+
+## Ce qui reste délibérément non fait cette session
+
+Voir `NOTES_REPRISE_2026.md` pour le détail et la justification complète. En résumé, le
+nouveau cahier demande une refonte beaucoup plus large que ce qui précède :
+bibliothèque en 3 colonnes façon Proteus (famille → sous-famille → fiche), modèle de données
+composant à 4 couches, séparation de l'espace de travail du schéma et de l'interface
+générale, refonte mobile-first. Ce chantier n'a pas été commencé — il a été jugé trop risqué
+pour être mené dans la même session que des corrections concrètes et vérifiables, conformément
+à la mise en garde du cahier lui-même contre une réécriture aveugle.

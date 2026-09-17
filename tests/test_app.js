@@ -15,13 +15,13 @@ function assert(cond, label){
 function section(title){ console.log('\n=== ' + title + ' ==='); }
 
 async function boot(){
-  let html = fs.readFileSync(path.join(PROJECT, 'labo-electronique-virtuel.html'), 'utf8');
+  let html = fs.readFileSync(path.join(PROJECT, 'index.html'), 'utf8');
   // Retire TOUTES les balises <script src> (CDN Supabase + fichiers locaux) : on les charge
   // nous-mêmes ci-dessous via eval(), pour un contrôle total sur l'ordre et éviter toute
   // tentative de fetch réseau par jsdom pendant le parsing du HTML.
   html = html.replace(/<script src="[^"]*"><\/script>/g, '');
   const dom = new JSDOM(html, {
-    url: 'http://localhost/labo-electronique-virtuel.html',
+    url: 'http://localhost/index.html',
     runScripts: 'dangerously',
     pretendToBeVisual: true,
     beforeParse(window){
@@ -318,6 +318,14 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   rows = doc.querySelectorAll('#devis-table tr[data-idx]');
   assert(rows.length > 1, 'import des composants du schéma dans le devis (lignes=' + rows.length + ')');
 
+  section('Export PDF du devis seul (§15 Option 2 — indépendant du schéma)');
+  assert(!!doc.getElementById('btn-devis-export-pdf'), 'bouton "Exporter le devis (PDF)" présent sur la vue devis');
+  let devisPdfError = null;
+  const origConfirmDevis = win.confirm; win.confirm = () => true;
+  try { await win.exportDevisPDF(projectId); } catch(e){ devisPdfError = e; }
+  win.confirm = origConfirmDevis;
+  assert(!devisPdfError, 'exportDevisPDF ne lève pas d\'exception' + (devisPdfError ? ' — ERREUR: ' + devisPdfError.message : ''));
+
   section('Dimensionnement (§24) — formules réelles');
   await nav(win, 'dimensionnement/' + projectId);
   await tick(250);
@@ -348,11 +356,29 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   const etResultText = doc.getElementById('et-result').textContent;
   // In = 2300/230 = 10 A
   assert(etResultText.includes('10.0 A') || etResultText.includes('10 A'), 'calcul électrotechnique correct : courant nominal = 10 A (résultat: ' + etResultText.replace(/\s+/g,' ').slice(0,200) + ')');
+  assert(!!doc.getElementById('et-export-pdf'), 'bouton "Exporter ce dimensionnement (PDF)" présent après un calcul');
 
-  section('Export PDF (ne doit pas planter même si popup bloqué)');
-  let pdfError = null;
-  try { await win.exportProjectPDF(projectId, win.wsState.schema); } catch(e){ pdfError = e; }
-  assert(!pdfError, 'exportProjectPDF ne lève pas d\'exception (popup bloqué géré proprement)' + (pdfError ? ' — ERREUR: ' + pdfError.message : ''));
+  section('Export PDF du dimensionnement seul (§15 Option 3 — indépendant du schéma)');
+  // Fixe directement l'état que le vrai gestionnaire de clic pose avant d'appeler l'export
+  // (évite de dépendre du comportement de window.confirm() non implémenté par jsdom).
+  win.__lastDimResult = { projectId, type:'Électrotechnique / Bâtiment', html: win.__etLastHTML };
+  let dimPdfError = null;
+  const origConfirmDim = win.confirm; win.confirm = () => true;
+  try { win.exportDimensionnementPDF(projectId); } catch(e){ dimPdfError = e; }
+  win.confirm = origConfirmDim;
+  assert(!dimPdfError, 'exportDimensionnementPDF ne lève pas d\'exception' + (dimPdfError ? ' — ERREUR: ' + dimPdfError.message : ''));
+  assert(win.__lastDimResult && win.__lastDimResult.type === 'Électrotechnique / Bâtiment', 'le type de dimensionnement est bien renseigné pour l\'export');
+
+  section('Export PDF (4 types indépendants — §15 de la mise à jour, ne doivent pas planter même si popup bloqué)');
+  const origConfirmPdf = win.confirm; win.confirm = () => true;
+  let schemaPdfError = null, rapportPdfError = null;
+  try { await win.exportSchemaPDF(projectId, win.wsState.schema); } catch(e){ schemaPdfError = e; }
+  assert(!schemaPdfError, 'exportSchemaPDF ne lève pas d\'exception (popup bloqué géré proprement)' + (schemaPdfError ? ' — ERREUR: ' + schemaPdfError.message : ''));
+  try { await win.exportRapportCompletPDF(projectId, win.wsState.schema); } catch(e){ rapportPdfError = e; }
+  assert(!rapportPdfError, 'exportRapportCompletPDF ne lève pas d\'exception (popup bloqué géré proprement)' + (rapportPdfError ? ' — ERREUR: ' + rapportPdfError.message : ''));
+  win.confirm = origConfirmPdf;
+  const pdfHeaderSample = win.pdfHeaderHTML('Test', 'Sous-titre');
+  assert(pdfHeaderSample.includes('<svg') && pdfHeaderSample.includes('Laboratoire Électronique Virtuel'), 'l\'en-tête partagé des PDF inclut un logo vectoriel (SVG inline) et la marque');
 
   section('Thème (§33)');
   const themeBtn = doc.querySelector('[data-theme-pick="clair"]');
@@ -642,6 +668,19 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   const pinoutHtml = win.pinNamesListHTML(ne555Def);
   assert(pinoutHtml.includes('GND') && pinoutHtml.includes('VCC'), 'le brochage réel est bien affichable (info-bulle catalogue / panneau propriétés)');
   assert(win.pinNamesListHTML({ pinNames:null }) === '', 'un composant sans brochage connu ne montre pas de liste vide plutôt que d\'inventer un brochage');
+
+  section('Appareillage bâtiment — brochage corrigé/complété (mise à jour reçue du client)');
+  const vevDef = win.findDef('interrupteur_va_et_vient');
+  assert(vevDef.terminals.length === 3, 'le va-et-vient (Schéma 6/C6) a bien 3 bornes (commune + 2 navettes), pas 2 comme un interrupteur simple (résultat: ' + vevDef.terminals.length + ')');
+  assert(Array.isArray(vevDef.pinNames) && vevDef.pinNames.length === 3, 'le brochage du va-et-vient (L, navette 1, navette 2) est renseigné');
+  const doubleDef = win.findDef('interrupteur_double');
+  assert(doubleDef && doubleDef.terminals.length === 3, 'l\'interrupteur double / double allumage (Schéma 5/C5) existe avec 3 bornes');
+  const bipolDef = win.findDef('interrupteur_bipolaire');
+  assert(bipolDef && bipolDef.terminals.length === 4, 'l\'interrupteur bipolaire (Schéma 2/C2) existe avec 4 bornes (L1,L2,1,2)');
+  const permDef = win.findDef('permutateur');
+  assert(permDef && permDef.terminals.length === 4, 'le permutateur (Schéma 7/C7), absent avant cette session, existe maintenant avec 4 bornes');
+  const telDef = win.findDef('telerupteur');
+  assert(Array.isArray(telDef.pinNames) && telDef.pinNames.some(p=>p.startsWith('A1')) && telDef.pinNames.some(p=>p.startsWith('A2')), 'le télérupteur affiche désormais le brochage réel de sa bobine (A1/A2), en plus du contact de puissance (résultat: ' + JSON.stringify(telDef.pinNames) + ')');
 
   console.log('\n=== Erreurs JS non interceptées pendant toute la session ===');
   console.log(win.__jsErrors.length ? win.__jsErrors.join('\n---\n') : '(aucune)');
