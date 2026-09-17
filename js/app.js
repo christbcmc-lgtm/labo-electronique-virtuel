@@ -609,10 +609,14 @@ function favBtnHTML(id, withLabel){
   const label = withLabel ? (active ? ' Favori' : ' Ajouter aux favoris') : '';
   return `<button class="fav-btn static ${active?'active':''}" data-fav="${id}"${withLabel?' data-fav-label="1"':''} title="Favori">${active?'★':'☆'}${label}</button>`;
 }
+// Aperçu visuel du symbole dans les résultats de recherche (référence WinRelais/VisuSymbole citée
+// par le client : "on doit en fait voir les symboles dans la partie de recherche", pas seulement du
+// texte) — réutilise renderComponentSymbolSVG déjà utilisé par la fiche détail de la bibliothèque.
 function renderCompResultRows(list){
   return list.map(c => `
     <div class="catalog-item comp-result-row">
-      <div><strong>${esc(c.nom)}</strong> <span style="opacity:.6;font-size:.85em">— ${esc(c.famille||'')}${c.groupe && ESPACES[c.groupe] ? (' · '+ESPACES[c.groupe].nom) : ''}</span>
+      <div class="comp-result-thumb">${renderComponentSymbolSVG(c.id)}</div>
+      <div class="comp-result-info"><strong>${esc(c.nom)}</strong> <span style="opacity:.6;font-size:.85em">— ${esc(c.famille||'')}${c.groupe && ESPACES[c.groupe] ? (' · '+ESPACES[c.groupe].nom) : ''}</span>
         <p style="margin:.2em 0 0;font-size:.78em">${esc(c.def||'')}</p></div>
       <div style="display:flex;gap:10px;align-items:center;flex-shrink:0">
         ${favBtnHTML(c.id, false)}

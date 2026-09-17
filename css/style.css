@@ -367,9 +367,12 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:.86em; }
 .fav-btn.active{ color:var(--amber); }
 .fav-btn.static{ position:static; transform:none; font-size:1.1em; }
 
-.comp-result-row{ display:flex; justify-content:space-between; align-items:center; gap:14px; padding:12px 4px; border-bottom:1px solid var(--trace); }
+.comp-result-row{ display:flex; align-items:center; gap:14px; padding:12px 4px; border-bottom:1px solid var(--trace); }
 .comp-result-row:last-child{ border-bottom:none; }
 .comp-result-row p{ color:var(--text-faint); }
+.comp-result-thumb{ flex:none; width:56px; height:32px; background:var(--bg); border:1px solid var(--panel-border); border-radius:4px; display:flex; align-items:center; justify-content:center; padding:3px; }
+.comp-result-thumb svg{ width:100%; height:100%; color:var(--text-muted); }
+.comp-result-info{ flex:1; min-width:0; }
 
 /* ---- Bibliothèque 3 colonnes (Famille → Sous-famille → Fiche, §6/§7 des mises à jour) ---- */
 .lib-browser{ display:grid; grid-template-columns:220px 260px 1fr; gap:1px; background:var(--panel-border); border:1px solid var(--panel-border); border-radius:6px; overflow:hidden; min-height:60vh; }

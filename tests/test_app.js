@@ -241,6 +241,11 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(diagHtml.includes('borne') && diagHtml.includes('non connectée'), 'diagnostic signale les bornes restantes non connectées');
   assert(diagHtml.includes('2 composant'), 'diagnostic compte bien 2 composants');
 
+  section('PDF — section "5. Diagnostic / analyse" en tableau structuré (demandé explicitement)');
+  const pdfDiagHtml = win.buildDiagnosticText(win.wsState.schema);
+  assert(pdfDiagHtml.includes('<table') && pdfDiagHtml.includes('<th>Type</th>') && pdfDiagHtml.includes('<th>Élément</th>') && pdfDiagHtml.includes('<th>Description</th>'), 'le diagnostic du PDF est un vrai tableau (Type/Élément/Description), pas une liste de lignes (résultat: ' + pdfDiagHtml.replace(/\s+/g,' ').slice(0,150) + ')');
+  assert(pdfDiagHtml.includes('Borne non connectée'), 'le tableau du diagnostic PDF liste bien les bornes non connectées par leur type');
+
   section('Éditeur — court-circuit direct détecté');
   const before = win.wsState.schema.wires.length;
   win.wsState.schema.wires.push({ id:'w_short', a:{itemId:item1.id, term:0}, b:{itemId:item1.id, term:1} });
@@ -588,6 +593,7 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   setVal(win, doc.getElementById('comp-search'), 'NE555');
   await tick(150);
   assert(doc.getElementById('comp-search-results').textContent.includes('NE555'), 'la page dédiée trouve un composant dans tout le catalogue');
+  assert(!!doc.querySelector('#comp-search-results .comp-result-thumb svg'), 'le symbole réel du composant est visible directement dans les résultats de recherche (retour du client sur WinRelais/VisuSymbole : "on doit voir les symboles dans la partie de recherche")');
   const compFavBtn = doc.querySelector('#comp-search-results [data-fav]');
   assert(!!compFavBtn, 'bouton favori présent sur un résultat de recherche');
   click(win, compFavBtn);

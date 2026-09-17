@@ -101,20 +101,28 @@ function bomTableHTML(bom){
   </table>`;
 }
 
+// Diagnostic du PDF en tableau structuré (Type / Élément / Description), demandé explicitement
+// par le client pour la section « 5. Diagnostic / analyse » — remplace l'ancienne liste de
+// lignes en <div> par une vraie table, cohérente avec le reste des sections du rapport.
 function buildDiagnosticText(schema){
   const items = schema.items, wires = schema.wires;
   if (items.length === 0) return '<p>Aucun composant posé.</p>';
   const connected = new Set();
   wires.forEach(w => { connected.add(w.a.itemId+'#'+w.a.term); connected.add(w.b.itemId+'#'+w.b.term); });
-  const warnings = [];
+  const rows = [];
+  wires.filter(w=>w.a.itemId===w.b.itemId).forEach(w => {
+    const nom = findDef(findItem(schema,w.a.itemId)?.typeId)?.nom || 'Composant';
+    rows.push({ gravite:'err', type:'Court-circuit', element:nom, description:'Fil reliant deux de ses propres bornes.' });
+  });
   items.forEach(item => {
     const def = findDef(item.typeId);
-    def.terminals.forEach((t,idx) => { if (!connected.has(item.id+'#'+idx)) warnings.push(`${def.nom} — borne ${idx+1} non connectée.`); });
+    def.terminals.forEach((t,idx) => { if (!connected.has(item.id+'#'+idx)) rows.push({ gravite:'warn', type:'Borne non connectée', element:def.nom, description:`Borne ${idx+1} non connectée.` }); });
   });
-  const shorts = wires.filter(w=>w.a.itemId===w.b.itemId).map(w => `${findDef(findItem(schema,w.a.itemId)?.typeId)?.nom||'Composant'} : fil reliant deux de ses propres bornes (court-circuit direct).`);
-  const replacementWarnings = collectReplacementWarnings(schema);
-  const lines = [...shorts.map(s=>`<div class="err">⚠ ${esc(s)}</div>`), ...warnings.map(w=>`<div class="warn">• ${esc(w)}</div>`), ...replacementWarnings.map(w=>`<div class="warn">⚠ ${esc(w)}</div>`)];
-  return lines.length ? lines.join('') : '<p>Toutes les bornes sont connectées, aucun court-circuit direct détecté.</p>';
+  collectReplacementWarnings(schema).forEach(w => rows.push({ gravite:'warn', type:'Référence incohérente', element:'', description:w }));
+  if (!rows.length) return '<p>Toutes les bornes sont connectées, aucun court-circuit direct détecté.</p>';
+  return `<table><tr><th>Type</th><th>Élément</th><th>Description</th></tr>
+    ${rows.map(r=>`<tr class="${r.gravite}"><td>${esc(r.type)}</td><td>${esc(r.element)}</td><td>${esc(r.description)}</td></tr>`).join('')}
+  </table>`;
 }
 
 function buildConclusionText(items, wires, connected){
@@ -146,6 +154,7 @@ const PDF_STYLE = `
   td{ border:1px solid #ddd; padding:7px 10px; text-align:left; }
   tr:nth-child(even) td{ background:#fafbfc; }
   .warn{ color:#a15c00; } .err{ color:#a12a1a; font-weight:bold; }
+  tr.warn td{ background:#fff6e8; } tr.err td{ background:#fdeeec; }
   .note{ margin-top:8px; font-size:10.5px; color:#888; font-style:italic; }
   .dim-formula{ page-break-inside:avoid; }
   .conclusion{ background:#f4f6f8; padding:16px 18px; border-radius:4px; border-left:4px solid #173b5e; page-break-inside:avoid; }
