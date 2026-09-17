@@ -384,24 +384,32 @@ function wireFavPanel(){
   panel.dataset.wired = '1';
 
   let dragging = false, offX = 0, offY = 0;
-  head.addEventListener('mousedown', (e) => {
+  const startFavDrag = (e, isTouch) => {
     if (e.target.closest('button')) return;
+    if (isTouch && e.cancelable) e.preventDefault();
     dragging = true;
     const holder = document.getElementById('ws-canvas-holder');
     const hb = holder.getBoundingClientRect(), pb = panel.getBoundingClientRect();
-    offX = e.clientX - pb.left; offY = e.clientY - pb.top;
+    const p0 = eventPoint(e);
+    offX = p0.clientX - pb.left; offY = p0.clientY - pb.top;
     const onMove = (ev) => {
-      let x = ev.clientX - offX - hb.left, y = ev.clientY - offY - hb.top;
+      if (isTouch && ev.cancelable) ev.preventDefault();
+      const p = eventPoint(ev);
+      let x = p.clientX - offX - hb.left, y = p.clientY - offY - hb.top;
       x = Math.max(0, Math.min(x, hb.width - 40)); y = Math.max(0, Math.min(y, hb.height - 30));
       panel.style.left = x + 'px'; panel.style.top = y + 'px';
     };
     const onUp = () => {
       document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onUp); document.removeEventListener('touchcancel', onUp);
       dragging = false;
       setFavPanelState({ ...getFavPanelState(), x: parseFloat(panel.style.left), y: parseFloat(panel.style.top) });
     };
-    document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
-  });
+    if (isTouch){ document.addEventListener('touchmove', onMove, { passive:false }); document.addEventListener('touchend', onUp); document.addEventListener('touchcancel', onUp); }
+    else { document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp); }
+  };
+  head.addEventListener('mousedown', (e) => startFavDrag(e, false));
+  head.addEventListener('touchstart', (e) => startFavDrag(e, true), { passive:false });
 
   document.getElementById('fav-panel-collapse').onclick = () => {
     const collapsed = !panel.classList.contains('collapsed');
@@ -478,24 +486,32 @@ function wireToolPanel(){
   panel.dataset.wired = '1';
 
   let dragging = false, offX = 0, offY = 0;
-  head.addEventListener('mousedown', (e) => {
+  const startToolDrag = (e, isTouch) => {
     if (e.target.closest('button')) return;
+    if (isTouch && e.cancelable) e.preventDefault();
     dragging = true;
     const holder = document.getElementById('ws-canvas-holder');
     const hb = holder.getBoundingClientRect(), pb = panel.getBoundingClientRect();
-    offX = e.clientX - pb.left; offY = e.clientY - pb.top;
+    const p0 = eventPoint(e);
+    offX = p0.clientX - pb.left; offY = p0.clientY - pb.top;
     const onMove = (ev) => {
-      let x = ev.clientX - offX - hb.left, y = ev.clientY - offY - hb.top;
+      if (isTouch && ev.cancelable) ev.preventDefault();
+      const p = eventPoint(ev);
+      let x = p.clientX - offX - hb.left, y = p.clientY - offY - hb.top;
       x = Math.max(0, Math.min(x, hb.width - 40)); y = Math.max(0, Math.min(y, hb.height - 30));
       panel.style.left = x + 'px'; panel.style.top = y + 'px';
     };
     const onUp = () => {
       document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onUp); document.removeEventListener('touchcancel', onUp);
       dragging = false;
       setToolPanelState({ ...getToolPanelState(), x: parseFloat(panel.style.left), y: parseFloat(panel.style.top) });
     };
-    document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
-  });
+    if (isTouch){ document.addEventListener('touchmove', onMove, { passive:false }); document.addEventListener('touchend', onUp); document.addEventListener('touchcancel', onUp); }
+    else { document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp); }
+  };
+  head.addEventListener('mousedown', (e) => startToolDrag(e, false));
+  head.addEventListener('touchstart', (e) => startToolDrag(e, true), { passive:false });
 
   document.getElementById('tool-panel-collapse').onclick = () => {
     const collapsed = !panel.classList.contains('collapsed');
