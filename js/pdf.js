@@ -74,7 +74,8 @@ function renderTechnicalSchema(schema, refs){
     const sym = SYM[item.typeId] || '';
     const ref = refs.get(item.id);
     const valueTxt = def.unit ? `${item.value}${def.unit.split(' ')[0]?(' '+def.unit.split(' ')[0]):''}` : '';
-    return `<g transform="translate(${item.x},${item.y}) rotate(${item.rot||0},30,15)" color="#111" stroke="#111">
+    const viewH = def.viewH || 30; // boîtiers denses (icTemplate) : centre de rotation réel, pas 15 partout
+    return `<g transform="translate(${item.x},${item.y}) rotate(${item.rot||0},30,${viewH/2})" color="#111" stroke="#111">
         <g>${sym}</g>
       </g>
       <text x="${item.x+6}" y="${item.y-6}" font-size="8" font-family="monospace" fill="#111">${esc(ref)}${valueTxt?(' — '+esc(valueTxt)):''}</text>`;

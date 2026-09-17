@@ -147,7 +147,10 @@ function rotatePointAround(px,py,cx,cy,angleDeg){
 function terminalAbsPos(item, idx){
   const def = findDef(item.typeId);
   const [tx,ty] = def.terminals[idx];
-  const r = rotatePointAround(tx,ty,30,15,item.rot||0);
+  // Centre de rotation = (30, viewH/2) — 15 pour tous les composants historiques (viewH=30),
+  // mais plus haut pour les boîtiers à forte densité de broches (voir icTemplate, js/catalog.js) :
+  // sans ça, un tel composant tourné à 90°/270° connecterait ses fils à la mauvaise position.
+  const r = rotatePointAround(tx,ty,30,(def.viewH||30)/2,item.rot||0);
   return { x:item.x + r.x, y:item.y + r.y };
 }
 
@@ -761,19 +764,24 @@ function renderCanvasSVG(){
     const def = findDef(item.typeId);
     const sym = SYM[item.typeId] || '';
     const selected = item.id === wsState.selectedId ? 'selected' : '';
+    // viewH>30 (boîtiers denses, voir icTemplate) : centre de rotation et repères de bornes
+    // suivent la hauteur réelle du composant plutôt qu'une valeur fixe à 30/15.
+    const viewH = def.viewH || 30;
     const terms = def.terminals.map((t,idx) => {
       const isConnected = wires.some(w => (w.a.itemId===item.id&&w.a.term===idx)||(w.b.itemId===item.id&&w.b.term===idx));
-      const numDx = t[0] < 30 ? -7 : 7, numDy = t[1] < 15 ? -4 : 9;
+      // Décalage réduit et symétrique (au lieu d'un +9 fixe qui débordait sur la broche
+      // suivante dès que l'espacement entre broches se resserre sur un boîtier dense).
+      const numDx = t[0] < 30 ? -7 : 7, numDy = t[1] < viewH/2 ? -3.5 : 6.5;
       return `<circle class="terminal-dot ${isConnected?'connected':''} ${wsState.wireStart && wsState.wireStart.itemId===item.id && wsState.wireStart.term===idx ? 'wiring-start':''}" data-term-item="${item.id}" data-term-idx="${idx}" cx="${t[0]}" cy="${t[1]}" r="3.4"/>
         <text class="pin-number" x="${t[0]+numDx}" y="${t[1]+numDy}">${idx+1}</text>`;
     }).join('');
     const UNIT_SUFFIX = { 'état':'', 'logique':'', 'rapport':'', 'gain β':' β', 'type':'' };
     const unitSuffix = def.unit ? (def.unit in UNIT_SUFFIX ? UNIT_SUFFIX[def.unit] : ' '+def.unit.split(' ')[0]) : '';
     const valueLabel = def.unit ? `<text class="comp-label" x="6" y="-4">${esc(item.value)}${esc(unitSuffix)}</text>` : '';
-    const refLabel = item.ref ? `<text class="comp-ref" x="6" y="38">${esc(item.ref)}</text>` : '';
+    const refLabel = item.ref ? `<text class="comp-ref" x="6" y="${viewH+8}">${esc(item.ref)}</text>` : '';
     const mismatch = customRefMismatch(item, def);
-    const customRefLabel = item.customRef ? `<text class="comp-customref ${mismatch?'mismatch':''}" x="6" y="46">${mismatch?'⚠ ':''}${esc(item.customRef)}</text>` : '';
-    return `<g class="comp-node ${selected}" data-item="${item.id}" transform="translate(${item.x},${item.y}) rotate(${item.rot||0},30,15)">
+    const customRefLabel = item.customRef ? `<text class="comp-customref ${mismatch?'mismatch':''}" x="6" y="${viewH+16}">${mismatch?'⚠ ':''}${esc(item.customRef)}</text>` : '';
+    return `<g class="comp-node ${selected}" data-item="${item.id}" transform="translate(${item.x},${item.y}) rotate(${item.rot||0},30,${viewH/2})">
       <g class="comp-body">${sym}</g>
       ${valueLabel}${refLabel}${customRefLabel}
       ${terms}
@@ -987,7 +995,8 @@ function wireCanvasEvents(){
     }
     if (wsState.armedType){
       const cur = svgUserToCanvas(clientToSvgUser(e, svg));
-      wsState.ghostPos = { x: snap(cur.x-30), y: snap(cur.y-15) };
+      const armedViewH = (findDef(wsState.armedType).viewH || 30);
+      wsState.ghostPos = { x: snap(cur.x-30), y: snap(cur.y-armedViewH/2) };
       const ghost = svg.querySelector('.drop-preview');
       if (ghost) ghost.setAttribute('transform', `translate(${wsState.ghostPos.x},${wsState.ghostPos.y})`);
     }
@@ -1025,7 +1034,7 @@ function wireCanvasEvents(){
       const cur = svgUserToCanvas(clientToSvgUser(e, svg));
       const def = findDef(wsState.armedType);
       pushUndoSnapshot();
-      wsState.schema.items.push({ id:'i_'+Math.random().toString(36).slice(2,8), typeId:wsState.armedType, x:snap(cur.x-30), y:snap(cur.y-15), rot:0, value: def.defaultValue ?? '' });
+      wsState.schema.items.push({ id:'i_'+Math.random().toString(36).slice(2,8), typeId:wsState.armedType, x:snap(cur.x-30), y:snap(cur.y-(def.viewH||30)/2), rot:0, value: def.defaultValue ?? '' });
       recordRecentComponent(wsState.armedType);
       wsState.armedType = null; wsState.ghostPos = null;
       persistSchema(); redrawCanvas(); refreshFavPanelBody(); toast(`${def.nom} posé.`);
@@ -1224,7 +1233,7 @@ function redrawCanvasLight(){
   if (!svg) return;
   wsState.schema.items.forEach(item => {
     const g = svg.querySelector(`.comp-node[data-item="${item.id}"]`);
-    if (g) g.setAttribute('transform', `translate(${item.x},${item.y}) rotate(${item.rot||0},30,15)`);
+    if (g){ const viewH = findDef(item.typeId).viewH || 30; g.setAttribute('transform', `translate(${item.x},${item.y}) rotate(${item.rot||0},30,${viewH/2})`); }
   });
   const viewport = document.getElementById('ws-viewport');
   viewport.querySelectorAll('.wire-line, .wire-junction').forEach(l=>l.remove());

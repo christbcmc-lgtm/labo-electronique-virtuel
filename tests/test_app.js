@@ -852,6 +852,32 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(pinoutHtml.includes('GND') && pinoutHtml.includes('VCC'), 'le brochage réel est bien affichable (info-bulle catalogue / panneau propriétés)');
   assert(win.pinNamesListHTML({ pinNames:null }) === '', 'un composant sans brochage connu ne montre pas de liste vide plutôt que d\'inventer un brochage');
 
+  section('Boîtiers à forte densité de broches — hauteur variable (retour explicite du client : numéros de broches qui se chevauchent sur un boîtier 14/16 broches, exemple de code à l\'appui)');
+  const denseDef = win.findDef('registre_595'); // 74HC595, 16 broches
+  assert(denseDef.terminals.length === 16, 'le registre à décalage (74HC595) a bien 16 broches');
+  assert(denseDef.viewH > 30, 'un boîtier à forte densité de broches (16, 8 par côté) obtient une hauteur logique agrandie, au-delà des 30 unités d\'avant (résultat: ' + denseDef.viewH + ')');
+  const smallDef = win.findDef('ne555'); // 8 broches, 4 par côté
+  assert(smallDef.viewH === 30, 'un boîtier à faible densité (NE555, 4 broches par côté) garde exactement l\'ancienne hauteur — aucun changement visuel pour l\'immense majorité du catalogue');
+  const denseGap = Math.abs(denseDef.terminals[1][1] - denseDef.terminals[0][1]);
+  assert(denseGap > 5, 'l\'espacement entre deux broches consécutives d\'un boîtier 16 broches est nettement plus grand que les 3 unités d\'avant, qui causaient le chevauchement des numéros (résultat: ' + denseGap.toFixed(2) + ' unités)');
+
+  // Pose ce composant dense sur le schéma et le pivote : le fil doit se connecter à la bonne
+  // position réelle (le centre de rotation doit suivre viewH/2, pas un 15 fixe pour tous les
+  // composants — sinon un boîtier dense tourné connecterait ses fils au mauvais endroit).
+  await nav(win, 'project/' + projectId); // Alice est connectée (juste avant) et reste propriétaire de ce projet
+  await tick(200);
+  win.armComponentForPlacement('registre_595');
+  await tick(50);
+  mouseAt(win, doc.getElementById('ws-grid-bg'), 'click', 500, 500);
+  await tick(150);
+  const denseItem = win.wsState.schema.items[win.wsState.schema.items.length-1];
+  assert(denseItem.typeId === 'registre_595', 'le composant dense a bien été posé sur le schéma');
+  denseItem.rot = 90;
+  const expectedRel = win.rotatePointAround(denseDef.terminals[0][0], denseDef.terminals[0][1], 30, denseDef.viewH/2, 90);
+  const actualAbs = win.terminalAbsPos(denseItem, 0);
+  assert(Math.abs(actualAbs.x - (denseItem.x+expectedRel.x)) < 0.01 && Math.abs(actualAbs.y - (denseItem.y+expectedRel.y)) < 0.01,
+    'après rotation, la borne d\'un composant dense se connecte à la position réellement attendue (centre de rotation = viewH/2, pas 15 fixe pour tous)');
+
   section('Appareillage bâtiment — brochage corrigé/complété (mise à jour reçue du client)');
   const vevDef = win.findDef('interrupteur_va_et_vient');
   assert(vevDef.terminals.length === 3, 'le va-et-vient (Schéma 6/C6) a bien 3 bornes (commune + 2 navettes), pas 2 comme un interrupteur simple (résultat: ' + vevDef.terminals.length + ')');

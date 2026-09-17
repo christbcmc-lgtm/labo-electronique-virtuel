@@ -55,13 +55,25 @@ const T3_SPDT       = [[0,15],[60,6],[60,24]];                  // commutateur u
 // gauche (1..L), puis on REMONTE le côté droit (L+1..n se lit de bas en haut) — c'est l'ordre
 // physique standard de n'importe quel circuit intégré DIP réel, pas un simple comptage de haut
 // en bas des deux côtés (erreur corrigée cette session — voir addendum du rapport final).
+// Hauteur logique variable selon le nombre de broches PAR CÔTÉ, au lieu d'empiler toujours plus
+// de broches dans une hauteur fixe à 30 (retour explicite du client, avec exemple de code à
+// l'appui : sur un boîtier à 14/16 broches, les numéros de broches se chevauchaient car 7-8
+// broches par côté devaient tenir dans le même espace vertical qu'un boîtier à 4 broches par
+// côté). Les boîtiers ≤4 broches par côté (l'immense majorité du catalogue : tous les 8 broches
+// et moins) gardent EXACTEMENT la même géométrie qu'avant — aucun changement visuel pour eux,
+// seuls les boîtiers plus denses (10 broches et plus) gagnent une hauteur proportionnelle.
+// `PIN_GAP`/`PIN_PAD` sont calibrés pour que perSide=4 redonne viewH=30 (l'ancienne constante).
+const PIN_GAP = 6, PIN_PAD = 3;
 function icTemplate(n, label){
   const L = Math.ceil(n/2), R = n - L;
+  const perSide = Math.max(L, R);
+  const viewH = Math.max(30, perSide * PIN_GAP + PIN_PAD * 2);
+  const usableL = viewH - 2*PIN_PAD;
   const terms = []; let leads = '';
-  for (let i=0;i<L;i++){ const y = 3 + (i+0.5)*(24/L); leads += leadLine(0,y,16,y); terms.push([0,y]); }
-  for (let i=0;i<R;i++){ const y = 3 + (R-1-i+0.5)*(24/R); leads += leadLine(44,y,60,y); terms.push([60,y]); }
-  const sym = `${leads}<rect x="16" y="3" width="28" height="24" fill="none" stroke="currentColor" stroke-width="1.6"/>${ctext(30,17,label,6.2)}`;
-  return { sym, terminals: terms };
+  for (let i=0;i<L;i++){ const y = PIN_PAD + (i+0.5)*(usableL/L); leads += leadLine(0,y,16,y); terms.push([0,y]); }
+  for (let i=0;i<R;i++){ const y = PIN_PAD + (R-1-i+0.5)*(usableL/R); leads += leadLine(44,y,60,y); terms.push([60,y]); }
+  const sym = `${leads}<rect x="16" y="${PIN_PAD}" width="28" height="${usableL}" fill="none" stroke="currentColor" stroke-width="1.6"/>${ctext(30,viewH/2+2,label,6.2)}`;
+  return { sym, terminals: terms, viewH };
 }
 
 // ---- Gabarits de symboles à 2 bornes (dipôles), génériques par famille ----
@@ -87,7 +99,7 @@ function icDefRow(id, nom, pins, opts={}){
   // par pièce) uniquement pour les références dont le brochage est confirmé (`pinNames` présent) —
   // DIP-N/SOIC-N est la désignation générique standard d'un boîtier à N broches en 2 rangées.
   if (opts.pinNames && !opts.boitier) opts = { ...opts, boitier: `DIP-${pins} / SOIC-${pins}` };
-  return defRow(id, nom, t.terminals, t.sym, opts);
+  return defRow(id, nom, t.terminals, t.sym, { ...opts, viewH: t.viewH });
 }
 function defRow(id, nom, terminals, sym, opts={}){
   SYM[id] = sym;
@@ -119,6 +131,10 @@ function defRow(id, nom, terminals, sym, opts={}){
     niveauVerification: opts.niveauVerification || (opts.pinNames
       ? 'Brochage réel documenté + symbole vérifié automatiquement (tests/verify_catalog.js)'
       : 'Symbole vérifié automatiquement (bornes ↔ tracé, tests/verify_catalog.js) — brochage détaillé non documenté'),
+    // Hauteur logique du symbole (30 = comportement historique, centre de rotation à viewH/2).
+    // Seuls les boîtiers icTemplate() à forte densité de broches (voir plus haut) la dépassent —
+    // toutes les autres fiches (l'immense majorité du catalogue) restent à 30 comme avant.
+    viewH: opts.viewH || 30,
   };
 }
 
@@ -567,7 +583,7 @@ const ELECTRONIQUE = [
     const opts = { famille:'Circuits intégrés', def, complexite:'avance', alias:id, ...extra };
     // Boîtier déduit du nombre de broches réel, uniquement quand le brochage est confirmé (pinNames).
     if (opts.pinNames && !opts.boitier) opts.boitier = `DIP-${pins} / SOIC-${pins}`;
-    return defRow(id, nom, t.terminals, t.sym, opts); }),
+    return defRow(id, nom, t.terminals, t.sym, { ...opts, viewH: t.viewH }); }),
 
   // --- Logique numérique (portes) ---
   defRow('porte_and','Porte logique ET (AND)', T3_AOP, TPL.gate2in(AND_PATH),
@@ -631,7 +647,7 @@ const ELECTRONIQUE = [
     ['module_bluetooth','Module Bluetooth','Émetteur-récepteur radio courte portée pour liaison sans fil entre appareils.'],
     ['module_wifi','Module Wi-Fi','Émetteur-récepteur radio permettant la connexion à un réseau local sans fil.'],
   ].map(([id,nom,def]) => { const t = icTemplate(6, nom.split(' ')[1]||nom.split(' ')[0]);
-    return defRow(id, nom, t.terminals, t.sym, { famille:'Communication', complexite:'avance', def, alias:id }); }),
+    return defRow(id, nom, t.terminals, t.sym, { famille:'Communication', complexite:'avance', def, alias:id, viewH: t.viewH }); }),
   ...[
     ['hc05','HC-05 (Bluetooth)',"Module Bluetooth classique maître/esclave, liaison série sans fil courte portée.",'HC-05'],
     ['hc06','HC-06 (Bluetooth esclave)',"Module Bluetooth esclave uniquement, simple à mettre en œuvre en liaison série.",'HC-06'],
@@ -647,7 +663,7 @@ const ELECTRONIQUE = [
     ['w5500','W5500 (module Ethernet)',"Contrôleur Ethernet matériel TCP/IP, interface SPI.",'Ethernet'],
     ['mcp2515','MCP2515 (contrôleur CAN)',"Contrôleur de bus CAN autonome, interface SPI, utilisé en réseau embarqué automobile/industriel.",'Bus_CAN'],
   ].map(([id,nom,def,wiki]) => { const t = icTemplate(8, nom.split(' ')[0]);
-    return defRow(id, nom, t.terminals, t.sym, { famille:'Communication', complexite:'avance', def, wiki, alias:id }); }),
+    return defRow(id, nom, t.terminals, t.sym, { famille:'Communication', complexite:'avance', def, wiki, alias:id, viewH: t.viewH }); }),
 
   // --- Affichage ---
   defRow('lcd','Afficheur LCD', T4, `${leadLine(0,8,14,8)}${leadLine(0,22,14,22)}${leadLine(46,8,60,8)}${leadLine(46,22,60,22)}<rect x="14" y="4" width="32" height="22" fill="none" stroke="currentColor" stroke-width="1.8"/>${ctext(30,18,'LCD',7)}`,
@@ -667,7 +683,7 @@ const ELECTRONIQUE = [
     ['ecran_tft','Écran TFT couleur',"Petit écran couleur à matrice active, piloté en SPI (interfaces graphiques embarquées).",'Thin-film-transistor_liquid-crystal_display'],
     ['ecran_epaper','Écran e-paper (encre électronique)',"Affichage bistable très faible consommation, conserve l'image même hors tension.",'Papier_électronique'],
   ].map(([id,nom,def,wiki]) => { const t = icTemplate(id.includes('quad')?12:id.includes('double')?10:8, nom.split(' ')[0]);
-    return defRow(id, nom, t.terminals, t.sym, { famille:'Affichage', def, wiki, alias:id }); }),
+    return defRow(id, nom, t.terminals, t.sym, { famille:'Affichage', def, wiki, alias:id, viewH: t.viewH }); }),
 
   // --- Références commerciales précises réutilisant un symbole déjà vérifié (§7 des notes en
   // cours) : la référence/le nom sont propres à la fiche, le symbole/brochage restent ceux de la
@@ -785,7 +801,7 @@ const ELECTRONIQUE = [
     ['fingerprint','Capteur d\'empreinte digitale',"Module optique de capture et de reconnaissance d'empreinte digitale.",'Biométrie'],
     ['pulse_sensor','Capteur de battement cardiaque',"Mesure optiquement (photopléthysmographie) le rythme cardiaque au doigt ou à l'oreille.",'Photopléthysmographie'],
   ].map(([id,nom,def,wiki]) => { const t = icTemplate(id.includes('relais_4')?10:6, nom.split(' ')[0].split('(')[0]);
-    return defRow(id, nom, t.terminals, t.sym, { famille:'Capteurs et modules', complexite:'avance', def, wiki, alias:id }); }),
+    return defRow(id, nom, t.terminals, t.sym, { famille:'Capteurs et modules', complexite:'avance', def, wiki, alias:id, viewH: t.viewH }); }),
 
   // --- Régulateurs de tension à valeur fixe (§7 des notes en cours : chaque référence est un
   // circuit intégré réellement différent — référence de tension interne propre — même si le
@@ -836,7 +852,7 @@ const ELECTRONIQUE = [
     ['ci_74125','74HC125 (quad buffer 3 états)','Quatre tampons à sortie trois états, activables indépendamment.',14],
     ['ci_74266','74HC266 (quad XNOR)','Quatre portes OU exclusif inversé à 2 entrées.',14],
   ].map(([id,nom,def,pins]) => { const t = icTemplate(pins, nom.split(' ')[0]);
-    return defRow(id, nom, t.terminals, t.sym, { famille:'Logique numérique', complexite:'avance', def, alias:id }); }),
+    return defRow(id, nom, t.terminals, t.sym, { famille:'Logique numérique', complexite:'avance', def, alias:id, viewH: t.viewH }); }),
 
   // --- Modules d'alimentation prêts à l'emploi (très utilisés en projets pédagogiques) ---
   ...[
@@ -845,7 +861,7 @@ const ELECTRONIQUE = [
     ['module_chargeur_tp4056','Module chargeur Li-ion TP4056',"Carte de charge/protection pour cellule lithium-ion, entrée micro-USB ou USB-C.",'Batterie_lithium-ion'],
     ['module_usbc_pd','Module déclencheur USB-C PD',"Négocie une tension spécifique auprès d'un chargeur USB-C Power Delivery.",'USB_Power_Delivery'],
   ].map(([id,nom,def,wiki]) => { const t = icTemplate(4, nom.split(' ')[1]);
-    return defRow(id, nom, t.terminals, t.sym, { famille:'Circuits intégrés', complexite:'avance', def, wiki, alias:id }); }),
+    return defRow(id, nom, t.terminals, t.sym, { famille:'Circuits intégrés', complexite:'avance', def, wiki, alias:id, viewH: t.viewH }); }),
   defRow('connecteur_jack_dc','Connecteur jack d\'alimentation (DC)', T2, `${leadLine(0,15,18,15)}${leadLine(42,15,60,15)}<circle cx="30" cy="15" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="30" cy="15" r="3" fill="currentColor"/>`,
     { famille:'Câblage', def:"Connecteur cylindrique standard pour alimenter un appareil en courant continu.", wiki:'Connecteur_d\'alimentation', alias:'jack dc alimentation 5.5mm' }),
   defRow('connecteur_xt60','Connecteur XT60', T2, `${leadLine(0,15,18,15)}${leadLine(42,15,60,15)}<rect x="18" y="9" width="24" height="12" fill="none" stroke="currentColor" stroke-width="1.6"/>${ctext(30,17,'XT60',4.5)}`,
@@ -873,7 +889,7 @@ const ELECTRONIQUE = [
     ['module_ir_obstacle','Module évitement d\'obstacle infrarouge',"Détecte un obstacle proche par réflexion infrarouge (robot mobile)."],
     ['capteur_sol_capacitif','Capteur d\'humidité du sol capacitif',"Mesure l'humidité du sol par capacité, plus durable qu'un capteur résistif (pas de corrosion)."],
   ].map(([id,nom,def]) => { const t = icTemplate(6, nom.split(' ')[0]);
-    return defRow(id, nom, t.terminals, t.sym, { famille:'Capteurs et modules', complexite:'avance', def, alias:id }); }),
+    return defRow(id, nom, t.terminals, t.sym, { famille:'Capteurs et modules', complexite:'avance', def, alias:id, viewH: t.viewH }); }),
 
   // --- Communication — deuxième série ---
   ...[
@@ -882,7 +898,7 @@ const ELECTRONIQUE = [
     ['lorawan_module','Module LoRaWAN',"Module radio longue portée conforme au protocole LoRaWAN (objets connectés bas débit)."],
     ['can_tja1050','TJA1050 (transceiver CAN)',"Adapte les niveaux logiques d'un contrôleur CAN au bus différentiel CAN physique."],
   ].map(([id,nom,def]) => { const t = icTemplate(8, nom.split(' ')[0]);
-    return defRow(id, nom, t.terminals, t.sym, { famille:'Communication', complexite:'avance', def, alias:id }); }),
+    return defRow(id, nom, t.terminals, t.sym, { famille:'Communication', complexite:'avance', def, alias:id, viewH: t.viewH }); }),
 ];
 
 /* ==========================================================================
@@ -1295,7 +1311,8 @@ function wikiUrl(slug){ return `https://fr.wikipedia.org/wiki/${slug}`; }
 function renderComponentSymbolSVG(typeId){
   const sym = SYM[typeId];
   if (!sym) return '';
-  return `<svg viewBox="-6 -6 72 42" class="component-symbol-preview" xmlns="http://www.w3.org/2000/svg"><g>${sym}</g></svg>`;
+  const viewH = findDef(typeId)?.viewH || 30; // boîtiers denses (icTemplate) : aperçu non tronqué
+  return `<svg viewBox="-6 -6 72 ${viewH+12}" class="component-symbol-preview" xmlns="http://www.w3.org/2000/svg"><g>${sym}</g></svg>`;
 }
 
 /* ==========================================================================
