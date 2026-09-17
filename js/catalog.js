@@ -384,13 +384,20 @@ const ELECTRONIQUE = [
   defRow('rheostat','Rhéostat', T2, TPL.boxDiag('Rh'),
     { unit:'Ω', defaultValue:100, valueOptions:[10,47,100,470,1000], famille:'Résistances',
       def:"Résistance variable de puissance utilisée pour limiter un courant (démarrage moteur, réglage de charge), généralement câblée à deux bornes.", wiki:'Rhéostat', alias:'rheostat puissance' }),
-  defRow('thermistance_ntc','Thermistance NTC', T2, TPL.boxLabel('NTC'),
+  // Thermistances : résistance + flèche diagonale traversante (même convention IEC que la
+  // résistance variable/le rhéostat ci-dessus, TPL.boxDiag) — NTC/PTC ne sont pas distinguées par
+  // la forme en norme IEC 60617 (seulement par le texte), donc réutiliser le gabarit "résistance
+  // variable" est correct, pas approximatif — c'était un simple rectangle vide avant cette session.
+  defRow('thermistance_ntc','Thermistance NTC', T2, TPL.boxDiag('NTC'),
     { unit:'Ω (25°C)', defaultValue:10000, valueOptions:[1000,4700,10000,100000], famille:'Résistances',
       def:"Résistance dont la valeur diminue quand la température augmente (mesure/protection thermique).", wiki:'Thermistance', alias:'ntc temperature' }),
-  defRow('thermistance_ptc','Thermistance PTC', T2, TPL.boxLabel('PTC'),
+  defRow('thermistance_ptc','Thermistance PTC', T2, TPL.boxDiag('PTC'),
     { unit:'Ω (25°C)', defaultValue:100, valueOptions:[47,100,470,1000], famille:'Résistances',
       def:"Résistance dont la valeur augmente quand la température augmente (protection contre les surintensités).", wiki:'Thermistance', alias:'ptc autoreset fuse' }),
-  defRow('ldr','LDR (photorésistance)', T2, TPL.boxLabel('LDR'),
+  // LDR : résistance + 2 flèches entrantes (lumière incidente), même convention que la photodiode
+  // ci-dessous plutôt que la flèche diagonale d'une résistance ajustable manuellement.
+  defRow('ldr','LDR (photorésistance)', T2,
+    `${leadLine(0,15,12,15)}${leadLine(48,15,60,15)}<rect x="12" y="7" width="36" height="16" fill="none" stroke="currentColor" stroke-width="2"/><line x1="38" y1="-4" x2="32" y2="4" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/><line x1="44" y1="-2" x2="38" y2="6" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>${ctext(30,20,'LDR',6)}`,
     { unit:'Ω (obscurité)', defaultValue:1000000, valueOptions:[10000,100000,1000000], famille:'Résistances',
       def:"Résistance dont la valeur diminue avec la luminosité reçue (capteur de lumière simple).", wiki:'Photorésistance', alias:'ldr photoresistance capteur lumiere' }),
   defRow('reseau_resistances','Réseau de résistances', T3_BLOCK, TPL.block('RN'),
