@@ -9,11 +9,13 @@
 Le client a transmis plusieurs documents de reprise au fil de la même session (le premier
 ~8600 lignes, puis un second plus strict demandant explicitement de ne pas se contenter de
 corriger l'existant, puis des demandes ponctuelles en cours de route : logo/PDF pro,
-undo/redo, qualité des symboles). Une bonne partie a été traitée au fil de cette session — voir
-`RAPPORT-FINAL.md`, addenda 3 et 4 : brochage de 5 composants d'appareillage bâtiment, PDF
-éclaté en 4 exports + logo unifié interface/PDF, bibliothèque 3 colonnes, modèle de données
-enrichi, devis multi-devises, PDF du dimensionnement détaillé, annuler/rétablir, 3 symboles
-corrigés.
+undo/redo, qualité des symboles, tactile, hauteur des boîtiers denses). Une bonne partie a été
+traitée au fil de cette session — voir `RAPPORT-FINAL.md`, addenda 3 à 6 : brochage de 5
+composants d'appareillage bâtiment, PDF éclaté en 4 exports + logo unifié interface/PDF,
+bibliothèque 3 colonnes, modèle de données enrichi, devis multi-devises, PDF du dimensionnement
+détaillé, annuler/rétablir, barre d'outils flottante, tactile complet (déplacer/tracer un
+fil/pan), hauteur de boîtier variable selon la densité de broches, 3 symboles corrigés
+(NTC/PTC/LDR), multimètre redessiné.
 
 Le reste décrit un chantier plus large, **volontairement reporté** — pas une omission. Ce
 fichier accumule ce qui reste pour rester traçable pour la suite, exactement comme
@@ -22,10 +24,18 @@ fichier accumule ce qui reste pour rester traçable pour la suite, exactement co
 ## 1. Audit des symboles contre la norme IEC 60617 — PRIORITÉ N°1 (demande explicite du client)
 
 « Les symboles sont prioritaires et doivent respecter la norme, je ne veux pas d'une forme
-bâclée. » Cette session a corrigé les 3 cas les plus nets de rectangle-vide-avec-texte sans
-convention réelle (thermistances NTC/PTC, LDR — voir addendum 4, Q7), en réutilisant des
-gabarits déjà présents dans `js/catalog.js` (`TPL.boxDiag`, convention photodiode). Restent à
-auditer, par ordre de valeur probable :
+bâclée. » Cette session a corrigé :
+- les 3 cas les plus nets de rectangle-vide-avec-texte sans convention réelle (thermistances
+  NTC/PTC, LDR — voir addendum 4, Q7), en réutilisant des gabarits déjà présents dans
+  `js/catalog.js` (`TPL.boxDiag`, convention photodiode) ;
+- le multimètre, entièrement redessiné en boîtier à afficheur + vraies bornes de sonde
+  (addendum 5) ;
+- **le chevauchement des numéros de broches sur les boîtiers denses (14/16+ broches)** —
+  signalé avec image + exemple de code à l'appui, corrigé par une hauteur de boîtier variable
+  (`icTemplate()`/`viewH`, addendum 6) : ce point précis est réglé, ne pas le re-signaler dans
+  un audit futur.
+
+Restent à auditer, par ordre de valeur probable :
 
 - Les composants de contrôle/puissance encore en gabarit "rectangle + sigle" (`variateur_vitesse`,
   `gradateur_puissance`, `hacheur`, `relais_auxiliaire`, `analyseur_reseau`,

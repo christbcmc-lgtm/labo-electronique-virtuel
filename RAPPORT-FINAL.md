@@ -1118,3 +1118,56 @@ s'affichait normalement, donc l'extension fonctionne, seul l'accès au serveur l
 Toute la validation de cette session reste donc au niveau DOM simulé (Node + jsdom), pas au
 rendu pixel réel — en particulier la mise en page de la bibliothèque 3 colonnes sur petit
 écran et le rendu réel des nouveaux symboles n'ont pas pu être observés visuellement.
+
+---
+
+# ADDENDUM 6 — TACTILE (bug réel corrigé) ET HAUTEUR VARIABLE DES BOÎTIERS DENSES
+
+## R1. Déplacement, tracé de fil et pan ne fonctionnaient pas du tout au tactile
+
+Le client a fourni un exemple de code (`WireRouter`, inspiré de WinRelais) utilisant les
+Pointer Events pour unifier souris et tactile, en signalant explicitement que le tracé de fil
+ne fonctionnait pas bien et devait fonctionner au tactile. Vérification précise plutôt que
+supposition : `js/editor.js` n'écoutait que `mousedown`/`mousemove`/`mouseup` pour trois
+gestes essentiels — déplacer un composant posé, faire un pan du canevas, et afficher la ligne
+de prévisualisation d'un fil en cours de tracé. Sur un vrai téléphone/tablette, aucun des
+trois ne fonctionnait (seule la sélection via l'évènement `click`, bien synthétisé après un
+tapotement, fonctionnait déjà). Corrigé en ajoutant les équivalents tactiles
+(`touchstart`/`touchmove`/`touchend`) à chacun des trois gestes, plus aux deux panneaux
+flottants (Récents/Favoris, Outils), sans dupliquer la logique métier (`eventPoint()` normalise
+un évènement souris ou tactile une seule fois, réutilisé partout). Le geste d'appui long pour
+le menu contextuel (§6) reste fonctionnel : il est annulé dès qu'un vrai déplacement est
+détecté, pour que les deux gestes ne puissent jamais aboutir en même temps.
+
+## R2. Boîtiers à forte densité de broches — chevauchement des numéros
+
+Le client a fourni une image du problème plus un exemple de code complet (classe Canvas avec
+hauteur de boîtier calculée dynamiquement à partir du nombre de broches) montrant précisément
+la correction attendue. `icTemplate()` (`js/catalog.js`) donne maintenant
+une hauteur logique (`viewH`) proportionnelle au nombre de broches par côté, calibrée pour ne
+rien changer aux boîtiers à 4 broches par côté ou moins (l'immense majorité du catalogue,
+espacement 6 unités déjà correct), et agrandit les boîtiers plus denses pour garder ce même
+espacement de 6 unités quel que soit le nombre de broches — un ATmega328P (28 broches) comme
+un NE555 (8 broches) ont maintenant exactement le même espacement entre broches. Ce nouveau
+champ a été répercuté partout où le code supposait un centre de rotation fixe à (30,15)
+(rendu canevas, rendu PDF, `terminalAbsPos()` qui calcule la position réelle de connexion des
+fils, position de dépose, aperçu de la bibliothèque) — sinon un boîtier dense pivoté aurait
+connecté ses fils au mauvais endroit après rotation, un bug plus grave que le problème visuel
+d'origine. Vérifié par exécution réelle : rotation à 90° d'un registre à décalage 16 broches,
+la borne se connecte exactement là où `rotatePointAround()` la prédit avec le nouveau centre.
+
+## Ce qui reste non fait (audit complet des symboles)
+
+Ces deux corrections ciblent des bugs réels et concrets signalés avec preuve (image + code de
+référence). Un audit systématique de la forme/proportion de chaque symbole du catalogue
+(au-delà de la géométrie broches↔tracé déjà vérifiée automatiquement) reste un chantier plus
+large, toujours documenté comme priorité n°1 dans `NOTES_REPRISE_2026.md`.
+
+## Tests (addendum 6)
+
+`npm test` exécute maintenant **196 vérifications, 0 échec** (184 avant cette section + 12
+nouvelles : 6 sur le tactile — glisser un composant au doigt et le retrouver aimanté sur la
+grille, la ligne de prévisualisation du fil suit le doigt avec les bonnes coordonnées après
+pan/zoom, tracer un fil complet au doigt, glisser le fond du canevas au doigt fait un pan — et
+6 sur la hauteur variable des boîtiers denses, dont la vérification de rotation ci-dessus).
+`tests/verify_catalog.js` : 505 composants, 0 anomalie de brochage.
