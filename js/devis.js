@@ -8,7 +8,7 @@
    n'est qu'une suggestion de départ pratique (bouton "Importer le schéma").
    ========================================================================== */
 
-function emptyDevis(){ return { lignes:[], remisePct:0, tauxTaxe:20, taxeActive:false }; }
+function emptyDevis(){ return { lignes:[], remisePct:0, tauxTaxe:20, taxeActive:false, devise:'EUR' }; }
 
 function computeDevisTotals(devis){
   const subtotal = devis.lignes.reduce((n,l)=> n + (Number(l.qte)||0) * (Number(l.prix)||0), 0);
@@ -18,7 +18,30 @@ function computeDevisTotals(devis){
   const total = apresRemise + taxe;
   return { subtotal, remise, apresRemise, taxe, total };
 }
-function fmtMoney(n){ return (Number(n)||0).toLocaleString('fr-FR',{minimumFractionDigits:2, maximumFractionDigits:2}) + ' €'; }
+
+// Multi-devises (mise à jour reçue du client : "ne jamais imposer une seule monnaie") — la devise
+// est un champ du devis lui-même (`devis.devise`), enregistrée avec le projet et reprise dans son
+// PDF. `EUR` reste la valeur par défaut pour rester compatible avec les devis déjà enregistrés
+// avant cette fonctionnalité (aucun champ `devise` en base → traité comme EUR, pas une régression).
+const DEVISES_DISPONIBLES = [
+  { code:'XOF', label:'FCFA (XOF)' },
+  { code:'EUR', label:'Euro (EUR)' },
+  { code:'USD', label:'Dollar US (USD)' },
+  { code:'NGN', label:'Naira (NGN)' },
+  { code:'GHS', label:'Cedi ghanéen (GHS)' },
+];
+function fmtMoney(n, devise){
+  const val = Number(n) || 0;
+  const formatted = val.toLocaleString('fr-FR', { minimumFractionDigits:0, maximumFractionDigits:2 });
+  switch (devise){
+    case 'XOF': return `${formatted} FCFA`;
+    case 'NGN': return `₦${formatted}`;
+    case 'GHS': return `GH₵${formatted}`;
+    case 'USD': return `$${formatted}`;
+    case 'EUR': return `${formatted} €`;
+    default:    return `${formatted} ${devise || 'EUR'}`;
+  }
+}
 
 async function viewDevis(projectId){
   const { data: project } = await db.getProject(projectId);
@@ -48,6 +71,9 @@ async function viewDevis(projectId){
         </table>
         </div>
         <div class="devis-totals" style="margin-top:16px">
+          <div class="row"><span>Devise</span><span><select id="devis-devise" style="background:var(--bg);border:1px solid var(--panel-border);color:var(--text);border-radius:3px">
+            ${DEVISES_DISPONIBLES.map(d => `<option value="${d.code}" ${(window.__devisState.devis.devise||'EUR')===d.code?'selected':''}>${esc(d.label)}</option>`).join('')}
+          </select></span></div>
           <div class="row"><span>Sous-total</span><span id="devis-subtotal"></span></div>
           <div class="row"><span>Remise (<input type="number" id="devis-remise" value="${window.__devisState.devis.remisePct}" style="width:50px;background:var(--bg);border:1px solid var(--panel-border);color:var(--text);border-radius:3px">%)</span><span id="devis-remise-val"></span></div>
           <div class="row"><span><label><input type="checkbox" id="devis-taxe-active" ${window.__devisState.devis.taxeActive?'checked':''}> Taxe (<input type="number" id="devis-taux-taxe" value="${window.__devisState.devis.tauxTaxe}" style="width:44px;background:var(--bg);border:1px solid var(--panel-border);color:var(--text);border-radius:3px">%)</label></span><span id="devis-taxe-val"></span></div>
@@ -58,13 +84,14 @@ async function viewDevis(projectId){
 }
 
 function renderDevisRows(devis){
+  const devise = devis.devise || 'EUR';
   return devis.lignes.map((l,idx) => `<tr data-idx="${idx}">
     <td><input data-f="nom" value="${esc(l.nom)}" placeholder="Désignation"></td>
     <td><input data-f="ref" value="${esc(l.ref||'')}" placeholder="Réf."></td>
     <td><input data-f="qte" type="number" min="0" step="1" value="${l.qte}"></td>
     <td><input data-f="unite" value="${esc(l.unite||'pièce')}"></td>
     <td><input data-f="prix" type="number" min="0" step="0.01" value="${l.prix}"></td>
-    <td class="ligne-total mono">${fmtMoney((Number(l.qte)||0)*(Number(l.prix)||0))}</td>
+    <td class="ligne-total mono">${fmtMoney((Number(l.qte)||0)*(Number(l.prix)||0), devise)}</td>
     <td><button class="btn btn-ghost btn-sm" data-del="${idx}" title="Supprimer">✕</button></td>
   </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text-faint)">Aucune ligne — ajoutez-en une, ou importez les composants du schéma.</td></tr>';
 }
@@ -76,21 +103,23 @@ function isDevisLigneVide(l){
 }
 function renderDevisTableHTML(devis){
   const t = computeDevisTotals(devis);
+  const devise = devis.devise || 'EUR';
   const lignes = devis.lignes.filter(l => !isDevisLigneVide(l));
   return `<table><tr><th>Désignation</th><th>Réf.</th><th>Qté</th><th>Unité</th><th>Prix unit.</th><th>Total</th></tr>
-    ${lignes.map(l=>`<tr><td>${esc(l.nom)}</td><td>${esc(l.ref||'')}</td><td>${l.qte}</td><td>${esc(l.unite||'')}</td><td>${fmtMoney(l.prix)}</td><td>${fmtMoney((Number(l.qte)||0)*(Number(l.prix)||0))}</td></tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#888">Aucune ligne renseignée.</td></tr>'}
+    ${lignes.map(l=>`<tr><td>${esc(l.nom)}</td><td>${esc(l.ref||'')}</td><td>${l.qte}</td><td>${esc(l.unite||'')}</td><td>${fmtMoney(l.prix, devise)}</td><td>${fmtMoney((Number(l.qte)||0)*(Number(l.prix)||0), devise)}</td></tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#888">Aucune ligne renseignée.</td></tr>'}
   </table>
-  <p style="margin-top:8px">Sous-total : ${fmtMoney(t.subtotal)} · Remise : ${fmtMoney(t.remise)} · ${devis.taxeActive?`Taxe (${devis.tauxTaxe}%) : ${fmtMoney(t.taxe)} · `:''}<strong>Total général : ${fmtMoney(t.total)}</strong></p>`;
+  <p style="margin-top:8px">Devise : ${esc(devise)} · Sous-total : ${fmtMoney(t.subtotal, devise)} · Remise : ${fmtMoney(t.remise, devise)} · ${devis.taxeActive?`Taxe (${devis.tauxTaxe}%) : ${fmtMoney(t.taxe, devise)} · `:''}<strong>Total général : ${fmtMoney(t.total, devise)}</strong></p>`;
 }
 
 function refreshDevisTotals(){
   const devis = window.__devisState.devis;
+  const devise = devis.devise || 'EUR';
   const t = computeDevisTotals(devis);
   const $ = (id) => document.getElementById(id);
-  if ($('devis-subtotal')) $('devis-subtotal').textContent = fmtMoney(t.subtotal);
-  if ($('devis-remise-val')) $('devis-remise-val').textContent = '− ' + fmtMoney(t.remise);
-  if ($('devis-taxe-val')) $('devis-taxe-val').textContent = devis.taxeActive ? fmtMoney(t.taxe) : '—';
-  if ($('devis-total')) $('devis-total').textContent = fmtMoney(t.total);
+  if ($('devis-subtotal')) $('devis-subtotal').textContent = fmtMoney(t.subtotal, devise);
+  if ($('devis-remise-val')) $('devis-remise-val').textContent = '− ' + fmtMoney(t.remise, devise);
+  if ($('devis-taxe-val')) $('devis-taxe-val').textContent = devis.taxeActive ? fmtMoney(t.taxe, devise) : '—';
+  if ($('devis-total')) $('devis-total').textContent = fmtMoney(t.total, devise);
 }
 
 async function saveDevisDebounced(){ await db.saveDevis(window.__devisState.projectId, window.__devisState.devis); }
@@ -107,7 +136,7 @@ function afterDevisView(){
     const field = e.target.dataset.f;
     const l = window.__devisState.devis.lignes[idx];
     l[field] = (field==='qte'||field==='prix') ? Number(e.target.value) : e.target.value;
-    tr.querySelector('.ligne-total').textContent = fmtMoney((Number(l.qte)||0)*(Number(l.prix)||0));
+    tr.querySelector('.ligne-total').textContent = fmtMoney((Number(l.qte)||0)*(Number(l.prix)||0), window.__devisState.devis.devise||'EUR');
     refreshDevisTotals();
     saveDevisDebounced();
   });
@@ -147,6 +176,13 @@ function afterDevisView(){
   document.getElementById('btn-devis-export-pdf')?.addEventListener('click', async () => {
     if (!confirm('Exporter le devis en PDF maintenant ?')) return;
     await exportDevisPDF(window.__devisState.projectId);
+  });
+
+  document.getElementById('devis-devise')?.addEventListener('change', (e) => {
+    window.__devisState.devis.devise = e.target.value;
+    table.innerHTML = table.rows[0].outerHTML + renderDevisRows(window.__devisState.devis);
+    refreshDevisTotals();
+    saveDevisDebounced();
   });
 
   document.getElementById('devis-remise')?.addEventListener('input', (e) => { window.__devisState.devis.remisePct = Number(e.target.value); refreshDevisTotals(); saveDevisDebounced(); });

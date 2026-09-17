@@ -318,6 +318,26 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   rows = doc.querySelectorAll('#devis-table tr[data-idx]');
   assert(rows.length > 1, 'import des composants du schéma dans le devis (lignes=' + rows.length + ')');
 
+  section('Devis multi-devises ("ne jamais imposer une seule monnaie" — mise à jour reçue du client)');
+  const deviseSelect = doc.getElementById('devis-devise');
+  assert(!!deviseSelect, 'sélecteur de devise présent sur la vue devis');
+  assert(deviseSelect.value === 'EUR', 'EUR est la devise par défaut (compatibilité avec les devis déjà enregistrés sans champ devise)');
+  assert(doc.getElementById('devis-total').textContent.includes('€'), 'le total est bien affiché en euros par défaut');
+  setVal(win, deviseSelect, 'XOF');
+  await tick(150);
+  assert(win.__devisState.devis.devise === 'XOF', 'la devise choisie est bien mémorisée dans l\'état du devis');
+  assert(doc.getElementById('devis-total').textContent.includes('FCFA'), 'le total repasse en FCFA après changement de devise (affiché: ' + doc.getElementById('devis-total').textContent + ')');
+  assert(!doc.getElementById('devis-total').textContent.includes('€'), 'l\'ancien symbole € a bien disparu après changement de devise');
+  const rowsAfterCurrency = doc.querySelectorAll('#devis-table tr[data-idx] .ligne-total');
+  assert(rowsAfterCurrency.length > 0 && [...rowsAfterCurrency].every(td => td.textContent.includes('FCFA')), 'les totaux de chaque ligne du devis suivent aussi la devise choisie');
+  setVal(win, deviseSelect, 'NGN');
+  await tick(150);
+  assert(doc.getElementById('devis-total').textContent.includes('₦'), 'le Naira (₦) est bien pris en charge (affiché: ' + doc.getElementById('devis-total').textContent + ')');
+  const devisPdfHtmlSample = win.renderDevisTableHTML(win.__devisState.devis);
+  assert(devisPdfHtmlSample.includes('₦'), 'la devise choisie est bien reprise dans le rendu utilisé par le PDF du devis');
+  setVal(win, deviseSelect, 'EUR'); // remet l'état par défaut pour la suite des tests
+  await tick(150);
+
   section('Export PDF du devis seul (§15 Option 2 — indépendant du schéma)');
   assert(!!doc.getElementById('btn-devis-export-pdf'), 'bouton "Exporter le devis (PDF)" présent sur la vue devis');
   let devisPdfError = null;

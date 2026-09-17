@@ -83,6 +83,10 @@ const OR_PATH  = 'M15,2 Q28,2 34,15 Q28,28 15,28 Q22,15 15,2 Z';
 
 function icDefRow(id, nom, pins, opts={}){
   const t = icTemplate(pins, opts.label || nom.split(' ')[0].split('(')[0]);
+  // Boîtier déduit du nombre de broches réel (donnée structurelle déjà connue, pas une invention
+  // par pièce) uniquement pour les références dont le brochage est confirmé (`pinNames` présent) —
+  // DIP-N/SOIC-N est la désignation générique standard d'un boîtier à N broches en 2 rangées.
+  if (opts.pinNames && !opts.boitier) opts = { ...opts, boitier: `DIP-${pins} / SOIC-${pins}` };
   return defRow(id, nom, t.terminals, t.sym, opts);
 }
 function defRow(id, nom, terminals, sym, opts={}){
@@ -90,14 +94,162 @@ function defRow(id, nom, terminals, sym, opts={}){
   // On étale d'abord `opts` (permet d'ajouter n'importe quel champ personnalisé — ex. `instrument`,
   // `pv` — sans devoir mettre cette fonction à jour à chaque fois, cf. §16), puis on complète les
   // champs standards avec leurs valeurs par défaut.
+  const famille = opts.famille || nom;
+  const alias = opts.alias || '';
   return {
     ...opts,
     id, nom, terminals,
     unit: opts.unit||'', defaultValue: opts.defaultValue ?? '', valueOptions: opts.valueOptions||[],
     def: opts.def||'', wiki: opts.wiki || nom.replace(/[^\wÀ-ÿ]+/g,'_'),
-    alias: opts.alias||'', famille: opts.famille||nom, complexite: opts.complexite||'simple',
+    alias, famille, complexite: opts.complexite||'simple',
     simulable: opts.simulable ?? false, variantes: opts.variantes || null,
+    // --- Modèle de données enrichi (mise à jour « reprise, organisation et évolution » du client,
+    // §4 : chaque composant doit posséder identifiant/nom/référence technique/famille/sous-famille/
+    // boîtier/source/niveau de vérification, en plus des champs déjà existants). Rien n'est inventé
+    // par pièce : `sousFamille` est dérivée par une règle générique (voir `deriveSousFamille`), pas
+    // saisie une par une ; `boitier` n'est renseigné que pour les références nommées dont le
+    // brochage est déjà connu avec confiance (`pinNames` présent) ; `source` reste vide par défaut
+    // plutôt que de citer une documentation non vérifiée (voir NOTES_REPRISE_2026.md) ;
+    // `niveauVerification` reflète ce qui est RÉELLEMENT vérifié automatiquement
+    // (tests/verify_catalog.js, + présence de `pinNames`), pas une auto-évaluation arbitraire.
+    sousFamille: opts.sousFamille || deriveSousFamille(famille, id, nom, alias),
+    refTechnique: opts.refTechnique || nom,
+    boitier: opts.boitier || '',
+    source: opts.source || '',
+    niveauVerification: opts.niveauVerification || (opts.pinNames
+      ? 'Brochage réel documenté + symbole vérifié automatiquement (tests/verify_catalog.js)'
+      : 'Symbole vérifié automatiquement (bornes ↔ tracé, tests/verify_catalog.js) — brochage détaillé non documenté'),
   };
+}
+
+// Dérive une sous-famille (Colonne 2 de la bibliothèque, §6 de la mise à jour) à partir de champs
+// déjà réels (famille/id/nom/alias) — une RÈGLE générique, pas une saisie manuelle par composant
+// (503 fiches). Couvre les familles les plus nombreuses avec une taxonomie électronique standard
+// bien établie ; retombe sur la famille elle-même pour les familles plus restreintes plutôt que
+// d'inventer une subdivision arbitraire.
+function deriveSousFamille(famille, id, nom, alias){
+  const s = (id + ' ' + nom + ' ' + alias).toLowerCase();
+  const has = (...words) => words.some(w => s.includes(w));
+  switch (famille){
+    case 'Diodes':
+      if (has('zener')) return 'Zener';
+      if (has('schottky')) return 'Schottky';
+      if (has('led')) return 'LED / optoélectronique émissive';
+      if (has('tvs')) return 'Protection (TVS)';
+      if (has('varicap', 'varactor')) return 'Varicap';
+      if (has('photodiode')) return 'Photodiode';
+      return 'Redressement / signal';
+    case 'Transistors':
+      if (has('mosfet')) return 'MOSFET';
+      if (has('jfet')) return 'JFET';
+      if (has('igbt')) return 'IGBT';
+      if (has('darlington')) return 'Darlington';
+      if (has('phototransistor')) return 'Phototransistor';
+      if (/\(npn\)/.test(s) || /^transistor npn/.test(s)) return 'Bipolaire NPN';
+      if (/\(pnp\)/.test(s) || /^transistor pnp/.test(s)) return 'Bipolaire PNP';
+      return 'Transistors (autre)';
+    case 'Circuits intégrés':
+      if (has('555')) return 'Temporisateur (NE555 et dérivés)';
+      if (has('lm358','tl08','tl07','ua741','lm324','comparateur','lm339','lm386','ne5532',' aop')) return 'Amplificateur opérationnel / comparateur';
+      if (has('regulateur','reg_78','reg_79','lm1117','ams1117','mcp1700','lm337')) return 'Régulateur de tension linéaire';
+      if (has('module_buck','module_boost','mc34063')) return 'Convertisseur DC-DC';
+      if (has('module_chargeur','module_usbc')) return "Module d'alimentation / charge";
+      if (has('multiplex','demultiplex','decodeur','encodeur')) return 'Multiplexage / décodage';
+      if (has('compteur','bascule','registre','latch','buffer_octal','transceiver_octal')) return 'Logique séquentielle (compteurs, registres, bascules)';
+      if (has('driver','uln28','uln20','l293','a4988')) return 'Driver de puissance / moteur';
+      if (has('eeprom','pcf8574','mcp23017')) return 'Mémoire / interface I²C';
+      if (has('max232','ft232')) return 'Interface de communication série';
+      if (has(' adc','adc0804')) return 'Conversion analogique-numérique';
+      if (has('atmega','attiny','pic16')) return 'Microcontrôleur';
+      if (has('oscillateur')) return 'Oscillateur';
+      return 'Circuit intégré (autre)';
+    case 'Logique numérique':
+      if (/\bci_74/.test(s) || has(' 74hc','74 hc')) return 'Famille 74HC (TTL/CMOS rapide)';
+      if (/\bci_40/.test(s)) return 'Famille CD4000 (CMOS)';
+      if (/^porte_/.test(id)) return 'Porte logique discrète';
+      if (has(' adc',' dac')) return 'Conversion analogique-numérique';
+      if (has('buffer')) return 'Buffer / driver logique';
+      return 'Logique numérique (autre)';
+    case 'Protections':
+      if (has('fusible')) return 'Fusible';
+      if (has('parafoudre')) return 'Parafoudre';
+      if (has('disjoncteur')) return 'Disjoncteur';
+      if (has('sectionneur')) return 'Sectionneur';
+      if (has('varistance')) return 'Varistance';
+      if (has('tvs')) return 'Protection semi-conductrice (TVS)';
+      if (has('relais_thermique','relais_protection')) return 'Relais de protection';
+      if (has('coffret')) return 'Coffret de protection';
+      if (has('rcbo')) return 'Protection combinée (RCBO)';
+      return 'Protections (autre)';
+    case 'Capteurs et modules':
+      if (has('temperature','dht11','dht22','ds18b20','lm35','tmp36','sht31')) return 'Température / humidité';
+      if (has('pression','bmp180','bmp280','bme280','bmp388')) return 'Pression / environnement';
+      if (has('mpu6050','mpu9250','adxl345','l3g4200d','hmc5883l','inclinaison','mouvement')) return 'Mouvement / inertie';
+      if (has('ultrason','hc_sr04','vl53l0x','proximite','tcrt5000','obstacle')) return 'Distance / proximité';
+      if (has('mq2','mq3','mq4','mq5','mq6','mq7','mq8','mq9','mq135')) return 'Gaz / qualité de l\'air';
+      if (has('acs712','ina219','hx711','sct013')) return 'Courant / tension / énergie';
+      if (has('lumiere','ky018','tcs3200','bh1750','guva','infrarouge','ir (')) return 'Lumière / couleur / UV';
+      if (has('rtc','ds3231','ds1307')) return 'Horloge temps réel (RTC)';
+      if (has('module_relais')) return 'Module relais';
+      if (has('joystick','clavier_matriciel','fingerprint','pulse_sensor')) return 'Interface utilisateur';
+      if (has('fc28','pluie','niveau_eau','sol_capacitif','yfs201')) return 'Eau / sol / environnement';
+      if (has('neom8n','gps')) return 'Position (GPS)';
+      if (has('flamme')) return 'Détection incendie';
+      if (has('sw420','vibration','choc')) return 'Vibration / choc';
+      return 'Capteurs et modules (autre)';
+    case 'Communication':
+      if (has('esp8266','esp32','esp01','esp-01','module_wifi')) return 'Wi-Fi';
+      if (has('bluetooth','hc05','hc06')) return 'Bluetooth';
+      if (has('nrf24l01','lora','cc2530','zigbee')) return 'RF longue portée / maillage';
+      if (has('rc522','pn532','rfid','nfc')) return 'RFID / NFC';
+      if (has('sim800l','neo6m','gsm','gprs','gps')) return 'Cellulaire / GPS';
+      return 'Bus série / filaire';
+    case 'Câblage':
+      if (has('connecteur','antenne')) return 'Connectique';
+      if (has('jeu_de_barres','chemin_de_cables','boite_derivation','boite_jonction')) return 'Distribution / dérivation';
+      if (has('cable','gaine')) return 'Câbles et gaines';
+      if (has('borne')) return 'Bornes de raccordement';
+      return 'Câblage (autre)';
+    case 'Électromécanique':
+      if (has('interrupteur','commutateur','microswitch','bouton')) return 'Interrupteurs et commutateurs';
+      if (has('relais')) return 'Relais';
+      if (has('buzzer','haut_parleur','microphone')) return 'Transducteurs sonores';
+      if (has('ventilateur','servo_moteur')) return 'Moteurs et actionneurs';
+      return 'Électromécanique (autre)';
+    case 'Résistances':
+      if (has('thermistance')) return 'Thermistance (NTC/PTC)';
+      if (has('ldr')) return 'Photorésistance (LDR)';
+      if (has('potentiometre','rheostat','variable')) return 'Résistance variable';
+      if (has('reseau')) return 'Réseau de résistances';
+      if (has('shunt','precision','puissance')) return 'Résistance de mesure / puissance';
+      return 'Résistance fixe';
+    case 'Condensateurs':
+      if (has('ceramique')) return 'Céramique';
+      if (has('film')) return 'Film';
+      if (has('tantale')) return 'Tantale';
+      if (has('polarise','demarrage','permanent')) return 'Électrolytique / polarisé';
+      if (has('supercondensateur')) return 'Supercondensateur';
+      if (has('variable')) return 'Variable';
+      return 'Condensateur (autre)';
+    case 'Stockage':
+      if (has('pile')) return 'Pile primaire (non rechargeable)';
+      if (has('18650','lithium','lifepo4')) return 'Accumulateur lithium';
+      if (has('plomb','agm','gel')) return 'Batterie plomb';
+      return 'Stockage (autre)';
+    case 'Commande éclairage':
+      if (has('va_et_vient','permutateur','bipolaire','double','telerupteur','interrupteur')) return 'Commutation manuelle (interrupteurs, va-et-vient, permutateur, télérupteur)';
+      if (has('detecteur','thermostat','minuterie','variateur')) return 'Détection et automatisation';
+      return 'Commande éclairage (autre)';
+    case 'Affichage':
+      if (has('7seg')) return '7 segments';
+      if (has('lcd')) return 'LCD';
+      if (has('oled','tft','epaper')) return 'Écran (OLED/TFT/e-paper)';
+      if (has('matrice_led','bargraph','voyant')) return 'Voyants / matrices LED';
+      if (has('driver')) return "Driver d'afficheur";
+      return 'Affichage (autre)';
+    default:
+      return famille;
+  }
 }
 
 /* ==========================================================================
@@ -405,7 +557,10 @@ const ELECTRONIQUE = [
     ['ci_4081','CD4081 (quad AND CMOS)','Quatre portes ET CMOS à 2 entrées.',14,{ famille:'Logique numérique', alias:'4081 and cmos' }],
     ['ci_4093','CD4093 (quad NAND trigger de Schmitt)','Quatre portes NON-ET à entrée déclencheur de Schmitt, robustes aux signaux bruités.',14,{ famille:'Logique numérique', alias:'4093 nand schmitt' }],
   ].map(([id,nom,def,pins,extra]) => { const t = icTemplate(pins, (extra&&extra.label) || nom.split(' ')[0].split('(')[0]);
-    return defRow(id, nom, t.terminals, t.sym, { famille:'Circuits intégrés', def, complexite:'avance', alias:id, ...extra }); }),
+    const opts = { famille:'Circuits intégrés', def, complexite:'avance', alias:id, ...extra };
+    // Boîtier déduit du nombre de broches réel, uniquement quand le brochage est confirmé (pinNames).
+    if (opts.pinNames && !opts.boitier) opts.boitier = `DIP-${pins} / SOIC-${pins}`;
+    return defRow(id, nom, t.terminals, t.sym, opts); }),
 
   // --- Logique numérique (portes) ---
   defRow('porte_and','Porte logique ET (AND)', T3_AOP, TPL.gate2in(AND_PATH),
