@@ -222,14 +222,14 @@ function renderTopbar(route){
   const base = route.split('/')[0];
   const user = auth.currentUser;
   if (!user){
-    bar.innerHTML = `<a href="#/" class="brand"><span class="brand-mark">◈</span> Labo Électronique Virtuel</a>
+    bar.innerHTML = `<a href="#/" class="brand"><span class="brand-mark">${LAB_LOGO_SVG}</span> Labo Électronique Virtuel</a>
       <div class="right">${themeSwitchHTML()}${MODE_PILL}<a href="#/login" class="btn btn-ghost btn-sm">Connexion</a><a href="#/register" class="btn btn-primary btn-sm">Créer un compte</a></div>`;
     wireThemeSwitch();
     return;
   }
   const links = [['dashboard','Mon espace'],['composants','Composants'],['discussion','Discussion & suggestions'],['messages','Messagerie']];
   if (user.role === 'admin') links.push(['admin','Admin']);
-  bar.innerHTML = `<a href="#/dashboard" class="brand"><span class="brand-mark">◈</span> Labo Électronique Virtuel</a>
+  bar.innerHTML = `<a href="#/dashboard" class="brand"><span class="brand-mark">${LAB_LOGO_SVG}</span> Labo Électronique Virtuel</a>
     <nav>${links.map(([r,l]) => `<a href="#/${r}" class="navlink ${base===r?'active':''}">${l}</a>`).join('')}</nav>
     <div class="right">
       ${themeSwitchHTML()}
@@ -510,20 +510,104 @@ async function viewShared(){
    ses favoris (repris ensuite dans le panneau flottant de l'éditeur).
    ========================================================================== */
 async function viewComposants(){
-  const q = state.compQuery || '';
-  const favoris = getFavoris().map(id => findDef(id)).filter(Boolean);
+  const mode = state.compMode || 'recherche';
   return `<div class="app-shell">${renderSidebar('composants')}
     <div class="main">
-      <div class="main-header"><div><h2>Composants</h2><p style="margin:0;font-size:.85em">Recherche indépendante de tout projet — parcourez toute la bibliothèque et mettez des composants en favoris.</p></div></div>
-      <div class="card">
-        <div class="field"><input id="comp-search" placeholder="Rechercher (ex: BC547, transfo 230/12, capteur infrarouge…)" value="${esc(q)}"></div>
-        <div id="comp-search-results">${q.trim() ? renderCompResultRows(searchCatalog(q)) : '<p style="font-size:.85em">Tapez un nom, une référence, un alias ou une famille.</p>'}</div>
+      <div class="main-header">
+        <div><h2>Composants</h2><p style="margin:0;font-size:.85em">Indépendant de tout projet — recherchez, parcourez toute la bibliothèque par famille et mettez des composants en favoris.</p></div>
+        <div class="ws-tabs-top">
+          <a href="#" data-comp-mode="recherche" class="${mode==='recherche'?'active':''}">Recherche &amp; favoris</a>
+          <a href="#" data-comp-mode="parcourir" class="${mode==='parcourir'?'active':''}">Parcourir la bibliothèque</a>
+        </div>
       </div>
-      <div class="card" style="margin-top:16px">
-        <h3>Mes favoris</h3>
-        <div id="comp-fav-list">${favoris.length ? renderCompResultRows(favoris) : '<div class="empty">Aucun favori pour l\'instant — cherchez un composant et cliquez sur ☆.</div>'}</div>
-      </div>
+      ${mode === 'parcourir' ? viewComposantsParcourirHTML() : viewComposantsRechercheHTML()}
     </div></div>`;
+}
+function viewComposantsRechercheHTML(){
+  const q = state.compQuery || '';
+  const favoris = getFavoris().map(id => findDef(id)).filter(Boolean);
+  return `<div class="card">
+      <div class="field"><input id="comp-search" placeholder="Rechercher (ex: BC547, transfo 230/12, capteur infrarouge…)" value="${esc(q)}"></div>
+      <div id="comp-search-results">${q.trim() ? renderCompResultRows(searchCatalog(q)) : '<p style="font-size:.85em">Tapez un nom, une référence, un alias ou une famille.</p>'}</div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h3>Mes favoris</h3>
+      <div id="comp-fav-list">${favoris.length ? renderCompResultRows(favoris) : '<div class="empty">Aucun favori pour l\'instant — cherchez un composant et cliquez sur ☆.</div>'}</div>
+    </div>`;
+}
+
+/* ==========================================================================
+   BIBLIOTHÈQUE EN 3 COLONNES (mises à jour reçues du client, §6/§7) —
+   Famille → Sous-famille (et liste des composants qu'elle contient) → Fiche
+   détail du composant sélectionné. La sous-famille est dérivée par
+   deriveSousFamille() (js/catalog.js), pas saisie composant par composant.
+   ========================================================================== */
+function viewComposantsParcourirHTML(){
+  const all = fullCatalog();
+  const famille = state.compBrowseFamille || null;
+  const sousFamille = state.compBrowseSousFamille || null;
+  const selectedId = state.compBrowseId || null;
+
+  const familles = [...new Set(all.map(c => c.famille))].sort((a,b) => a.localeCompare(b, 'fr'));
+  const sousFamilles = famille
+    ? [...new Set(all.filter(c => c.famille === famille).map(c => c.sousFamille))].sort((a,b) => a.localeCompare(b, 'fr'))
+    : [];
+  const composants = (famille && sousFamille)
+    ? all.filter(c => c.famille === famille && c.sousFamille === sousFamille).sort((a,b) => a.nom.localeCompare(b.nom, 'fr'))
+    : [];
+  const selected = selectedId ? findDef(selectedId) : null;
+
+  return `<div class="lib-browser" id="lib-browser">
+    <div class="lib-col">
+      <h4>Familles <span class="lib-count">(${familles.length})</span></h4>
+      <div class="lib-list">
+        ${familles.map(f => `<button class="lib-item ${f===famille?'active':''}" data-browse-fam="${esc(f)}">${esc(f)}</button>`).join('')}
+      </div>
+    </div>
+    <div class="lib-col">
+      <h4>${famille ? esc(famille) : 'Sous-familles'}</h4>
+      <div class="lib-list">
+        ${!famille ? '<div class="empty" style="padding:10px 4px;font-size:.85em">Choisissez une famille.</div>'
+          : (sousFamilles.map(sf => `<button class="lib-item ${sf===sousFamille?'active':''}" data-browse-sf="${esc(sf)}">${esc(sf)}</button>`).join('') || '<div class="empty">Aucune sous-famille.</div>')}
+      </div>
+      ${famille && sousFamille ? `
+      <h4 style="margin-top:16px">Composants <span class="lib-count">(${composants.length})</span></h4>
+      <div class="lib-list">
+        ${composants.map(c => `<button class="lib-item ${c.id===selectedId?'active':''}" data-browse-id="${esc(c.id)}">${esc(c.nom)}</button>`).join('') || '<div class="empty">Aucun composant.</div>'}
+      </div>` : ''}
+    </div>
+    <div class="lib-col lib-col-fiche">
+      ${selected ? componentFicheHTML(selected) : '<div class="empty" style="padding:28px 16px">Sélectionnez une famille, puis une sous-famille, puis un composant pour voir sa fiche.</div>'}
+    </div>
+  </div>`;
+}
+function componentFicheHTML(def){
+  return `<div class="lib-fiche">
+    <div class="lib-fiche-symbol">${renderComponentSymbolSVG(def.id)}</div>
+    <h3>${esc(def.nom)}</h3>
+    <div class="lib-fiche-meta">
+      <div><span>Référence technique</span><strong>${esc(def.refTechnique || def.nom)}</strong></div>
+      <div><span>Famille</span><strong>${esc(def.famille)}</strong></div>
+      <div><span>Sous-famille</span><strong>${esc(def.sousFamille || '—')}</strong></div>
+      ${def.boitier ? `<div><span>Boîtier</span><strong>${esc(def.boitier)}</strong></div>` : ''}
+      <div><span>Broches</span><strong>${def.terminals.length}</strong></div>
+      ${def.unit ? `<div><span>Grandeur</span><strong>${esc(def.unit)}${def.defaultValue!==''?(' (défaut '+esc(String(def.defaultValue))+')'):''}</strong></div>` : ''}
+    </div>
+    ${def.def ? `<p class="lib-fiche-def">${esc(def.def)}</p>` : ''}
+    ${pinNamesListHTML(def)}
+    <p class="lib-fiche-verif">${esc(def.niveauVerification || '')}</p>
+    <div style="display:flex;gap:14px;align-items:center;margin-top:10px;flex-wrap:wrap">
+      ${favBtnHTML(def.id, true)}
+      <a class="wiki-link" href="${wikiUrl(def.wiki)}" target="_blank" rel="noopener">En savoir plus →</a>
+    </div>
+  </div>`;
+}
+// Bouton favori réutilisable — régénéré (pas juste son texte patché) au clic pour rester correct
+// qu'il porte un libellé (fiche détail) ou seulement l'icône (listes de résultats).
+function favBtnHTML(id, withLabel){
+  const active = isFavorite(id);
+  const label = withLabel ? (active ? ' Favori' : ' Ajouter aux favoris') : '';
+  return `<button class="fav-btn static ${active?'active':''}" data-fav="${id}"${withLabel?' data-fav-label="1"':''} title="Favori">${active?'★':'☆'}${label}</button>`;
 }
 function renderCompResultRows(list){
   return list.map(c => `
@@ -531,7 +615,7 @@ function renderCompResultRows(list){
       <div><strong>${esc(c.nom)}</strong> <span style="opacity:.6;font-size:.85em">— ${esc(c.famille||'')}${c.groupe && ESPACES[c.groupe] ? (' · '+ESPACES[c.groupe].nom) : ''}</span>
         <p style="margin:.2em 0 0;font-size:.78em">${esc(c.def||'')}</p></div>
       <div style="display:flex;gap:10px;align-items:center;flex-shrink:0">
-        <button class="fav-btn static ${isFavorite(c.id)?'active':''}" data-fav="${c.id}" title="Favori">${isFavorite(c.id)?'★':'☆'}</button>
+        ${favBtnHTML(c.id, false)}
         <a class="wiki-link" href="${wikiUrl(c.wiki)}" target="_blank" rel="noopener">En savoir plus →</a>
       </div>
     </div>`).join('') || '<div class="empty">Aucun résultat.</div>';
@@ -544,12 +628,44 @@ function afterComposantsView(){
       ? renderCompResultRows(results)
       : '<p style="font-size:.85em">Tapez un nom, une référence, un alias ou une famille.</p>';
   });
+
+  document.querySelectorAll('[data-comp-mode]').forEach(a => a.onclick = (e) => {
+    e.preventDefault();
+    state.compMode = a.dataset.compMode;
+    render();
+  });
+
+  document.getElementById('lib-browser')?.addEventListener('click', (e) => {
+    const famBtn = e.target.closest('[data-browse-fam]');
+    if (famBtn){
+      state.compBrowseFamille = famBtn.dataset.browseFam;
+      state.compBrowseSousFamille = null;
+      state.compBrowseId = null;
+      render();
+      return;
+    }
+    const sfBtn = e.target.closest('[data-browse-sf]');
+    if (sfBtn){
+      state.compBrowseSousFamille = sfBtn.dataset.browseSf;
+      state.compBrowseId = null;
+      render();
+      return;
+    }
+    const idBtn = e.target.closest('[data-browse-id]');
+    if (idBtn){
+      state.compBrowseId = idBtn.dataset.browseId;
+      render();
+      return;
+    }
+  });
+
   document.querySelector('.main')?.addEventListener('click', (e) => {
     const favBtn = e.target.closest('[data-fav]');
     if (!favBtn) return;
-    const nowFav = toggleFavorite(favBtn.dataset.fav);
-    favBtn.textContent = nowFav ? '★' : '☆';
-    favBtn.classList.toggle('active', nowFav);
+    const id = favBtn.dataset.fav;
+    const withLabel = favBtn.hasAttribute('data-fav-label');
+    toggleFavorite(id);
+    favBtn.outerHTML = favBtnHTML(id, withLabel);
     const favList = document.getElementById('comp-fav-list');
     if (favList) favList.innerHTML = renderCompResultRows(getFavoris().map(id => findDef(id)).filter(Boolean));
   });

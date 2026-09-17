@@ -85,6 +85,7 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(doc.title === 'Labo Électronique Virtuel', 'titre de la page correct');
   assert(doc.body.textContent.includes('Concevez'), 'page d\'accueil affichée par défaut');
   assert(win.SUPABASE_CONFIGURED === false, 'mode démo locale actif (pas de config Supabase)');
+  assert(doc.querySelector('.brand .brand-mark svg'), 'le logo vectoriel (même symbole que dans les PDF) est affiché dans la barre supérieure (§17 des mises à jour reçues)');
 
   section('Inscription');
   await nav(win, 'register');
@@ -541,6 +542,40 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   await tick(100);
   assert(win.getFavoris().includes('ne555'), 'favori ajouté depuis la page de recherche dédiée');
   win.toggleFavorite('ne555'); // nettoyage
+
+  section('Bibliothèque 3 colonnes — Famille → Sous-famille → Fiche (§6/§7 des mises à jour reçues)');
+  click(win, doc.querySelector('[data-comp-mode="parcourir"]'));
+  await tick(150);
+  assert(!!doc.getElementById('lib-browser'), 'le mode "Parcourir la bibliothèque" affiche le navigateur 3 colonnes');
+  const famBtn = [...doc.querySelectorAll('[data-browse-fam]')].find(b => b.dataset.browseFam === 'Diodes');
+  assert(!!famBtn, 'la famille "Diodes" est listée en colonne 1');
+  click(win, famBtn);
+  await tick(150);
+  const sfBtns = [...doc.querySelectorAll('[data-browse-sf]')];
+  assert(sfBtns.length > 1, 'plusieurs sous-familles de Diodes affichées en colonne 2 (résultat: ' + sfBtns.map(b=>b.dataset.browseSf).join(', ') + ')');
+  const zenerSfBtn = sfBtns.find(b => b.dataset.browseSf === 'Zener');
+  assert(!!zenerSfBtn, 'la sous-famille "Zener" est bien dérivée pour les diodes Zener');
+  click(win, zenerSfBtn);
+  await tick(150);
+  const compBtns = [...doc.querySelectorAll('[data-browse-id]')];
+  assert(compBtns.length > 0 && compBtns.every(b => win.findDef(b.dataset.browseId).sousFamille === 'Zener'), 'seuls des composants de la sous-famille Zener apparaissent après sélection');
+  const compBtn = compBtns.find(b => b.dataset.browseId === 'diode_zener') || compBtns[0];
+  click(win, compBtn);
+  await tick(150);
+  const fiche = doc.querySelector('.lib-fiche');
+  assert(!!fiche, 'la fiche détail du composant sélectionné s\'affiche en colonne 3');
+  assert(fiche.querySelector('.component-symbol-preview svg, svg.component-symbol-preview') || fiche.innerHTML.includes('<svg'), 'la fiche affiche le symbole réel du composant sélectionné');
+  assert(fiche.textContent.includes('Référence technique'), 'la fiche affiche la référence technique');
+  assert(fiche.textContent.includes('Zener'), 'la fiche affiche bien la sous-famille du composant sélectionné');
+  const ficheFavBtn = fiche.querySelector('[data-fav]');
+  assert(!!ficheFavBtn && ficheFavBtn.textContent.includes('favoris'), 'le bouton favori de la fiche porte un libellé explicite');
+  click(win, ficheFavBtn);
+  await tick(100);
+  assert(win.getFavoris().includes(compBtn.dataset.browseId), 'favori ajouté depuis la fiche détail de la bibliothèque 3 colonnes');
+  win.toggleFavorite(compBtn.dataset.browseId); // nettoyage
+  click(win, doc.querySelector('[data-comp-mode="recherche"]'));
+  await tick(150);
+  assert(!!doc.getElementById('comp-search'), 'retour au mode "Recherche & favoris" fonctionne');
 
   section('Fils — couleur et premier plan (§2 des notes en cours)');
   if (win.wsState.schema.wires.length){

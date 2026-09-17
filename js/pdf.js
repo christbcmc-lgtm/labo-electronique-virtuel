@@ -130,19 +130,9 @@ function buildConclusionText(items, wires, connected){
    de documents "professionnels", pas seulement le rapport complet.
    ========================================================================== */
 
-// Logo 100% vectoriel (pas d'image importée) : un boîtier à broches, dans le même style que
-// les symboles de composants (leadLine/rect) déjà utilisés partout ailleurs dans l'app — pour
-// rester cohérent avec le principe déjà établi "aucune bibliothèque/asset ajouté" (§26).
-const LAB_LOGO_SVG = `<svg width="34" height="34" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-  <rect x="11" y="11" width="18" height="18" rx="2.5" fill="none" stroke="#173b5e" stroke-width="2.2"/>
-  <circle cx="20" cy="20" r="3.6" fill="#173b5e"/>
-  <line x1="11" y1="16" x2="4" y2="16" stroke="#173b5e" stroke-width="2.2"/>
-  <line x1="11" y1="24" x2="4" y2="24" stroke="#173b5e" stroke-width="2.2"/>
-  <line x1="29" y1="16" x2="36" y2="16" stroke="#173b5e" stroke-width="2.2"/>
-  <line x1="29" y1="24" x2="36" y2="24" stroke="#173b5e" stroke-width="2.2"/>
-  <line x1="16" y1="11" x2="16" y2="4" stroke="#173b5e" stroke-width="2.2"/>
-  <line x1="24" y1="11" x2="24" y2="4" stroke="#173b5e" stroke-width="2.2"/>
-</svg>`;
+// Le logo (LAB_LOGO_SVG) est défini une seule fois dans js/config.js — réutilisé ici tel quel pour
+// que l'en-tête PDF et la barre supérieure de l'app affichent exactement le même symbole (§17 des
+// mises à jour reçues). Sur fond blanc imprimé, `currentColor` (voir CSS ci-dessous) résout en noir.
 
 const PDF_STYLE = `
   body{ font-family:Arial,Helvetica,sans-serif; padding:0 32px 32px; color:#111; max-width:900px; margin:0 auto; }
@@ -153,7 +143,7 @@ const PDF_STYLE = `
   .warn{ color:#a15c00; } .err{ color:#a12a1a; font-weight:bold; }
   .note{ margin-top:8px; font-size:11px; color:#777; }
   .conclusion{ background:#f4f4f4; padding:14px 16px; border-radius:6px; }
-  .pdf-head{ display:flex; align-items:center; gap:14px; padding:20px 0 14px; border-bottom:3px solid #173b5e; margin-bottom:6px; }
+  .pdf-head{ display:flex; align-items:center; gap:14px; padding:20px 0 14px; border-bottom:3px solid #173b5e; margin-bottom:6px; color:#173b5e; }
   .pdf-brand{ font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:#173b5e; font-weight:bold; }
   .pdf-foot{ margin-top:36px; padding-top:8px; border-top:1px solid #ccc; display:flex; justify-content:space-between; font-size:10.5px; color:#888; }
   @media print{ .no-print{ display:none; } }

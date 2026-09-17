@@ -1264,6 +1264,15 @@ function groupByFamille(list){
 }
 function wikiUrl(slug){ return `https://fr.wikipedia.org/wiki/${slug}`; }
 
+// Aperçu autonome du symbole d'un composant (hors canevas) — utilisé par la fiche détail de la
+// bibliothèque 3 colonnes (§6/§7 des mises à jour reçues). ViewBox légèrement élargie (-6/-6/72/42)
+// car certains symboles dessinent des pattes hors du cadre 0..60/0..30 (ex. transistors : y=-4).
+function renderComponentSymbolSVG(typeId){
+  const sym = SYM[typeId];
+  if (!sym) return '';
+  return `<svg viewBox="-6 -6 72 42" class="component-symbol-preview" xmlns="http://www.w3.org/2000/svg"><g>${sym}</g></svg>`;
+}
+
 /* ==========================================================================
    CATALOGUE DE PRIX POUR LE DEVIS (§22/§23) — indépendant des composants de
    simulation : un devis peut contenir du PCB, de la soudure, du fil, un

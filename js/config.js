@@ -38,3 +38,19 @@ const DEFAULT_STORAGE_QUOTA_BYTES = 2 * 1024 * 1024; // 2 Mo
 // Utilitaire HTML-escape, utilisé dès le chargement du catalogue (libellés de symboles) : défini ici,
 // tout en tête de chaîne de chargement, pour être disponible avant catalog.js.
 function esc(s=''){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// Logo — un seul et même symbole vectoriel (pas d'image importée, §17 des mises à jour reçues :
+// "reprendre correctement le logo dans LES INTERFACES ET LES PDF") réutilisé à la fois par la barre
+// supérieure de l'application (js/app.js) et par l'en-tête des 4 exports PDF (js/pdf.js), pour rester
+// visuellement cohérent partout. Défini ici, en tête de chaîne de chargement, disponible pour tous
+// les fichiers chargés ensuite.
+const LAB_LOGO_SVG = `<svg width="34" height="34" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <rect x="11" y="11" width="18" height="18" rx="2.5" fill="none" stroke="currentColor" stroke-width="2.2"/>
+  <circle cx="20" cy="20" r="3.6" fill="currentColor"/>
+  <line x1="11" y1="16" x2="4" y2="16" stroke="currentColor" stroke-width="2.2"/>
+  <line x1="11" y1="24" x2="4" y2="24" stroke="currentColor" stroke-width="2.2"/>
+  <line x1="29" y1="16" x2="36" y2="16" stroke="currentColor" stroke-width="2.2"/>
+  <line x1="29" y1="24" x2="36" y2="24" stroke="currentColor" stroke-width="2.2"/>
+  <line x1="16" y1="11" x2="16" y2="4" stroke="currentColor" stroke-width="2.2"/>
+  <line x1="24" y1="11" x2="24" y2="4" stroke="currentColor" stroke-width="2.2"/>
+</svg>`;

@@ -155,7 +155,8 @@ button{ cursor:pointer; }
 html[data-theme="clair"] .topbar{ background:rgba(244,246,244,.92); }
 html[data-theme="gris"] .topbar{ background:rgba(30,34,38,.92); }
 .brand{ display:flex; align-items:center; gap:.6em; font-family:var(--font-display); font-weight:700; font-size:1.05em; color:var(--text); }
-.brand .brand-mark{ color:var(--amber); font-size:1.3em; line-height:1; }
+.brand .brand-mark{ color:var(--amber); line-height:1; display:inline-flex; }
+.brand .brand-mark svg{ width:24px; height:24px; }
 .topbar nav{ display:flex; align-items:center; gap:6px; }
 .navlink{ padding:.5em .8em; border-radius:var(--radius); color:var(--text-muted); font-size:.88em; font-weight:500; }
 .navlink.active{ color:var(--text); background:var(--panel); }
@@ -366,6 +367,28 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:.86em; }
 .comp-result-row{ display:flex; justify-content:space-between; align-items:center; gap:14px; padding:12px 4px; border-bottom:1px solid var(--trace); }
 .comp-result-row:last-child{ border-bottom:none; }
 .comp-result-row p{ color:var(--text-faint); }
+
+/* ---- Bibliothèque 3 colonnes (Famille → Sous-famille → Fiche, §6/§7 des mises à jour) ---- */
+.lib-browser{ display:grid; grid-template-columns:220px 260px 1fr; gap:1px; background:var(--panel-border); border:1px solid var(--panel-border); border-radius:6px; overflow:hidden; min-height:60vh; }
+.lib-col{ background:var(--panel); padding:14px 10px; overflow-y:auto; max-height:78vh; }
+.lib-col h4{ font-size:.7em; text-transform:uppercase; letter-spacing:.08em; color:var(--text-faint); margin:2px 6px 8px; }
+.lib-count{ opacity:.7; text-transform:none; letter-spacing:0; }
+.lib-list{ display:flex; flex-direction:column; gap:1px; }
+.lib-item{ text-align:left; background:none; border:none; border-radius:4px; padding:8px 10px; font-size:.84em; color:var(--text-muted); cursor:pointer; }
+.lib-item:hover{ background:var(--bg-raised); color:var(--text); }
+.lib-item.active{ background:var(--amber-dim); color:var(--amber); }
+.lib-col-fiche{ padding:20px; }
+.lib-fiche-symbol{ width:100%; max-width:220px; background:var(--bg); border:1px solid var(--panel-border); border-radius:6px; padding:10px; margin-bottom:14px; }
+.component-symbol-preview{ width:100%; height:auto; color:var(--text); }
+.lib-fiche-meta{ display:grid; grid-template-columns:1fr 1fr; gap:8px 16px; margin:12px 0; font-size:.82em; }
+.lib-fiche-meta div{ display:flex; flex-direction:column; gap:2px; }
+.lib-fiche-meta span{ color:var(--text-faint); font-size:.85em; }
+.lib-fiche-def{ font-size:.86em; color:var(--text-muted); }
+.lib-fiche-verif{ margin-top:10px; font-size:.76em; color:var(--text-faint); font-style:italic; }
+@media (max-width:900px){
+  .lib-browser{ grid-template-columns:1fr; }
+  .lib-col{ max-height:none; border-bottom:1px solid var(--panel-border); }
+}
 
 /* ---- Panneau flottant Récents/Favoris (§1/§2 des notes en cours) ---- */
 .fav-panel{ position:absolute; z-index:8; width:210px; right:14px; top:14px; background:var(--panel); border:1px solid var(--panel-border); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.4); max-height:min(60vh,480px); display:flex; flex-direction:column; }
