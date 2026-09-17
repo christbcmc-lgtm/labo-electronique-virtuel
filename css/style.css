@@ -404,6 +404,24 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:.86em; }
 .fav-section h5{ font-size:.68em; text-transform:uppercase; letter-spacing:.07em; color:var(--text-faint); margin:6px 6px 4px; }
 .fav-panel-reopen{ position:absolute; z-index:8; right:14px; top:14px; width:32px; height:32px; border-radius:50%; background:var(--panel); border:1px solid var(--amber-dim); color:var(--amber); font-size:1em; }
 .fav-panel-reopen.hidden{ display:none; }
+
+/* ---- Panneau flottant Outils (demandé explicitement : "doit flotter... comme Récents/Favoris") ----
+   Même mécanique que .fav-panel ci-dessus, positionné à gauche par défaut pour ne pas se
+   superposer au panneau Favoris (à droite), accent cyan pour le distinguer visuellement. */
+.tool-panel{ position:absolute; z-index:9; width:178px; left:14px; top:14px; background:var(--panel); border:1px solid var(--panel-border); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.4); max-height:min(70vh,520px); display:flex; flex-direction:column; }
+.tool-panel.hidden{ display:none; }
+.tool-panel-head{ display:flex; align-items:center; justify-content:space-between; padding:8px 10px; font-size:.76em; font-weight:600; color:var(--text-muted); cursor:move; border-bottom:1px solid var(--panel-border); user-select:none; }
+.tool-panel-head button{ background:none; border:none; color:var(--text-faint); font-size:.95em; padding:2px 5px; }
+.tool-panel-head button:hover{ color:var(--text); }
+.tool-panel-body{ overflow-y:auto; padding:8px 6px; }
+.tool-panel.collapsed .tool-panel-body{ display:none; }
+.tool-group{ display:flex; flex-direction:column; gap:1px; padding-bottom:6px; margin-bottom:6px; border-bottom:1px solid var(--trace); }
+.tool-group:last-child{ border-bottom:none; margin-bottom:0; padding-bottom:0; }
+.tool-panel-reopen{ position:absolute; z-index:9; left:14px; top:14px; width:32px; height:32px; border-radius:50%; background:var(--panel); border:1px solid var(--cyan-dim); color:var(--cyan); font-size:1em; }
+.tool-panel-reopen.hidden{ display:none; }
+@media (max-width:760px){
+  .tool-panel{ width:min(200px, 60vw); }
+}
 .catalog-popover{
   position:fixed; z-index:90; width:260px; background:var(--panel); border:1px solid var(--panel-border);
   border-radius:8px; padding:14px; font-size:.82em; box-shadow:0 10px 30px rgba(0,0,0,.5);

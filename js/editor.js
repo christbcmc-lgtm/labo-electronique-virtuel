@@ -67,6 +67,14 @@ function getFavPanelState(){
 }
 function setFavPanelState(st){ try{ localStorage.setItem('labo_favpanel_state', JSON.stringify(st)); }catch(e){} }
 
+// Panneau flottant Outils (même mécanique que le panneau Favoris ci-dessus) — position par
+// défaut à gauche pour ne pas se superposer au panneau Favoris, qui démarre à droite.
+function getToolPanelState(){
+  try{ return { x:null, y:null, collapsed:false, hidden:false, ...JSON.parse(localStorage.getItem('labo_toolpanel_state')||'{}') }; }
+  catch(e){ return { x:null, y:null, collapsed:false, hidden:false }; }
+}
+function setToolPanelState(st){ try{ localStorage.setItem('labo_toolpanel_state', JSON.stringify(st)); }catch(e){} }
+
 // Arme un composant pour dépôt (catalogue latéral, résultats de recherche, ou panneau flottant).
 function armComponentForPlacement(typeId){
   if (guardReadOnly()) return;
@@ -269,16 +277,6 @@ async function viewProject(id){
       ${renderCatalogFamilies('Courants — ' + esc(ESPACES[project.espace]?.nom || project.espace), comps, true)}
       ${renderCatalogFamilies('Composants communs', COMMON_COMPONENTS, false)}
       ${renderCatalogFamilies('Instruments', INSTRUMENT_LIBRARY, false)}
-      <h4>Outils</h4>
-      <button class="ws-comp" data-tool="select">↖ Sélection / déplacer</button>
-      <button class="ws-comp" data-tool="fil">⎯ Tracer un fil (Échap pour annuler)</button>
-      <button class="ws-comp" data-tool="supprimer">✕ Supprimer (cliquer un élément)</button>
-      ${wsState.readOnly ? '' : `
-      <div style="display:flex;gap:4px">
-        <button class="ws-comp" id="btn-undo" title="Annuler (Ctrl+Z)" style="flex:1">↺ Annuler</button>
-        <button class="ws-comp" id="btn-redo" title="Rétablir (Ctrl+Y)" style="flex:1">↻ Rétablir</button>
-      </div>
-      <button class="ws-comp" id="btn-declutter">▦ Ranger le schéma</button>`}
     </aside>
 
     <div class="ws-canvas-wrap mobile-active">
@@ -304,6 +302,7 @@ async function viewProject(id){
       </div>
       <div class="ws-canvas" id="ws-canvas-holder" style="position:relative">
         ${renderCanvasSVG()}
+        ${renderToolPanel()}
         ${renderFavPanel()}
         <div class="zoom-controls">
           <button id="zoom-in">+</button>
@@ -423,6 +422,130 @@ function wireFavPanel(){
     if (favBtn){ toggleFavorite(favBtn.dataset.fav); refreshFavPanelBody(); return; }
     const placeBtn = e.target.closest('[data-place]');
     if (placeBtn) armComponentForPlacement(placeBtn.dataset.place);
+  });
+}
+
+/* ==========================================================================
+   PANNEAU FLOTTANT OUTILS — demandé explicitement par le client : « la partie
+   Outils doit flotter directement au-dessus ou à côté de la zone de schéma,
+   comme le panneau Récents/Favoris... Sélection | Fil | Annuler [regroupés],
+   sans obliger l'utilisateur à retourner dans un menu éloigné. » Même
+   mécanique que le panneau Favoris ci-dessus (déplaçable/réductible/
+   masquable), rendu comme sibling du canevas pour survivre à redrawCanvas().
+   « Annuler » du premier groupe = annuler l'ACTION EN COURS (fil temporaire/
+   placement armé, équivalent clic de la touche Échap) — à ne pas confondre
+   avec Annuler/Rétablir (Ctrl+Z/Ctrl+Y, l'historique du schéma), qui restent
+   des boutons séparés plus bas dans ce même panneau.
+   ========================================================================== */
+function renderToolPanel(){
+  const st = getToolPanelState();
+  const posStyle = (st.x!=null && st.y!=null) ? `left:${st.x}px;top:${st.y}px` : '';
+  return `<div class="tool-panel ${st.collapsed?'collapsed':''} ${st.hidden?'hidden':''}" id="tool-panel" style="${posStyle}">
+    <div class="tool-panel-head" id="tool-panel-head"><span>🛠 Outils</span>
+      <div style="display:flex;gap:2px">
+        <button id="tool-panel-collapse" title="${st.collapsed?'Déplier':'Réduire'}">${st.collapsed?'▸':'▾'}</button>
+        <button id="tool-panel-close" title="Masquer">✕</button>
+      </div>
+    </div>
+    <div class="tool-panel-body" id="tool-panel-body">
+      <div class="tool-group">
+        <button class="ws-comp" data-tool="select">↖ Sélection</button>
+        <button class="ws-comp" data-tool="fil">⎯ Fil</button>
+        <button class="ws-comp" id="tool-cancel" title="Annule le fil en cours ou le placement armé (Échap)">⎋ Annuler l'action</button>
+      </div>
+      <div class="tool-group">
+        <button class="ws-comp" id="tool-rotate" title="Pivote le composant sélectionné">↻ Pivoter</button>
+        <button class="ws-comp" id="tool-duplicate" title="Duplique le composant sélectionné">⧉ Dupliquer</button>
+        <button class="ws-comp" data-tool="supprimer">✕ Supprimer</button>
+      </div>
+      ${wsState.readOnly ? '' : `
+      <div class="tool-group">
+        <button class="ws-comp" id="tool-undo" title="Ctrl+Z">↺ Annuler (Ctrl+Z)</button>
+        <button class="ws-comp" id="tool-redo" title="Ctrl+Y">↷ Rétablir (Ctrl+Y)</button>
+      </div>
+      <div class="tool-group">
+        <button class="ws-comp" id="tool-declutter">▦ Ranger le schéma</button>
+      </div>`}
+    </div>
+  </div>
+  <button class="tool-panel-reopen ${st.hidden?'':'hidden'}" id="tool-panel-reopen" title="Afficher les outils">🛠</button>`;
+}
+function wireToolPanel(){
+  const panel = document.getElementById('tool-panel');
+  const head = document.getElementById('tool-panel-head');
+  const reopenBtn = document.getElementById('tool-panel-reopen');
+  if (!panel || panel.dataset.wired) return;
+  panel.dataset.wired = '1';
+
+  let dragging = false, offX = 0, offY = 0;
+  head.addEventListener('mousedown', (e) => {
+    if (e.target.closest('button')) return;
+    dragging = true;
+    const holder = document.getElementById('ws-canvas-holder');
+    const hb = holder.getBoundingClientRect(), pb = panel.getBoundingClientRect();
+    offX = e.clientX - pb.left; offY = e.clientY - pb.top;
+    const onMove = (ev) => {
+      let x = ev.clientX - offX - hb.left, y = ev.clientY - offY - hb.top;
+      x = Math.max(0, Math.min(x, hb.width - 40)); y = Math.max(0, Math.min(y, hb.height - 30));
+      panel.style.left = x + 'px'; panel.style.top = y + 'px';
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp);
+      dragging = false;
+      setToolPanelState({ ...getToolPanelState(), x: parseFloat(panel.style.left), y: parseFloat(panel.style.top) });
+    };
+    document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
+  });
+
+  document.getElementById('tool-panel-collapse').onclick = () => {
+    const collapsed = !panel.classList.contains('collapsed');
+    panel.classList.toggle('collapsed', collapsed);
+    document.getElementById('tool-panel-collapse').textContent = collapsed ? '▸' : '▾';
+    setToolPanelState({ ...getToolPanelState(), collapsed });
+  };
+  document.getElementById('tool-panel-close').onclick = () => {
+    panel.classList.add('hidden'); reopenBtn.classList.remove('hidden');
+    setToolPanelState({ ...getToolPanelState(), hidden:true });
+  };
+  reopenBtn.onclick = () => {
+    panel.classList.remove('hidden'); reopenBtn.classList.add('hidden');
+    setToolPanelState({ ...getToolPanelState(), hidden:false });
+  };
+
+  document.getElementById('tool-panel-body').addEventListener('click', (e) => {
+    const toolBtn = e.target.closest('[data-tool]');
+    if (toolBtn){
+      wsState.tool = toolBtn.dataset.tool; wsState.wireStart = null; wsState.armedType = null;
+      const label = { select:'Sélection', fil:'Tracer un fil', supprimer:'Supprimer' }[wsState.tool];
+      const ind = document.getElementById('tool-indicator'); if (ind) ind.textContent = 'Outil : ' + label;
+      redrawCanvas();
+      return;
+    }
+    if (e.target.closest('#tool-cancel')){
+      if (wsState.wireStart){ wsState.wireStart = null; redrawCanvas(); }
+      else if (wsState.armedType){ wsState.armedType = null; wsState.ghostPos = null; redrawCanvas(); }
+      else toast("Rien à annuler pour l'instant.");
+      return;
+    }
+    if (e.target.closest('#tool-rotate')){
+      if (guardReadOnly()) return;
+      const item = wsState.schema.items.find(i=>i.id===wsState.selectedId);
+      if (!item){ toast('Sélectionnez d\'abord un composant.'); return; }
+      pushUndoSnapshot(); item.rot = ((item.rot||0)+90)%360; persistSchema(); redrawCanvas();
+      return;
+    }
+    if (e.target.closest('#tool-duplicate')){
+      if (!wsState.selectedId){ toast('Sélectionnez d\'abord un composant.'); return; }
+      duplicateItem(wsState.selectedId);
+      return;
+    }
+    if (e.target.closest('#tool-undo')){ undoSchema(); return; }
+    if (e.target.closest('#tool-redo')){ redoSchema(); return; }
+    if (e.target.closest('#tool-declutter')){
+      pushUndoSnapshot();
+      wsState.schema.items.forEach(it => { it.x = snap(it.x); it.y = snap(it.y); });
+      persistSchema(); redrawCanvas(); toast('Schéma rangé sur la grille — les connexions sont conservées.');
+    }
   });
 }
 
@@ -781,13 +904,18 @@ function redrawCanvas(){
   const zoomCtrls = holder.querySelector('.zoom-controls');
   const favPanel = holder.querySelector('#fav-panel');
   const favReopen = holder.querySelector('#fav-panel-reopen');
+  const toolPanel = holder.querySelector('#tool-panel');
+  const toolReopen = holder.querySelector('#tool-panel-reopen');
   holder.innerHTML = renderCanvasSVG();
+  if (toolPanel) holder.appendChild(toolPanel);
+  if (toolReopen) holder.appendChild(toolReopen);
   if (favPanel) holder.appendChild(favPanel);
   if (favReopen) holder.appendChild(favReopen);
   if (zoomCtrls) holder.appendChild(zoomCtrls);
   const pct = document.getElementById('zoom-pct'); if (pct) pct.textContent = Math.round(wsState.view.scale*100)+'%';
   wireCanvasEvents();
   wireFavPanel();
+  wireToolPanel();
 }
 
 function wireCanvasEvents(){
@@ -1262,6 +1390,7 @@ function afterProjectView(){
   if (!window.__wsPanels) return;
   wireCanvasEvents();
   wireFavPanel();
+  wireToolPanel();
   updatePresenceBar();
 
   const $panel = document.getElementById('ws-panel');
@@ -1274,15 +1403,6 @@ function afterProjectView(){
     };
   });
   wireCommentForm();
-
-  document.getElementById('btn-undo')?.addEventListener('click', () => undoSchema());
-  document.getElementById('btn-redo')?.addEventListener('click', () => redoSchema());
-
-  document.getElementById('btn-declutter')?.addEventListener('click', () => {
-    pushUndoSnapshot();
-    wsState.schema.items.forEach(it => { it.x = snap(it.x); it.y = snap(it.y); });
-    persistSchema(); redrawCanvas(); toast('Schéma rangé sur la grille — les connexions sont conservées.');
-  });
 
   document.getElementById('statut-select')?.addEventListener('change', async (e) => {
     if (guardReadOnly()) return;

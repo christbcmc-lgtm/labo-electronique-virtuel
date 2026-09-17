@@ -135,19 +135,25 @@ function buildConclusionText(items, wires, connected){
 // mises à jour reçues). Sur fond blanc imprimé, `currentColor` (voir CSS ci-dessous) résout en noir.
 
 const PDF_STYLE = `
-  body{ font-family:Arial,Helvetica,sans-serif; padding:0 32px 32px; color:#111; max-width:900px; margin:0 auto; }
-  h1{ margin:0; font-size:1.5em; } h2{ margin-top:2.2em; border-bottom:2px solid #111; padding-bottom:4px; }
-  .meta{ color:#555; font-size:13px; margin:2px 0 0; }
-  table{ width:100%; border-collapse:collapse; margin-top:10px; font-size:13px; }
-  td,th{ border:1px solid #ccc; padding:6px 10px; text-align:left; }
+  @page{ margin:16mm 14mm; }
+  *{ box-sizing:border-box; }
+  body{ font-family:'Segoe UI',Calibri,Arial,Helvetica,sans-serif; padding:0 4px 32px; color:#1a1a1a; max-width:900px; margin:0 auto; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  h1{ margin:0; font-size:1.55em; font-weight:600; letter-spacing:-.01em; }
+  h2{ margin:2.4em 0 0; font-size:1.05em; font-weight:600; color:#173b5e; padding-bottom:6px; border-bottom:2px solid #173b5e; page-break-after:avoid; }
+  .meta{ color:#5a5a5a; font-size:12.5px; margin:4px 0 0; }
+  table{ width:100%; border-collapse:collapse; margin-top:12px; font-size:12.5px; page-break-inside:avoid; }
+  th{ background:#eef2f6; color:#173b5e; font-weight:600; text-align:left; padding:7px 10px; border:1px solid #c8d2db; }
+  td{ border:1px solid #ddd; padding:7px 10px; text-align:left; }
+  tr:nth-child(even) td{ background:#fafbfc; }
   .warn{ color:#a15c00; } .err{ color:#a12a1a; font-weight:bold; }
-  .note{ margin-top:8px; font-size:11px; color:#777; }
-  .conclusion{ background:#f4f4f4; padding:14px 16px; border-radius:6px; }
-  .pdf-head{ display:flex; align-items:center; gap:14px; padding:20px 0 14px; border-bottom:3px solid #173b5e; margin-bottom:6px; color:#173b5e; }
-  .pdf-brand{ font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:#173b5e; font-weight:bold; }
-  .pdf-signature{ font-weight:normal; letter-spacing:.02em; opacity:.75; text-transform:none; }
-  .pdf-foot{ margin-top:36px; padding-top:8px; border-top:1px solid #ccc; display:flex; justify-content:space-between; font-size:10.5px; color:#888; }
-  @media print{ .no-print{ display:none; } }
+  .note{ margin-top:8px; font-size:10.5px; color:#888; font-style:italic; }
+  .dim-formula{ page-break-inside:avoid; }
+  .conclusion{ background:#f4f6f8; padding:16px 18px; border-radius:4px; border-left:4px solid #173b5e; page-break-inside:avoid; }
+  .pdf-head{ display:flex; align-items:center; gap:14px; padding:16px 0 16px; border-bottom:3px solid #173b5e; margin-bottom:10px; color:#173b5e; }
+  .pdf-brand{ font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:#173b5e; font-weight:700; }
+  .pdf-signature{ font-weight:400; letter-spacing:.02em; opacity:.7; text-transform:none; }
+  .pdf-foot{ margin-top:40px; padding-top:10px; border-top:1px solid #ddd; display:flex; justify-content:space-between; font-size:10px; color:#999; letter-spacing:.02em; }
+  @media print{ .no-print{ display:none; } h2{ page-break-after:avoid; } }
 `;
 
 function pdfHeaderHTML(title, subtitle){

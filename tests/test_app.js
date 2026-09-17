@@ -211,6 +211,31 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   const pts = polyline.getAttribute('points').trim().split(/\s+/);
   assert(pts.length >= 2, 'polyline a des points définis');
 
+  section('Panneau flottant Outils (demandé explicitement : "doit flotter... comme Récents/Favoris")');
+  assert(!!doc.getElementById('tool-panel'), 'le panneau Outils flottant est rendu à côté du canevas');
+  assert(!!doc.querySelector('#tool-panel [data-tool="select"]') && !!doc.querySelector('#tool-panel [data-tool="fil"]') && !!doc.getElementById('tool-cancel'),
+    'Sélection, Fil et Annuler (l\'action en cours) sont bien regroupés ensemble dans le panneau');
+  // Arme un placement puis vérifie que le bouton "Annuler l'action" (équivalent Échap) l'annule.
+  win.armComponentForPlacement('resistance');
+  await tick(50);
+  assert(win.wsState.armedType === 'resistance', 'placement armé avant le test du bouton annuler');
+  click(win, doc.getElementById('tool-cancel'));
+  await tick(100);
+  assert(win.wsState.armedType === null, 'le bouton "Annuler l\'action" du panneau Outils annule bien le placement armé en cours');
+  // Déplacer/réduire/masquer le panneau, comme pour le panneau Favoris déjà existant.
+  const toolPanelCollapseBtn = doc.getElementById('tool-panel-collapse');
+  click(win, toolPanelCollapseBtn);
+  await tick(50);
+  assert(doc.getElementById('tool-panel').classList.contains('collapsed'), 'le panneau Outils est réductible');
+  click(win, toolPanelCollapseBtn);
+  await tick(50);
+  click(win, doc.getElementById('tool-panel-close'));
+  await tick(50);
+  assert(doc.getElementById('tool-panel').classList.contains('hidden') && !doc.getElementById('tool-panel-reopen').classList.contains('hidden'), 'le panneau Outils est masquable, avec un bouton de réouverture');
+  click(win, doc.getElementById('tool-panel-reopen'));
+  await tick(50);
+  assert(!doc.getElementById('tool-panel').classList.contains('hidden'), 'le panneau Outils se rouvre depuis le bouton de réouverture');
+
   section('Éditeur — diagnostic structurel');
   const diagHtml = win.diagnosticHTML(win.wsState.schema);
   assert(diagHtml.includes('borne') && diagHtml.includes('non connectée'), 'diagnostic signale les bornes restantes non connectées');
@@ -250,7 +275,7 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(!win.wsState.schema.items.some(i=>i.id===dupId), 'composant dupliqué supprimé');
 
   section('Éditeur — Annuler / Rétablir (Ctrl+Z / Ctrl+Y, demandé explicitement par le client)');
-  assert(!!doc.getElementById('btn-undo') && !!doc.getElementById('btn-redo'), 'boutons Annuler/Rétablir présents dans la barre d\'outils');
+  assert(!!doc.getElementById('tool-undo') && !!doc.getElementById('tool-redo'), 'boutons Annuler/Rétablir présents dans le panneau Outils flottant');
   const nAfterDelete = win.wsState.schema.items.length; // == nBefore (le doublon a été supprimé)
   win.undoSchema(); // annule la suppression du doublon
   await tick(100);
@@ -276,7 +301,7 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   win.wsState.schema.items.forEach(it => { it.x += 3; it.y += 7; }); // désaligne volontairement
   win.wsState.schema.wires.push({ id:'w_re', a:{itemId:item1.id, term:0}, b:{itemId:item2.id, term:0} });
   const wiresCountBefore = win.wsState.schema.wires.length;
-  click(win, doc.getElementById('btn-declutter'));
+  click(win, doc.getElementById('tool-declutter'));
   await tick(150);
   const allSnapped = win.wsState.schema.items.every(it => it.x % win.GRID_SIZE === 0 && it.y % win.GRID_SIZE === 0);
   assert(allSnapped, 'tous les composants alignés sur la grille après "Ranger le schéma"');
