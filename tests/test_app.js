@@ -66,6 +66,16 @@ function click(win, el){
 function mouseAt(win, el, type, x, y){
   el.dispatchEvent(new win.MouseEvent(type, { bubbles:true, cancelable:true, clientX:x, clientY:y }));
 }
+// jsdom n'implémente pas toujours le constructeur TouchEvent — un Event générique avec
+// touches/changedTouches attachés à la main suffit : eventPoint() (js/editor.js) ne lit que ces
+// deux propriétés, exactement comme un vrai TouchEvent de navigateur le ferait.
+function touchAt(win, el, type, x, y){
+  const e = new win.Event(type, { bubbles:true, cancelable:true });
+  const touch = { clientX:x, clientY:y };
+  e.touches = type === 'touchend' ? [] : [touch];
+  e.changedTouches = [touch];
+  el.dispatchEvent(e);
+}
 function setVal(win, el, val){
   if (!el) throw new Error('setVal: element introuvable');
   const proto = el.tagName === 'SELECT' ? win.HTMLSelectElement.prototype : win.HTMLInputElement.prototype;
@@ -235,6 +245,66 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   click(win, doc.getElementById('tool-panel-reopen'));
   await tick(50);
   assert(!doc.getElementById('tool-panel').classList.contains('hidden'), 'le panneau Outils se rouvre depuis le bouton de réouverture');
+
+  section('Éditeur au tactile (retour explicite du client : "ça doit fonctionner en tactile")');
+  click(win, doc.querySelector('#tool-panel [data-tool="select"]'));
+  await tick(50);
+  // 1. Déplacer un composant au doigt (touchstart → touchmove → touchend), pas seulement à la souris.
+  const node1 = doc.querySelector(`.comp-node[data-item="${item1.id}"]`);
+  assert(!!node1, 'le nœud SVG du composant à déplacer est trouvé dans le DOM');
+  const scale = win.wsState.view.scale || 1;
+  const xBefore = win.wsState.schema.items.find(i=>i.id===item1.id).x;
+  const yBefore = win.wsState.schema.items.find(i=>i.id===item1.id).y;
+  touchAt(win, node1, 'touchstart', 300, 300);
+  await tick(30);
+  touchAt(win, node1, 'touchmove', 350, 320); // se déplace de +50/+20 avant relâchement
+  await tick(30);
+  touchAt(win, node1, 'touchend', 350, 320);
+  await tick(100);
+  const item1After = win.wsState.schema.items.find(i=>i.id===item1.id);
+  const expectedX = win.snap(xBefore + 50/scale), expectedY = win.snap(yBefore + 20/scale); // aimanté sur la grille en fin de glisser, comme à la souris
+  assert(item1After.x === expectedX && item1After.y === expectedY,
+    'le composant a bien suivi le doigt pendant le glisser tactile (avant: ' + xBefore + ',' + yBefore + ' → attendu: ' + expectedX + ',' + expectedY + ' → obtenu: ' + item1After.x + ',' + item1After.y + ')');
+
+  // 2. Tracer un fil au doigt : tapoter une borne, voir la prévisualisation suivre le doigt (touchmove), tapoter la seconde borne.
+  click(win, doc.querySelector('#tool-panel [data-tool="fil"]'));
+  await tick(50);
+  const wiresBeforeTouch = win.wsState.schema.wires.length;
+  const term1_1 = doc.querySelector(`[data-term-item="${item1.id}"][data-term-idx="1"]`);
+  const term2_1 = doc.querySelector(`[data-term-item="${item2.id}"][data-term-idx="1"]`);
+  // La sélection d'une borne reste gérée par l'évènement "click" (déjà synthétisé par un vrai
+  // navigateur après un tapotement tactile sans déplacement — inchangé, seule la ligne de
+  // prévisualisation ENTRE les deux tapotements ne suivait pas le doigt avant cette session).
+  click(win, term1_1);
+  await tick(50);
+  assert(win.wsState.wireStart && win.wsState.wireStart.itemId === item1.id, 'première borne du fil sélectionnée au tapotement tactile');
+  const previewLine = doc.getElementById('wire-preview-line');
+  touchAt(win, doc.getElementById('ws-svg'), 'touchmove', 222, 111);
+  await tick(50);
+  // svgUserToCanvas() retranche le pan de la vue avant d'affecter la ligne — mêmes coordonnées
+  // attendues que celles réellement calculées par l'application, pas les coordonnées écran brutes.
+  const expX2 = (222 - win.wsState.view.panX) / (win.wsState.view.scale||1);
+  const expY2 = (111 - win.wsState.view.panY) / (win.wsState.view.scale||1);
+  assert(Math.abs(parseFloat(previewLine.getAttribute('x2')) - expX2) < 0.5 && Math.abs(parseFloat(previewLine.getAttribute('y2')) - expY2) < 0.5,
+    'la ligne de prévisualisation du fil suit bien le doigt (touchmove), pas seulement la souris (attendu ~' + expX2 + ',' + expY2 + ', obtenu ' + previewLine.getAttribute('x2') + ',' + previewLine.getAttribute('y2') + ')');
+  click(win, term2_1);
+  await tick(50);
+  assert(win.wsState.schema.wires.length === wiresBeforeTouch + 1, 'le fil est bien créé après avoir tapoté la seconde borne au doigt');
+  // Nettoyage : retire le fil ajouté par ce test tactile pour ne pas fausser les tests de
+  // diagnostic qui suivent (ils comptent sur des bornes précises restées non connectées).
+  win.wsState.schema.wires = win.wsState.schema.wires.filter(w => w.id !== win.wsState.schema.wires[win.wsState.schema.wires.length-1].id);
+  click(win, doc.querySelector('#tool-panel [data-tool="select"]'));
+  await tick(50);
+
+  // 3. Glisser le fond du canevas au doigt fait bien un pan (comme à la souris).
+  const panXBefore = win.wsState.view.panX;
+  touchAt(win, doc.getElementById('ws-grid-bg'), 'touchstart', 400, 400);
+  await tick(30);
+  touchAt(win, doc.getElementById('ws-grid-bg'), 'touchmove', 460, 400);
+  await tick(30);
+  touchAt(win, doc.getElementById('ws-grid-bg'), 'touchend', 460, 400);
+  await tick(50);
+  assert(win.wsState.view.panX !== panXBefore, 'glisser le fond du canevas au doigt déplace bien la vue (pan tactile), comme à la souris (avant: ' + panXBefore + ', après: ' + win.wsState.view.panX + ')');
 
   section('Éditeur — diagnostic structurel');
   const diagHtml = win.diagnosticHTML(win.wsState.schema);

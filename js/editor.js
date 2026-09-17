@@ -807,7 +807,16 @@ function renderWireToolbar(){
   </div>`;
 }
 function isCanvasBackground(target, svg){ return target === svg || target.id === 'ws-grid-bg'; }
-function clientToSvgUser(evt, svg){ const pt = svg.createSVGPoint(); pt.x=evt.clientX; pt.y=evt.clientY; return pt.matrixTransform(svg.getScreenCTM().inverse()); }
+// Accepte indifféremment un événement souris ou tactile (demande explicite du client : le
+// tracé de fil, le déplacement de composant et le pan du canevas doivent fonctionner au
+// tactile — TouchEvent porte ses coordonnées dans .touches/.changedTouches, pas .clientX/Y
+// directement) plutôt que de dupliquer la logique géométrique pour chaque type d'événement.
+function eventPoint(evt){
+  if (evt.touches && evt.touches.length) return evt.touches[0];
+  if (evt.changedTouches && evt.changedTouches.length) return evt.changedTouches[0];
+  return evt;
+}
+function clientToSvgUser(evt, svg){ const p = eventPoint(evt); const pt = svg.createSVGPoint(); pt.x=p.clientX; pt.y=p.clientY; return pt.matrixTransform(svg.getScreenCTM().inverse()); }
 function svgUserToCanvas(pt){ const v = wsState.view; return { x:(pt.x - v.panX)/v.scale, y:(pt.y - v.panY)/v.scale }; }
 
 async function persistSchema(){
@@ -943,8 +952,13 @@ function wireCanvasEvents(){
   });
 
   // Aperçu du fil en cours de traçage, et fantôme du composant "armé" en attente de dépôt.
-  svg.addEventListener('mousemove', (e) => {
+  // Écouté aussi bien en souris qu'au doigt (touchmove) — demande explicite du client : sans
+  // ça, tracer un fil au tactile posait bien le fil au second tapotement mais sans jamais
+  // montrer la ligne de prévisualisation suivre le doigt entre les deux, contrairement à la
+  // souris. `{ passive:false }` + preventDefault évite que le geste fasse défiler la page.
+  const wirePreviewMove = (e) => {
     if (wsState.tool === 'fil' && wsState.wireStart){
+      if (e.cancelable) e.preventDefault();
       const line = document.getElementById('wire-preview-line');
       const startItem = wsState.schema.items.find(i=>i.id===wsState.wireStart.itemId);
       if (line && startItem){
@@ -961,7 +975,9 @@ function wireCanvasEvents(){
       const ghost = svg.querySelector('.drop-preview');
       if (ghost) ghost.setAttribute('transform', `translate(${wsState.ghostPos.x},${wsState.ghostPos.y})`);
     }
-  });
+  };
+  svg.addEventListener('mousemove', wirePreviewMove);
+  svg.addEventListener('touchmove', wirePreviewMove, { passive:false });
 
   // Échap annule un fil en cours / un placement armé (lié une seule fois, jamais empilé aux redraws).
   if (!window.__wireEscBound){
@@ -1004,6 +1020,7 @@ function wireCanvasEvents(){
 
   svg.querySelectorAll('.terminal-dot').forEach(dot => {
     dot.addEventListener('mousedown', (e) => e.stopPropagation());
+    dot.addEventListener('touchstart', (e) => e.stopPropagation(), { passive:true });
     dot.addEventListener('click', (e) => {
       e.stopPropagation();
       const itemId = dot.dataset.termItem, term = Number(dot.dataset.termIdx);
@@ -1030,46 +1047,59 @@ function wireCanvasEvents(){
 
     node.addEventListener('contextmenu', (e) => { e.preventDefault(); openComponentContextMenu(node.dataset.item, e.clientX, e.clientY); });
 
-    node.addEventListener('mousedown', (e) => {
+    // Déplacement d'un composant — souris ET tactile (demande explicite du client : glisser un
+    // composant du doigt doit fonctionner comme à la souris, pas seulement le sélectionner).
+    // Au tactile, un minuteur d'appui long démarre EN PARALLÈLE pour le menu contextuel (§6) ;
+    // si le doigt bouge avant son échéance, c'est un déplacement réel et le minuteur est annulé
+    // dans onMove ci-dessous — les deux gestes ne peuvent donc pas aboutir en même temps.
+    const startDrag = (e, isTouch) => {
       if (wsState.tool === 'supprimer') return; // géré au click
       if (wsState.tool === 'fil') return;
-      if (e.button === 2) return;
+      if (!isTouch && e.button === 2) return;
       e.stopPropagation();
       if (wsState.readOnly){ selectItem(node.dataset.item); return; } // consultation seule : pas de déplacement
       const item = wsState.schema.items.find(i=>i.id===node.dataset.item);
       dragging = true; moved = false; startPt = clientToSvgUser(e, svg); orig = { x:item.x, y:item.y };
       // Capturé AVANT toute modification (item.x/y n'ont pas encore bougé ici) — poussé sur la pile
       // d'annulation seulement si le geste se révèle être un vrai déplacement (voir onUp), pas un
-      // simple clic de sélection.
+      // simple clic/tapotement de sélection.
       const preDragSnapshot = JSON.stringify(wsState.schema);
       wsState.__draggingLocally = true;
       let lastBroadcast = 0;
       const onMove = (ev) => {
+        if (isTouch && ev.cancelable) ev.preventDefault();
         const cur = clientToSvgUser(ev, svg);
         const dx = (cur.x-startPt.x)/wsState.view.scale, dy=(cur.y-startPt.y)/wsState.view.scale;
-        if (Math.abs(dx)+Math.abs(dy) > 2) moved = true;
+        if (Math.abs(dx)+Math.abs(dy) > 2){ moved = true; if (isTouch) clearTimeout(longPressTimer); }
         item.x = orig.x+dx; item.y = orig.y+dy;
         redrawCanvasLight();
         const now = Date.now();
         if (now - lastBroadcast > 120){ lastBroadcast = now; sendPresence({ type:'move', itemId:item.id, x:item.x, y:item.y }); }
       };
-      const onUp = () => { document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp);
+      const onUp = () => {
+        document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp);
+        document.removeEventListener('touchmove',onMove); document.removeEventListener('touchend',onUp); document.removeEventListener('touchcancel',onUp);
+        if (isTouch) clearTimeout(longPressTimer); // relâché avant l'échéance : pas de menu contextuel différé
         dragging=false; wsState.__draggingLocally = false;
         if (!moved){ selectItem(item.id); return; }
         item.x = snap(item.x); item.y = snap(item.y);
         pushUndoSnapshot(preDragSnapshot);
         persistSchema(); redrawCanvas();
       };
-      document.addEventListener('mousemove',onMove); document.addEventListener('mouseup',onUp);
-    });
+      if (isTouch){ document.addEventListener('touchmove',onMove,{ passive:false }); document.addEventListener('touchend',onUp); document.addEventListener('touchcancel',onUp); }
+      else { document.addEventListener('mousemove',onMove); document.addEventListener('mouseup',onUp); }
+    };
 
-    // Appui long tactile → menu contextuel (adapté téléphone, §6).
+    node.addEventListener('mousedown', (e) => startDrag(e, false));
+
+    // Appui long tactile → menu contextuel (adapté téléphone, §6) ; voir startDrag ci-dessus
+    // pour le déplacement au doigt, démarré en parallèle du minuteur.
     node.addEventListener('touchstart', (e) => {
+      if (wsState.tool === 'supprimer' || wsState.tool === 'fil') return;
       const touch = e.touches[0];
       longPressTimer = setTimeout(() => { openComponentContextMenu(node.dataset.item, touch.clientX, touch.clientY); }, 550);
-    }, { passive:true });
-    node.addEventListener('touchmove', () => clearTimeout(longPressTimer), { passive:true });
-    node.addEventListener('touchend', () => clearTimeout(longPressTimer), { passive:true });
+      startDrag(e, true);
+    }, { passive:false });
 
     node.addEventListener('click', (e) => {
       if (wsState.tool === 'supprimer'){
@@ -1126,20 +1156,30 @@ function wireCanvasEvents(){
     if (isCanvasBackground(e.target, svg) && wsState.tool === 'fil' && wsState.wireStart){ e.preventDefault(); wsState.wireStart = null; redrawCanvas(); }
   });
 
-  // pan + zoom sur fond
+  // pan + zoom sur fond — souris ET tactile (glisser un doigt sur le fond du canevas déplace
+  // la vue), demande explicite du client.
   let panning=false, panStart=null, panOrig=null;
-  svg.addEventListener('mousedown', (e) => {
+  const startPan = (e) => {
     if (!isCanvasBackground(e.target, svg) || wsState.armedType) return;
+    if (e.cancelable) e.preventDefault();
     panning = true; svg.classList.add('panning'); panStart = clientToSvgUser(e, svg); panOrig = { ...wsState.view };
     const onMove = (ev) => {
+      if (ev.cancelable) ev.preventDefault();
       const cur = clientToSvgUser(ev, svg);
       wsState.view.panX = panOrig.panX + (cur.x - panStart.x);
       wsState.view.panY = panOrig.panY + (cur.y - panStart.y);
       document.getElementById('ws-viewport').setAttribute('transform', `translate(${wsState.view.panX},${wsState.view.panY}) scale(${wsState.view.scale})`);
     };
-    const onUp = () => { panning=false; svg.classList.remove('panning'); document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp); };
+    const onUp = () => {
+      panning=false; svg.classList.remove('panning');
+      document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp);
+      document.removeEventListener('touchmove',onMove); document.removeEventListener('touchend',onUp); document.removeEventListener('touchcancel',onUp);
+    };
     document.addEventListener('mousemove',onMove); document.addEventListener('mouseup',onUp);
-  });
+    document.addEventListener('touchmove',onMove,{ passive:false }); document.addEventListener('touchend',onUp); document.addEventListener('touchcancel',onUp);
+  };
+  svg.addEventListener('mousedown', startPan);
+  svg.addEventListener('touchstart', startPan, { passive:false });
 
   svg.addEventListener('wheel', (e) => {
     e.preventDefault();
