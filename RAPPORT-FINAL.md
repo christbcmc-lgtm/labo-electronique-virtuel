@@ -1012,3 +1012,109 @@ composant à 4 couches, séparation de l'espace de travail du schéma et de l'in
 générale, refonte mobile-first. Ce chantier n'a pas été commencé — il a été jugé trop risqué
 pour être mené dans la même session que des corrections concrètes et vérifiables, conformément
 à la mise en garde du cahier lui-même contre une réécriture aveugle.
+
+---
+
+# ADDENDUM 4 — SUITE DE LA REPRISE : BIBLIOTHÈQUE 3 COLONNES, MULTI-DEVISES, LOGO UNIFIÉ,
+# ANNULER/RÉTABLIR, SYMBOLES
+
+Cette session a repris directement là où l'ADDENDUM 3 s'était arrêté, à la demande du client
+de continuer le chantier différé, puis a intégré trois demandes supplémentaires reçues en
+cours de session (un deuxième document de reprise plus strict, une demande de logo/PDF
+professionnel, et une demande d'annuler/rétablir + de symboles conformes à la norme).
+
+## Q1. Bibliothèque en 3 colonnes (§6/§7 des mises à jour)
+
+Ajoutée sur `#/composants`, en plus du mode recherche déjà existant (conservé sans
+changement) : un mode « Parcourir la bibliothèque » avec navigation Famille → Sous-famille →
+Fiche détail (`js/app.js`, `viewComposantsParcourirHTML`/`componentFicheHTML`). La
+sous-famille est **dérivée automatiquement** (`deriveSousFamille()` dans `js/catalog.js`) à
+partir de la famille/l'identifiant/le nom/l'alias déjà réels de chaque fiche, plutôt que
+saisie une à une sur les 503 composants — évite à la fois un travail manuel disproportionné
+et le risque d'erreur de saisie sur une classification répétitive. La fiche détail affiche le
+symbole réel (`renderComponentSymbolSVG`), la référence technique, le boîtier (quand connu
+avec confiance), le brochage réel s'il existe, et le niveau de vérification réel du
+composant.
+
+## Q2. Modèle de données composant enrichi (§4 des mises à jour)
+
+`defRow()` (`js/catalog.js`) expose maintenant `sousFamille`, `refTechnique`, `boitier`,
+`source`, `niveauVerification` pour les 503 composants. **Honnêteté des nouveaux champs** :
+`boitier` n'est renseigné (DIP-N/SOIC-N) que pour les circuits intégrés dont le brochage
+(`pinNames`) est déjà confirmé — déduit automatiquement du nombre de broches réel dans
+`icDefRow()`, jamais deviné. `source` reste vide par défaut plutôt que de citer une
+documentation non vérifiée. `niveauVerification` reflète ce qui est réellement vérifié par
+`tests/verify_catalog.js` (et la présence ou non de `pinNames`), pas une auto-évaluation.
+
+## Q3. Devis multi-devises (§13/§14 des mises à jour, doc « Document texte.txt »)
+
+Écart réel trouvé en relisant `js/devis.js` : le devis était **codé en euros uniquement**
+(`fmtMoney` ajoutait toujours « € »), malgré les deux cahiers reçus qui demandent
+explicitement le choix de la monnaie. Ajouté : sélecteur de devise (FCFA/XOF, EUR, USD, NGN,
+GHS) sur la vue devis, propagé aux totaux, aux lignes et à l'export PDF du devis. EUR reste
+la valeur par défaut pour ne pas changer le comportement des devis déjà enregistrés.
+
+## Q4. Logo unifié interface + PDF (§17 des mises à jour)
+
+Le logo vectoriel (`LAB_LOGO_SVG`, déplacé dans `js/config.js` pour être partagé) n'était
+affiché que dans les 4 PDF (ajouté à la session précédente) — la barre supérieure de
+l'application utilisait un simple glyphe Unicode ◈. Affiche maintenant le même symbole aux
+deux endroits.
+
+## Q5. PDF du dimensionnement — écart trouvé et corrigé
+
+Le résultat affiché à l'écran (formules avec substitution des valeurs) était plus détaillé
+que ce qui partait dans le PDF (`window.__pvLastHTML`/`__etLastHTML`, un résumé plus court
+sans les formules) — contraire à l'exigence explicite du cahier (« le PDF doit donner
+suffisamment de détails pour comprendre comment le résultat a été obtenu », §12). Les deux
+sont maintenant construits à partir des mêmes formules, avec une conclusion explicite et les
+hypothèses/remarques reprises dans le PDF.
+
+## Q6. Annuler / Rétablir — Ctrl+Z / Ctrl+Y (demande explicite du client en cours de session)
+
+L'éditeur n'avait aucun mécanisme d'annulation. Ajouté (`js/editor.js`) : pile d'instantanés
+du schéma, un instantané poussé avant chaque mutation discrète (placement, suppression,
+déplacement validé, rotation, duplication, remplacement de variante, fil créé/supprimé/
+reconnecté/recoloré/premier plan, nœud à une intersection, « Ranger le schéma », modification
+de propriété). Raccourcis `Ctrl+Z`/`Ctrl+Y`/`Ctrl+Maj+Z` et deux boutons dédiés (utilisables
+au tactile, sans clavier). Deux précautions pour que la pile reste utile plutôt que polluée :
+un glisser de composant ne pousse qu'un seul instantané pour tout le geste (pas un par pixel
+déplacé), et la saisie de texte (référence de remplacement, valeur personnalisée) n'en pousse
+qu'un par session de frappe (capturé au focus), pas un par caractère tapé.
+
+## Q7. Symboles — 3 corrigés, audit plus large explicitement différé
+
+Demande explicite du client : « les symboles sont prioritaires et doivent respecter la
+norme, je ne veux pas d'une forme bâclée. » Trois composants utilisaient un rectangle vide
+avec juste un texte (`TPL.boxLabel`) alors qu'une convention IEC plus appropriée existait déjà
+dans le fichier : thermistances NTC/PTC → gabarit résistance + flèche diagonale traversante
+(`TPL.boxDiag`, déjà utilisé pour le rhéostat juste au-dessus dans `js/catalog.js` — NTC/PTC
+ne sont pas distinguées par la forme en IEC 60617, seulement par le texte, donc ce n'est pas
+une approximation) ; LDR → résistance + 2 flèches de lumière entrante, même convention que la
+photodiode déjà présente. **Ce qui n'a pas été fait** : un audit symbole par symbole des ~500
+composants du catalogue contre la norme IEC 60617 est un chantier réel à part entière (au-delà
+des ~25 composants « vedettes » déjà dessinés et vérifiés à la main — résistance, condensateur,
+diodes, transistors, AOP, portes logiques, transformateurs, etc. — voir section D) ; il n'a
+pas pu être mené dans cette même session en plus de tout le reste. C'est maintenant la
+priorité n°1 documentée dans `NOTES_REPRISE_2026.md` pour la suite.
+
+## Tests (addendum 4)
+
+`npm test` exécute maintenant **168 vérifications, 0 échec, 0 erreur JavaScript non
+interceptée** (158 avant cette session + 10 nouvelles sur l'annuler/rétablir et le PDF du
+dimensionnement), plus `tests/verify_catalog.js` (503 composants, 0 anomalie de brochage).
+Nouveaux parcours vérifiés par exécution réelle : navigation complète dans la bibliothèque 3
+colonnes (famille → sous-famille Zener → fiche → favori) ; changement de devise répercuté sur
+les totaux, les lignes et le rendu PDF ; logo présent dans la barre supérieure ; enchaînement
+annuler ×3 / rétablir ×3 après rotation+duplication+suppression, retrouvant exactement l'état
+de départ ; annuler sur une pile vide ne lève pas d'exception ; le PDF du dimensionnement
+contient bien les formules, une conclusion et les hypothèses.
+
+**Non vérifié dans un vrai navigateur** (comme signalé aux sections M et K) : l'extension
+Chrome disponible dans cet environnement s'est révélée connectée à une machine différente de
+celle où tourne le serveur de développement local (`http://127.0.0.1:8080` atteignable depuis
+PowerShell/curl sur cette machine, mais pas depuis le navigateur piloté — `https://example.com`
+s'affichait normalement, donc l'extension fonctionne, seul l'accès au serveur local échoue).
+Toute la validation de cette session reste donc au niveau DOM simulé (Node + jsdom), pas au
+rendu pixel réel — en particulier la mise en page de la bibliothèque 3 colonnes sur petit
+écran et le rendu réel des nouveaux symboles n'ont pas pu être observés visuellement.

@@ -6,75 +6,89 @@
 
 ## Origine
 
-Le client a transmis un nouveau document (~8600 lignes) explicitement écrit comme un cahier
-des charges de **reprise, organisation et évolution**, destiné à une IA prenant le relais
-sans connaître le code. Une partie de ce document a été traitée cette session (voir
-`RAPPORT-FINAL.md`, « ADDENDUM 3 » : correction du brochage de 4 composants d'appareillage
-bâtiment + éclatement du PDF en 4 exports indépendants + logo/mise en page).
+Le client a transmis plusieurs documents de reprise au fil de la même session (le premier
+~8600 lignes, puis un second plus strict demandant explicitement de ne pas se contenter de
+corriger l'existant, puis des demandes ponctuelles en cours de route : logo/PDF pro,
+undo/redo, qualité des symboles). Une bonne partie a été traitée au fil de cette session — voir
+`RAPPORT-FINAL.md`, addenda 3 et 4 : brochage de 5 composants d'appareillage bâtiment, PDF
+éclaté en 4 exports + logo unifié interface/PDF, bibliothèque 3 colonnes, modèle de données
+enrichi, devis multi-devises, PDF du dimensionnement détaillé, annuler/rétablir, 3 symboles
+corrigés.
 
-Le reste du document décrit une refonte nettement plus large, **volontairement reportée** —
-décision prise avec l'accord explicite du client (scope de session confirmé), pas une
-omission. Ce fichier accumule ce chantier pour qu'il reste traçable pour la suite, exactement
-comme `NOTES_EXIGENCES_EN_COURS.md` l'a fait pour le chantier précédent.
+Le reste décrit un chantier plus large, **volontairement reporté** — pas une omission. Ce
+fichier accumule ce qui reste pour rester traçable pour la suite, exactement comme
+`NOTES_EXIGENCES_EN_COURS.md` l'a fait pour le chantier précédent.
 
-## 1. Bibliothèque en 3 colonnes façon Proteus
+## 1. Audit des symboles contre la norme IEC 60617 — PRIORITÉ N°1 (demande explicite du client)
 
-Le cahier demande une organisation « Famille → Sous-famille → Fiche détail » (3 colonnes),
-inspirée de Proteus. L'interface actuelle (`js/app.js`/`js/editor.js`) affiche déjà les
-familles en sections repliables (addendum 1), mais pas de sélection à 3 niveaux avec une
-colonne de détail dédiée (référence, brochage, caractéristiques, documentation, symbole
-affichés ensemble). C'est un chantier d'interface à part entière, pas une simple extension de
-données.
+« Les symboles sont prioritaires et doivent respecter la norme, je ne veux pas d'une forme
+bâclée. » Cette session a corrigé les 3 cas les plus nets de rectangle-vide-avec-texte sans
+convention réelle (thermistances NTC/PTC, LDR — voir addendum 4, Q7), en réutilisant des
+gabarits déjà présents dans `js/catalog.js` (`TPL.boxDiag`, convention photodiode). Restent à
+auditer, par ordre de valeur probable :
 
-## 2. Modèle de données composant à 4 couches
+- Les composants de contrôle/puissance encore en gabarit "rectangle + sigle" (`variateur_vitesse`,
+  `gradateur_puissance`, `hacheur`, `relais_auxiliaire`, `analyseur_reseau`,
+  `relais_protection`, `interphone`, `permutateur`, `telerupteur`...) : à vérifier composant
+  par composant si un symbole IEC 60617 distinctif existe et vaut la peine d'être dessiné à la
+  main, ou si le bloc fonctionnel étiqueté reste la convention correcte (c'est déjà le cas
+  pour beaucoup d'appareils de commande/contrôle dans les schémas fonctionnels réels — à ne
+  pas changer par principe).
+- Les ~130-150 composants basés sur `icTemplate()` (circuits intégrés génériques) : le
+  rectangle à broches numérotées **est** la convention IEC/pratique standard pour un CI, ce
+  n'est probablement pas à corriger — mais mérite une vérification explicite plutôt qu'une
+  supposition.
+- Les composants "vedettes" dessinés à la main (résistance, diodes, transistors, portes
+  logiques, AOP, transformateurs...) sont déjà vérifiés (RAPPORT-FINAL section D/O3) — ne pas
+  les rouvrir sans raison précise.
 
-Déjà identifié comme chantier réel (pas une reformulation) dans
-`NOTES_EXIGENCES_EN_COURS.md` §7, avant même ce nouveau document. Le nouveau cahier en donne
-la liste de champs cible : identifiant, nom, **référence technique**, famille,
-**sous-famille**, alias, description, symbole, nombre de broches, numéro/nom/fonction/
-position des broches, orientation, **boîtier**, caractéristiques électriques, paramètres,
-variantes, documentation, **source**, **niveau de vérification**.
+Une méthode possible pour la suite : lister les symboles par famille avec une capture/aperçu
+(la fiche détail de la bibliothèque 3 colonnes, ajoutée cette session, permet justement de
+voir chaque symbole individuellement — `#/composants` → Parcourir la bibliothèque), les faire
+valider un par un plutôt que de deviner ce qui doit changer.
 
-État actuel (`js/catalog.js`, fonction `defRow`) : `id, nom, terminals, unit, defaultValue,
-valueOptions, def, wiki, alias, famille, complexite, simulable, variantes`, plus `pinNames`
-en option. Manquants : sous-famille explicite (actuellement mélangée dans `famille`),
-référence technique distincte du nom, boîtier, source, niveau de vérification. Migrer les
-~503 fiches existantes vers ce schéma élargi sans casser `tests/verify_catalog.js` ni les
-tests fonctionnels est un chantier de plusieurs sessions à lui seul.
-
-## 3. Séparation espace de travail du schéma / interface générale
+## 2. Séparation espace de travail du schéma / interface générale
 
 Le cahier demande explicitement de ne pas se contenter de « réduire l'interface PC pour
 obtenir la version mobile », et de séparer clairement la zone de travail du schéma de
-l'interface générale du laboratoire (actuellement une seule page longue par vue). Nécessite
-un audit complet de `css/style.css` et de la structure DOM produite par `js/app.js`/
-`js/editor.js` avant toute décision — pas commencé.
+l'interface générale du laboratoire. **Constat de cette session** : la structure actuelle
+(`.workspace` en CSS, `css/style.css`) est déjà en réalité une zone plein écran dédiée
+(`height:calc(100vh - var(--header-h))`, 3 colonnes tools/canevas/panneau) — pas "une longue
+page" contrairement à ce que le cahier laisse supposer pour l'état du dépôt. Ce qui reste
+réellement à évaluer : la densité de la barre d'outils du canevas (plusieurs boutons PDF/IA/
+partage/enregistrer sur une seule ligne) et une éventuelle vue d'ensemble ("vue générale du
+projet") en dézoomant — pas une réorganisation structurelle complète. À vérifier dans un vrai
+navigateur avant de décider quoi que ce soit (voir point 4).
 
-## 4. Refonte mobile-first
+## 3. Refonte mobile-first
 
-Le mode responsive actuel (onglets Composants/Canevas/Mesures sous 760px, voir
-`RAPPORT-FINAL.md` section A) fonctionne mais a été construit comme une adaptation de
-l'interface desktop existante, pas conçu mobile-first comme le demande maintenant le cahier
-(§11 : menus compacts, panneaux adaptés, zoom/déplacement tactile pensés dès le départ). À
-auditer avec le point 3 ci-dessus, pas séparément.
+Le mode responsive actuel (onglets Composants/Canevas/Mesures sous 760px) fonctionne mais a
+été construit comme une adaptation de l'interface desktop existante. À auditer avec le point 2
+ci-dessus, dans un vrai navigateur, avant toute décision de redesign.
 
-## 5. Audit de brochage élargi à l'ensemble du catalogue
+## 4. Vérification visuelle dans un vrai navigateur — bloquant pour les points 1, 2, 3
 
-Cette session n'a corrigé/complété que les 4 composants d'appareillage bâtiment
-explicitement et concrètement faux par rapport au nouveau cahier (va-et-vient, permutateur,
-interrupteur double, interrupteur bipolaire) + le télérupteur (pinNames manquants). Le
-cahier demande un audit de "forme / représentation / orientation / bornes / cohérence" pour
-l'ensemble du catalogue. Les ~500 autres composants n'ont pas été revérifiés au-delà de ce
-que `tests/verify_catalog.js` garantit déjà (bornes ↔ tracé, pas d'identifiant en double) —
-cela ne garantit pas l'exactitude électrique/normative de chaque fiche, seulement sa
-cohérence interne.
+Cette session a de nouveau tenté d'utiliser l'extension Chrome pilotable : elle est connectée,
+mais à une machine différente de celle qui exécute le serveur de développement local
+(`http://127.0.0.1:8080`, atteignable depuis PowerShell/curl sur cette machine mais pas depuis
+le navigateur piloté — un site externe s'affiche normalement). Toute la validation de cette
+session reste donc au niveau DOM simulé (Node + jsdom : logique, structure HTML, absence
+d'erreur), jamais au rendu pixel réel. Avant de pousser plus loin les points 1 à 3 (qui sont
+fondamentalement des jugements visuels), il faudrait soit connecter l'extension à la bonne
+machine, soit qu'un humain fasse un tour rapide de l'application déployée et rapporte ce qui
+ne va pas concrètement.
+
+## 5. Catalogue étendu vers 900 composants
+
+Objectif annoncé dans le tout premier cahier, jamais atteint (503 aujourd'hui). Toujours jugé
+secondaire par rapport à la qualité (voir RAPPORT-FINAL O4) — pas repris cette session, et pas
+prioritaire tant que le point 1 (qualité des symboles déjà présents) n'est pas traité : ajouter
+des composants avec des symboles génériques non vérifiés irait à l'encontre de la demande
+explicite du client sur ce point.
 
 ## À faire avant de fusionner ce document dans le CDC définitif
 
-- [ ] Décider si la refonte bibliothèque (point 1) et le modèle 4 couches (point 2) doivent
-      être menés ensemble (ils se recoupent fortement) ou séparément.
-- [ ] Faire auditer visuellement l'interface actuelle dans un vrai navigateur avant de
-      concevoir la séparation espace de travail / interface générale (point 3) — décision
-      d'architecture qui mérite d'être vue, pas seulement lue dans le code.
-- [ ] Prioriser les familles de composants à auditer en premier pour le point 5 (le cahier
-      ne donne pas d'ordre explicite au-delà de l'appareillage bâtiment déjà traité).
+- [ ] Faire auditer visuellement l'interface actuelle dans un vrai navigateur (point 4) avant
+      de trancher les points 1 à 3 — décisions qui méritent d'être vues, pas seulement lues.
+- [ ] Prioriser les familles de composants à auditer en premier pour le point 1 (le client n'a
+      pas donné d'ordre explicite au-delà de constater le problème général).
