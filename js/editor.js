@@ -293,6 +293,7 @@ async function viewProject(id){
           <a href="#/project/${id}" class="active">Schéma</a>
           <a href="#/devis/${id}">Devis</a>
           <a href="#/dimensionnement/${id}">Dimensionnement</a>
+          <a href="#/plan/${id}">Plan</a>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           ${wsState.isOwner ? `<button class="btn btn-ghost btn-sm" id="btn-share">Partager</button>` : ''}

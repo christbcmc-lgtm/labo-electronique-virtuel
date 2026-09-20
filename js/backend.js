@@ -31,6 +31,7 @@ const DB = {
   passwordResetTokens: {},
   storageRequests: [], // { id, userId, montantOctets, motif, statut:'en attente'|'acceptee'|'refusee', createdAt }
   devis: {},           // projectId -> { lignes:[], remisePct, tauxTaxe, taxeActive }
+  plans: {},           // projectId -> projet Atelier Plan (murs/ouvertures/symboles/circuits...), voir js/plan.js
   notifications: [],   // { id, userId, type:'important'|'normal', titre, texte, lien, lu, notified, createdAt }
 };
 
@@ -57,6 +58,7 @@ function loadDB(){
       if (!p.statut) p.statut = 'brouillon';
     });
     if (!Array.isArray(DB.notifications)) DB.notifications = [];
+    if (!DB.plans || typeof DB.plans !== 'object') DB.plans = {};
   }catch(e){}
 }
 loadDB();
@@ -440,6 +442,20 @@ const mockDb = {
     return { error:null };
   },
 
+  // Plan de bâtiment/électricité (§11-19 des mises à jour reçues) : stocké par projet, indépendant
+  // du schéma et du devis, sur le même principe que ci-dessus. `null` = aucun plan encore créé (le
+  // module js/plan.js démarre alors sur un plan vide plutôt que d'échouer).
+  async getPlan(projectId){
+    await wait(80);
+    return { data: DB.plans[projectId] || null, error:null };
+  },
+  async savePlan(projectId, plan){
+    await wait(80);
+    DB.plans[projectId] = plan;
+    persistDB();
+    return { error:null };
+  },
+
   userById(id){ return DB.users.find(u => u.id === id); },
 };
 
@@ -816,6 +832,16 @@ const supabaseDb = {
   },
   async saveDevis(projectId, devis){
     const { error } = await supabaseClient.from('projects').update({ devis }).eq('id', projectId);
+    return { error: error ? { message:error.message } : null };
+  },
+
+  async getPlan(projectId){
+    const { data, error } = await supabaseClient.from('projects').select('plan').eq('id', projectId).single();
+    if (error) return { data:null, error:null };
+    return { data: data.plan || null, error:null };
+  },
+  async savePlan(projectId, plan){
+    const { error } = await supabaseClient.from('projects').update({ plan }).eq('id', projectId);
     return { error: error ? { message:error.message } : null };
   },
 

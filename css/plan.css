@@ -1,0 +1,152 @@
+/* ==========================================================================
+   PLAN BÂTIMENT — styles de l'éditeur de plan d'architecture et d'électricité
+   (js/plan.js). Toutes les règles sont volontairement préfixées par le
+   sélecteur d'ancrage #plan-shell : cet éditeur a été intégré à partir d'un
+   prototype autonome (page complète avec son propre :root/html/body/#app),
+   et ses classes très génériques (.btn, .row, .brand, .on...) restent
+   inchangées en interne (js/plan.js les manipule) — ce préfixe leur donne
+   une spécificité plus forte que les règles génériques du site (css/style.css)
+   pour tout ce qui se trouve à l'intérieur de #plan-shell, sans avoir à
+   renommer les centaines de références de classes du module.
+   ========================================================================== */
+
+#plan-shell{
+  --bg:#14171c; --panel:#1b1f26; --panel2:#222833; --line:#2c3441; --ink:#e6e9ef; --mute:#8a94a6;
+  --acc:#4fc3f7; --acc2:#ffb74d; --ok:#66bb6a; --warn:#ffa726; --bad:#ef5350; --sheet:#1b1e24;
+
+  display:grid; grid-template-rows:auto auto minmax(0,1fr) auto; height:100%;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  background:var(--bg); color:var(--ink);
+  font:13px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  overscroll-behavior:none;
+}
+#plan-shell *{ box-sizing:border-box; }
+#plan-shell button, #plan-shell select, #plan-shell input, #plan-shell textarea{
+  font:inherit; color:inherit; font-size:13px; border-radius:0; display:initial; text-transform:none; letter-spacing:normal;
+}
+#plan-shell button{ cursor:pointer; }
+
+/* ---- barre du haut ---- */
+#plan-shell #top{ display:flex; align-items:center; gap:12px; padding:5px 10px; background:var(--panel); border-bottom:1px solid var(--line); min-width:0; }
+#plan-shell .brand{ font-weight:700; letter-spacing:.3px; white-space:nowrap; display:inline; gap:0; }
+#plan-shell .brand b{ color:var(--acc); }
+#plan-shell #tabs{ display:flex; gap:2px; overflow-x:auto; scrollbar-width:none; }
+#plan-shell #tabs button{ background:none; border:0; border-bottom:2px solid transparent; padding:6px 10px; color:var(--mute); white-space:nowrap; }
+#plan-shell #tabs button.on{ color:var(--ink); border-color:var(--acc); }
+#plan-shell #fileinfo{ margin-left:auto; display:flex; align-items:center; gap:8px; min-width:0; }
+#plan-shell #projName{ background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:4px 8px; width:190px; max-width:32vw; }
+#plan-shell #saveState{ color:var(--mute); font-size:12px; white-space:nowrap; }
+#plan-shell #saveState.dirty{ color:var(--warn); }
+
+/* ---- ruban ---- */
+#plan-shell #ribbon{ display:flex; gap:0; overflow-x:auto; background:var(--panel2); border-bottom:1px solid var(--line); scrollbar-width:thin; min-height:66px; }
+#plan-shell .grp{ display:flex; flex-direction:column; padding:4px 8px 2px; border-right:1px solid var(--line); flex:none; }
+#plan-shell .grp .items{ display:flex; gap:2px; align-items:flex-start; flex:1; }
+#plan-shell .grp .gname{ font-size:10px; color:var(--mute); text-align:center; margin-top:2px; letter-spacing:.4px; text-transform:uppercase; }
+#plan-shell .rb{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; min-width:46px; padding:4px 4px;
+  background:none; border:1px solid transparent; border-radius:6px; font-size:10.5px; color:var(--ink); }
+#plan-shell .rb svg{ width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+#plan-shell .rb:hover{ background:#2b3341; }
+#plan-shell .rb.on{ background:#243a4a; border-color:var(--acc); color:var(--acc); }
+#plan-shell .rsel{ display:flex; flex-direction:column; gap:3px; justify-content:center; font-size:10.5px; color:var(--mute); min-width:96px; }
+#plan-shell .rsel select{ background:var(--panel); border:1px solid var(--line); border-radius:5px; padding:3px 4px; width:auto; }
+
+/* ---- zone de travail ---- */
+#plan-shell #work{ display:flex; min-height:0; position:relative; }
+#plan-shell #stage{ flex:1; position:relative; min-width:0; background:var(--sheet); overflow:hidden; }
+#plan-shell #cv{ position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; cursor:crosshair; user-select:none; -webkit-user-select:none; }
+#plan-shell #hud{ position:absolute; pointer-events:none; background:#000c; border:1px solid #ffffff22; border-radius:4px; padding:2px 6px; font-size:11.5px; color:#fff; display:none; white-space:nowrap; z-index:3; }
+#plan-shell #hint{ position:absolute; left:8px; top:8px; background:#000a; border-radius:6px; padding:4px 9px; font-size:12px; color:#cfd8e3; pointer-events:none; max-width:70%; z-index:2; }
+#plan-shell #plan-toast{ position:absolute; left:50%; bottom:14px; transform:translateX(-50%); background:#101418ee; border:1px solid var(--line);
+  padding:6px 12px; border-radius:8px; font-size:12.5px; opacity:0; transition:opacity .2s; pointer-events:none; z-index:5; max-width:90%; }
+#plan-shell #plan-toast.on{ opacity:1; }
+
+/* ---- panneau latéral ---- */
+#plan-shell #side{ width:310px; flex:none; background:var(--panel); border-left:1px solid var(--line); display:flex; flex-direction:column; min-height:0; }
+#plan-shell #stabs{ display:flex; border-bottom:1px solid var(--line); }
+#plan-shell #stabs button{ flex:1; background:none; border:0; border-bottom:2px solid transparent; padding:8px 2px; color:var(--mute); font-size:12px; }
+#plan-shell #stabs button.on{ color:var(--ink); border-color:var(--acc); }
+#plan-shell #spanels{ flex:1; overflow:auto; padding:10px; }
+#plan-shell .pn{ display:none; }
+#plan-shell .pn.on{ display:block; }
+#plan-shell .muted{ color:var(--mute); }
+#plan-shell .frm{ display:grid; grid-template-columns:1fr 1.1fr; gap:6px 8px; align-items:center; margin:8px 0; }
+#plan-shell .frm label{ color:var(--mute); font-size:12px; }
+#plan-shell .frm input, #plan-shell .frm select, #plan-shell .frm textarea,
+#plan-shell .mbody input, #plan-shell .mbody select, #plan-shell .mbody textarea{ width:100%; background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:5px 7px; }
+#plan-shell .h4{ font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--mute); margin:14px 0 6px; }
+#plan-shell .btn{ display:inline-flex; align-items:center; justify-content:center; gap:4px;
+  background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:6px 10px; font-size:12px; font-weight:400; }
+#plan-shell .btn:hover{ border-color:var(--acc); }
+#plan-shell .btn.pri{ background:#1e5a78; border-color:var(--acc); }
+#plan-shell .btn.bad{ border-color:#7a3030; color:#ffb4b4; }
+#plan-shell .row{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+#plan-shell .lay{ display:grid; grid-template-columns:18px 1fr 26px 26px; gap:6px; align-items:center; padding:3px 0; border-bottom:1px solid #ffffff0a; }
+#plan-shell .lay .sw{ width:14px; height:14px; border-radius:3px; border:1px solid #fff3; position:relative; }
+#plan-shell .lay.cur{ background:#243a4a55; }
+#plan-shell .ib{ background:none; border:0; color:var(--mute); padding:2px; border-radius:4px; }
+#plan-shell .ib.on{ color:var(--ink); }
+#plan-shell .ib:hover{ background:#ffffff14; }
+#plan-shell .lib{ display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+#plan-shell .sym{ display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 2px; background:var(--panel2); border:1px solid var(--line);
+  border-radius:8px; font-size:10px; color:var(--ink); text-align:center; line-height:1.15; min-height:64px; }
+#plan-shell .sym svg{ width:30px; height:30px; color:#fff; }
+#plan-shell .sym.on{ border-color:var(--acc); background:#243a4a; }
+#plan-shell .cir{ border:1px solid var(--line); border-radius:8px; padding:8px; margin:6px 0; background:var(--panel2); }
+#plan-shell .cir.act{ border-color:var(--acc); }
+#plan-shell .cir .t{ display:flex; align-items:center; gap:6px; }
+#plan-shell .dot{ width:12px; height:12px; border-radius:50%; flex:none; display:inline-block; }
+#plan-shell table.rep{ width:100%; border-collapse:collapse; font-size:12px; margin:4px 0; }
+#plan-shell table.rep th, #plan-shell table.rep td{ border-bottom:1px solid var(--line); padding:3px 4px; text-align:left; }
+#plan-shell table.rep th{ color:var(--mute); font-weight:500; }
+#plan-shell table.rep td.n, #plan-shell table.rep th.n{ text-align:right; }
+#plan-shell .warn{ border-left:3px solid var(--warn); background:#2a2418; padding:5px 8px; margin:4px 0; border-radius:4px; font-size:12px; cursor:pointer; }
+#plan-shell .ok{ border-left:3px solid var(--ok); background:#1b2a1f; padding:5px 8px; margin:4px 0; border-radius:4px; font-size:12px; }
+
+/* ---- barre basse ---- */
+#plan-shell #bottom{ background:var(--panel); border-top:1px solid var(--line); }
+#plan-shell #cmdbar{ display:flex; align-items:center; gap:8px; padding:4px 10px; border-bottom:1px solid var(--line); }
+#plan-shell #prompt{ color:var(--acc); white-space:nowrap; font-size:12px; max-width:52%; overflow:hidden; text-overflow:ellipsis; }
+#plan-shell #cmd{ flex:1; background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:5px 8px; min-width:80px; }
+#plan-shell #statusbar{ display:flex; align-items:center; gap:4px; padding:3px 8px; overflow-x:auto; scrollbar-width:none; white-space:nowrap; }
+#plan-shell #coords{ color:var(--mute); min-width:150px; font-variant-numeric:tabular-nums; }
+#plan-shell .tg{ background:none; border:1px solid var(--line); border-radius:5px; padding:3px 8px; color:var(--mute); font-size:11.5px; }
+#plan-shell .tg.on{ color:var(--ink); border-color:var(--acc); background:#243a4a; }
+#plan-shell #statusbar select{ background:var(--panel2); border:1px solid var(--line); border-radius:5px; padding:2px 4px; width:auto; }
+#plan-shell #statusbar .sp{ flex:1; }
+
+/* ---- modale ---- */
+#plan-shell #modal{ position:fixed; inset:0; background:#000a; display:none; align-items:center; justify-content:center; z-index:50; padding:12px; }
+#plan-shell #modal.on{ display:flex; }
+#plan-shell .mbox{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; width:min(560px,100%); max-height:90vh; overflow:auto; }
+#plan-shell .mbox h3{ margin:0 0 10px; font-size:15px; }
+#plan-shell .mbtns{ display:flex; justify-content:flex-end; gap:8px; margin-top:14px; }
+#plan-shell .mbtns button{ background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:6px 14px; }
+#plan-shell .mbtns button.pri{ background:#1e5a78; border-color:var(--acc); }
+#plan-shell .mbody .frm{ margin:0; }
+#plan-shell .mbody p{ margin:6px 0; }
+#plan-shell kbd{ background:#0006; border:1px solid var(--line); border-radius:4px; padding:0 5px; font-size:11.5px; }
+
+#plan-shell #printArea{ display:none; }
+#plan-shell #sideToggle{ display:none; }
+
+@media (max-width:860px){
+  #plan-shell #side{ position:absolute; right:0; top:0; bottom:0; width:min(88vw,330px); transform:translateX(102%); transition:transform .2s; z-index:10; box-shadow:-8px 0 24px #0008; }
+  #plan-shell #side.open{ transform:none; }
+  #plan-shell #sideToggle{ display:inline-block; }
+  #plan-shell #projName{ width:120px; }
+  #plan-shell .brand span{ display:none; }
+  #plan-shell #hint{ max-width:88%; }
+}
+
+/* L'impression doit masquer tout SAUF #printArea, quelle que soit sa profondeur d'imbrication
+   dans la page (le plan est maintenant niché dans le shell applicatif du site, pas à la racine
+   de <body> comme dans le prototype autonome d'origine) — approche par visibilité plutôt que
+   par sélection des enfants directs de <body>. */
+@media print{
+  html,body{ background:#fff; height:auto; }
+  body *{ visibility:hidden; }
+  #printArea, #printArea *{ visibility:visible; }
+  #printArea{ position:absolute; left:0; top:0; width:100%; display:block !important; }
+  #printArea svg{ display:block; width:100%; height:auto; }
+}

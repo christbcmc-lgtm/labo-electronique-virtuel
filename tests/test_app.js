@@ -39,7 +39,7 @@ async function boot(){
   // browsers) — injecting real <script> elements does, exactly like the browser loading js/*.js
   // via <script src>. This is what actually behaves like the shipped page.
   const doc0 = dom.window.document;
-  for (const f of ['js/config.js','js/catalog.js','js/backend.js','js/editor.js','js/pdf.js','js/devis.js','js/dimensionnement.js','js/app.js']){
+  for (const f of ['js/config.js','js/catalog.js','js/backend.js','js/editor.js','js/pdf.js','js/devis.js','js/dimensionnement.js','js/plan.js','js/app.js']){
     const s = doc0.createElement('script');
     s.textContent = readFile(f);
     doc0.body.appendChild(s);
@@ -527,6 +527,38 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   win.confirm = origConfirmPdf;
   const pdfHeaderSample = win.pdfHeaderHTML('Test', 'Sous-titre');
   assert(pdfHeaderSample.includes('<svg') && pdfHeaderSample.includes('Laboratoire Électronique Virtuel'), 'l\'en-tête partagé des PDF inclut un logo vectoriel (SVG inline) et la marque');
+
+  section('Plan bâtiment — éditeur d\'architecture/électricité intégré (§11-19 des mises à jour reçues)');
+  const jsErrCountBeforePlan = win.__jsErrors.length;
+  await nav(win, 'plan/' + projectId);
+  await tick(300);
+  assert(!!doc.getElementById('plan-shell'), 'l\'éditeur de plan (prototype "Atelier Plan" intégré) est monté dans la vue');
+  assert(!!doc.querySelector(`.ws-tabs-top a[href="#/plan/${projectId}"].active`), 'le 4e onglet "Plan" est actif sur cette route, aux côtés de Schéma/Devis/Dimensionnement');
+  assert(typeof win.AtelierPlanEditor === 'object' && typeof win.AtelierPlanEditor.mount === 'function' && typeof win.AtelierPlanEditor.unmount === 'function', 'window.AtelierPlanEditor.mount/unmount exposés (API d\'intégration du module)');
+  assert(typeof win.AtelierPlan === 'object' && typeof win.AtelierPlan.getProject === 'function', 'window.AtelierPlan (API interne du module monté) exposée');
+  const freshPlan = win.AtelierPlan.getProject();
+  assert(freshPlan.version === 1 && Array.isArray(freshPlan.entities) && freshPlan.entities.length === 0, 'un projet de plan vide est créé par défaut quand aucun plan n\'a encore été enregistré pour ce projet');
+
+  section('Plan bâtiment — persistance par projet (db.getPlan/db.savePlan, même principe que le devis §22/§23)');
+  const samplePlan = { version:1, meta:{ name:'Villa test', scale:50, sheet:'A3', projet:'', titre:'Plan électrique', auteur:'', date:'2026-01-01', indice:'A', planche:'1/1', sheetOrigin:null, dimUnit:'mm' },
+    levels:[{ id:'L0', name:'RDC', elevation:0, height:2800 }],
+    layers:[{ id:'A-MUR', name:'Murs', color:'#f0f0f0', lw:'thick', lt:'continu', pc:'#000000', visible:true, locked:false }],
+    circuits:[], entities:[{ id:'w1', type:'wall', level:'L0', layer:'A-MUR', a:{x:0,y:0}, b:{x:5000,y:0}, t:200, kind:'porteur' }] };
+  await win.db.savePlan(projectId, samplePlan);
+  const { data: reloadedPlan } = await win.db.getPlan(projectId);
+  assert(!!reloadedPlan && reloadedPlan.entities.length === 1 && reloadedPlan.entities[0].type === 'wall', 'le plan enregistré (db.savePlan) est bien relu tel quel (db.getPlan)');
+  await nav(win, 'dashboard');
+  await tick(100);
+  await nav(win, 'plan/' + projectId);
+  await tick(400);
+  const remountedPlan = win.AtelierPlan.getProject();
+  assert(remountedPlan.entities.length === 1 && remountedPlan.entities[0].type === 'wall', 'en rouvrant la vue Plan, le mur précédemment enregistré est rechargé depuis le backend (mount() → storage.load())');
+  assert(doc.getElementById('cv') && doc.getElementById('cv').innerHTML.includes('<line'), 'le mur rechargé est effectivement dessiné dans le SVG (pas seulement présent dans l\'état)');
+  assert(win.__jsErrors.length === jsErrCountBeforePlan, 'aucune erreur JS non interceptée pendant le montage/démontage/remontage de l\'éditeur de plan' + (win.__jsErrors.length > jsErrCountBeforePlan ? ' — NOUVELLES ERREURS: ' + win.__jsErrors.slice(jsErrCountBeforePlan).join(' | ') : ''));
+
+  await nav(win, 'project/' + projectId);
+  await tick(200);
+  assert(!doc.getElementById('plan-shell'), 'en quittant la route Plan, son DOM est bien retiré (remplacé par la vue Schéma)');
 
   section('Thème (§33)');
   const themeBtn = doc.querySelector('[data-theme-pick="clair"]');

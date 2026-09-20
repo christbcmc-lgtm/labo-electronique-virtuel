@@ -1171,3 +1171,116 @@ grille, la ligne de prévisualisation du fil suit le doigt avec les bonnes coord
 pan/zoom, tracer un fil complet au doigt, glisser le fond du canevas au doigt fait un pan — et
 6 sur la hauteur variable des boîtiers denses, dont la vérification de rotation ci-dessus).
 `tests/verify_catalog.js` : 505 composants, 0 anomalie de brochage.
+
+## ADDENDUM 7 — Intégration de l'éditeur de plan de bâtiment ("Atelier Plan")
+
+Le client a fourni un fichier HTML/CSS/JS complet et autonome (« Atelier Plan » — éditeur de
+plan 2D façon CAO : murs, portes, fenêtres, poteaux/poutres, pièces avec surface automatique,
+symboles électriques du bâtiment, circuits, câblage avec accrochages type AutoCAD, cotation,
+export SVG/PNG/PDF), présenté comme du code de référence à analyser et intégrer — pas une
+architecture définitive à coller telle quelle (consigne explicite du client). C'est cette pièce,
+correspondant à la section « plan électrique architectural » du cahier des charges reçu, qui a
+été choisie comme point de départ concret pour cette session (le reste du cahier — plateforme
+multi-domaines complète, CAO mécanique 3D, énergies renouvelables détaillées, messagerie avancée,
+etc. — reste un chantier de plusieurs mois, hors de portée d'une session, et n'a pas été
+entamé).
+
+### Ce qui a été fait
+
+**Analyse avant intégration** (pas un simple copier-coller, conformément à la consigne du
+client) :
+- Le prototype fourni est une page complète autonome : son propre `<html>/<head>/<body>`, un
+  `:root` CSS avec des variables génériques (`--bg`, `--ok`...), des classes très génériques
+  (`.btn`, `.brand`, `.row`, `.hidden`...) et un élément racine `id="app"`. Fusionné tel quel
+  dans le site existant, il aurait **cassé l'application entière** : `<main id="app">` du site
+  entre en conflit direct avec le `<div id="app">` du prototype, et son `:root{--bg:...}`
+  aurait écrasé les couleurs du thème sombre/clair/gris du site pour toutes les pages, pas
+  seulement pour le plan.
+- Le script du prototype est déjà une IIFE `(() => {...})()` — ce qui évite les collisions de
+  noms de fonctions top-niveau avec `esc`/`toast`/`uid` déjà définis ailleurs dans le projet
+  (`js/config.js`, `js/app.js`, `js/backend.js`). En revanche, tout son code s'exécute
+  immédiatement au chargement du script et suppose que le DOM de la page existe déjà
+  (`const svg = $('#cv')` etc.) — incompatible avec le routeur du site, qui construit le DOM
+  de chaque vue dynamiquement au moment de la navigation.
+
+**Adaptations effectuées** (`js/plan.js`, nouveau fichier, ~2300 lignes) :
+- Toute la logique DOM (état de vue, grille, accrochages, outils, interactions souris/tactile/
+  clavier, ruban, panneaux, export planche) a été déplacée dans une fonction `mount(root,
+  storage, opts)`, appelée uniquement quand la route `#/plan/:id` est visitée
+  (`afterPlanView()`, même convention que `afterProjectView()`/`afterDevisView()`). Les aides
+  `$`/`$$` de sélection DOM sont désormais scoping sur `root` plutôt que sur `document`.
+- `unmount()` retire proprement les deux seuls écouteurs posés sur `window` (clavier) et
+  déconnecte le `ResizeObserver` ; `mount()` appelle systématiquement `unmount()` en premier,
+  pour qu'ouvrir/fermer/rouvrir la vue plusieurs fois n'empile jamais de gestionnaires (même
+  principe défensif que `window.__wireEscBound` déjà utilisé dans `js/editor.js`).
+  `ResizeObserver` est utilisé de façon défensive (`typeof ResizeObserver !== 'undefined'`),
+  jsdom (harnais de test) ne l'implémentant pas.
+- `id="app"` renommé en `id="plan-shell"` pour éliminer le doublon d'ID avec `<main id="app">`
+  du site. `#toast`→`#plan-toast`, `#pageStyle`→`#planPrintStyle` (éviter toute confusion avec
+  d'éventuels ids futurs du site).
+- Nouveau fichier `css/plan.css` : **toutes** les règles sont préfixées par le sélecteur
+  d'ancrage `#plan-shell` (y compris les variables CSS, redéclarées sur ce conteneur plutôt
+  que sur `:root`), ce qui donne à chaque règle une spécificité plus forte que les règles
+  génériques du site pour tout ce qui est à l'intérieur de l'éditeur, sans avoir à renommer les
+  centaines de références de classes internes au module (`.btn`, `.on`, `.row`...). La règle
+  d'impression (`@media print`) a été réécrite en « tout cacher sauf `#printArea` par
+  visibilité » plutôt que « cacher les enfants directs de `<body>` » : le plan est maintenant
+  imbriqué plus profondément dans le DOM (`body > main#app > .workspace > #plan-shell >
+  #printArea`) qu'à la racine du `<body>` du prototype d'origine, l'ancienne règle aurait
+  masqué `#printArea` lui-même.
+- Persistance : nouvelles fonctions `db.getPlan(projectId)`/`db.savePlan(projectId, plan)`
+  dans `js/backend.js` (mock **et** Supabase), exactement sur le modèle de
+  `getDevis`/`saveDevis` déjà existant — colonne `plan jsonb` ajoutée à `projects` dans
+  `supabase/schema.sql` (+ migration idempotente `alter table ... add column if not exists`).
+  Le module ne connaît plus `window.PLAN_CAO_STORAGE`/`localStorage` (mécanisme prévu par le
+  prototype autonome) : `viewPlan()`/`afterPlanView()` lui fournissent un adaptateur
+  `{load, save}` fermé sur le `projectId` réel.
+- Permissions : même règle que le schéma (`isOwner || collaborateur en édition`) ; un
+  collaborateur en lecture seule voit un bandeau « 🔒 Lecture seule » et ses sauvegardes sont
+  ignorées côté module (`S.readOnly`). Le verrouillage complet des outils d'édition en lecture
+  seule (aujourd'hui seule la sauvegarde est bloquée) reste à affiner — documenté ci-dessous.
+- Intégré comme **4ᵉ onglet** « Plan » aux côtés de Schéma/Devis/Dimensionnement
+  (`js/editor.js`, `js/devis.js`, `js/dimensionnement.js`, `js/app.js`), routé sur
+  `#/plan/:id`, avec son propre panneau Propriétés/Calques/Symboles/Circuits/Rapport
+  (vérifications indicatives NF C 15-100 déjà intégrées telles que fournies par le client —
+  toujours présentées comme indicatives, jamais comme une certitude réglementaire) et ses
+  propres exports (SVG, PNG, PDF via impression, JSON, CSV nomenclature/circuits) — tous déjà
+  fonctionnels dans le prototype fourni et laissés inchangés sur le fond.
+
+### Ce qui a été vérifié par exécution réelle (`npm test`, 206 vérifications, 0 échec, 0 erreur
+JS non interceptée sur toute la session)
+
+- L'éditeur se monte à la navigation vers `#/plan/:id` (élément `#plan-shell` présent, 4ᵉ
+  onglet actif, API `window.AtelierPlanEditor`/`window.AtelierPlan` exposée).
+- Un plan vide par défaut est créé quand aucun plan n'existe encore pour le projet.
+- Cycle complet de persistance par le vrai chemin backend : `db.savePlan()` → `db.getPlan()`
+  relit fidèlement les entités enregistrées ; en quittant la vue puis en y revenant, le mur
+  précédemment enregistré est rechargé (`mount()` → `storage.load()`) **et** effectivement
+  redessiné dans le SVG (pas seulement présent en mémoire).
+- En quittant la route Plan, son DOM est bien retiré ; aucune erreur JS n'est apparue pendant
+  tout le cycle montage → sauvegarde → démontage → remontage.
+
+### Ce qui n'a PAS été vérifié (honnêteté, même limitation que pour les sessions précédentes)
+
+- **Rendu visuel réel** : comme pour tout ce projet, aucune vérification pixel dans un vrai
+  navigateur n'a été possible dans cet environnement (voir `NOTES_REPRISE_2026.md` point 4 —
+  l'extension Chrome pilotable reste connectée à une autre machine que celle qui sert le
+  fichier). Non vérifiés visuellement en particulier : le rendu du ruban/panneaux avec la
+  nouvelle feuille de style `css/plan.css`, la lisibilité des symboles électriques du bâtiment
+  à l'échelle papier, le comportement tactile (pincement/deux doigts) du module — le code
+  reprend le mécanisme du prototype fourni sans modification sur ce point, mais n'a été
+  exercé qu'au clic simulé par le harnais de test, pas au doigt sur un vrai écran.
+- **Supabase réel** : `db.getPlan`/`db.savePlan` côté Supabase n'ont pu être vérifiés que par
+  relecture attentive du code (même limitation documentée pour tout `js/backend.js` — pas de
+  projet Supabase réel disponible pour tester).
+- **Verrouillage complet en lecture seule** : un collaborateur en lecture seule ne peut pas
+  sauvegarder, mais peut toujours cliquer les outils de dessin (édition en mémoire non
+  persistée) — pas un vrai verrouillage de l'interface comme pourrait le laisser penser le
+  bandeau affiché. À corriger si ce cas d'usage devient réellement utilisé.
+- **PDF du plan hors de la famille de PDF partagée** : le plan garde son propre export PDF
+  (impression du navigateur avec cartouche déjà intégré au prototype), indépendant de
+  `openPdfWindow`/du logo partagé utilisé par les 4 exports PDF existants (`js/pdf.js`). Ne
+  pas fusionner les deux sans réflexion — le plan produit une vraie planche technique
+  dimensionnée (formats A5 à A0, cartouche 180×40mm, échelle graphique, flèche nord) que le
+  système de PDF existant ne sait pas produire ; les fusionner mérite une tâche dédiée plutôt
+  qu'une réécriture rapide.

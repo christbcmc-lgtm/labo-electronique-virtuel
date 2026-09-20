@@ -96,9 +96,49 @@ prioritaire tant que le point 1 (qualité des symboles déjà présents) n'est p
 des composants avec des symboles génériques non vérifiés irait à l'encontre de la demande
 explicite du client sur ce point.
 
+## 6. Plan de bâtiment — intégré cette session (voir RAPPORT-FINAL.md, addendum 7)
+
+Le client a transmis un très volumineux cahier des charges décrivant une plateforme complète
+multi-domaines (électronique / électrotechnique / bâtiment / énergies renouvelables /
+automatisme / instrumentation / CAO 3D bâtiment / CAO mécanique 3D / messagerie avancée /
+sécurité admin / export PDF par espace, etc.) — un chantier de plusieurs mois, pas quelque
+chose qu'une session peut traiter en bloc. Sur demande explicite de l'utilisateur, cette
+session a choisi et traité **une seule pièce concrète et livrable** de cet ensemble : le
+prototype fonctionnel « Atelier Plan » (éditeur de plan 2D bâtiment/électricité) qu'il avait
+fourni comme code de référence, intégré (pas collé tel quel) comme 4ᵉ onglet
+Schéma/Devis/Dimensionnement/**Plan** de chaque projet, avec sa propre persistance backend
+(`db.getPlan`/`db.savePlan`, `js/plan.js`, `css/plan.css`). Détails complets, ce qui a été
+vérifié par exécution réelle et ce qui ne l'a pas été (rendu visuel, Supabase réel,
+verrouillage lecture-seule complet) : voir l'addendum 7 de `RAPPORT-FINAL.md`.
+
+Reste explicitement différé de ce sous-chantier :
+- Fusionner l'export PDF du plan avec la famille de PDF partagée (`js/pdf.js`,
+  `openPdfWindow`/logo commun) — le plan garde pour l'instant son propre export planche
+  (impression navigateur, cartouche déjà intégré au prototype), volontairement laissé
+  indépendant plutôt que fusionné à la hâte (voir addendum 7 pour la justification).
+- Verrouillage complet des outils de dessin en mode lecture seule (aujourd'hui seule la
+  sauvegarde est bloquée côté module, pas l'interface).
+- Vérification visuelle réelle du rendu (ruban, panneaux, lisibilité des symboles bâtiment à
+  l'échelle papier, tactile pincement/deux doigts) — bloqué par le point 4 ci-dessous, comme
+  le reste de ce document.
+
+Reste hors de portée pour l'instant (non commencé, non estimé) : tout le reste de ce cahier des
+charges élargi — CAO mécanique 3D, transformation 2D→3D du bâtiment, énergies renouvelables
+détaillées (PV/éolien/hydraulique/stockage), messagerie avancée (transfert de message, pièces
+jointes enrichies), assistant IA contextuel nommé, bibliothèques visuelles par domaine
+(électrotechnique/renouvelable/instrumentation séparées du catalogue électronique actuel),
+constructeur/import de composants personnalisés, sécurité admin côté serveur (RLS déjà en
+place pour le reste du projet, à étendre explicitement au strict nécessaire si ces nouveaux
+espaces sont un jour construits).
+
 ## À faire avant de fusionner ce document dans le CDC définitif
 
 - [ ] Faire auditer visuellement l'interface actuelle dans un vrai navigateur (point 4) avant
       de trancher les points 1 à 3 — décisions qui méritent d'être vues, pas seulement lues.
 - [ ] Prioriser les familles de composants à auditer en premier pour le point 1 (le client n'a
       pas donné d'ordre explicite au-delà de constater le problème général).
+- [ ] Décider si/quand fusionner l'export PDF du plan (point 6) avec la famille de PDF
+      partagée, ou le garder durablement indépendant (il produit un type de document —
+      planche technique dimensionnée — que le système actuel ne sait pas produire).
+- [ ] Prioriser, avec le client, laquelle des pièces du cahier des charges élargi (point 6)
+      traiter ensuite — il n'a pas donné d'ordre explicite au-delà de la liste complète.

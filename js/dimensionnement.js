@@ -26,6 +26,7 @@ async function viewDimensionnement(projectId){
           <a href="#/project/${projectId}">Schéma</a>
           <a href="#/devis/${projectId}">Devis</a>
           <a href="#/dimensionnement/${projectId}" class="active">Dimensionnement</a>
+          <a href="#/plan/${projectId}">Plan</a>
         </div>
       </div>
       <div class="ws-tabs-top" style="margin-bottom:14px">
