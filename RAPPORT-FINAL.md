@@ -1284,3 +1284,93 @@ JS non interceptée sur toute la session)
   dimensionnée (formats A5 à A0, cartouche 180×40mm, échelle graphique, flèche nord) que le
   système de PDF existant ne sait pas produire ; les fusionner mérite une tâche dédiée plutôt
   qu'une réécriture rapide.
+
+## ADDENDUM 8 — Vue 3D du bâtiment (Phase 2 du cahier "CAO 3D")
+
+Suite demandée : « fais-moi le reste du cahier des charges, la CAO 3D etc. ». Le cahier
+initial décrit deux volets 3D bien distincts et explicitement phasés par le client lui-même :
+**Phase 2 — vue 3D légère du bâtiment** (« volontairement simple, visualiser, pas modéliser »,
+directement dérivée des murs/ouvertures déjà dessinés dans le plan) et **Phase 3 — CAO
+mécanique 3D minimaliste** (esquisse → extrusion/révolution → booléens → bibliothèque de pièces
+paramétriques → export STL, un véritable noyau de CAO paramétrique). Cette session a traité la
+Phase 2, qui s'appuie directement sur le travail déjà livré (addendum 7) et reste un périmètre
+raisonnable pour une session. La Phase 3 (CAO mécanique) est un chantier d'une toute autre
+ampleur — un noyau de modélisation paramétrique complet — et n'a **pas** été commencée ; elle
+reste documentée comme prochaine étape dans `NOTES_REPRISE_2026.md`, avec les raisons de ce
+choix, plutôt que d'être bâclée pour cocher une case.
+
+### Ce qui a été fait
+
+Nouveau **5ᵉ onglet « 3D »** (`#/plan3d/:id`, `js/plan3d.js` + `css/plan3d.css`), aux côtés de
+Schéma/Devis/Dimensionnement/Plan :
+
+- **Géométrie pure, sans dépendance 3D** (`wallOpeningBoxes`, `wallSegments`,
+  `buildLevelScene`, `buildBuildingScene`) : transforme les murs/ouvertures/poteaux/symboles
+  déjà enregistrés par le module Plan (`db.getPlan`) en une description 3D neutre (boîtes avec
+  centre/dimensions) — exactement le principe « mur découpé en boîtes pleines autour de
+  l'ouverture (avant/allège/linteau/après), sans booléen » déjà écrit dans le cahier du
+  client. Ces fonctions ne dépendent d'aucune bibliothèque graphique et sont donc vérifiables
+  directement.
+- **Rendu Three.js** (`createBuildingViewer`) : scène orbitable (glisser = tourner, molette =
+  zoomer, via `OrbitControls`), vues prédéfinies (Isométrique/Dessus/Face/Droite), affichage/
+  masquage par niveau, **coupe horizontale réglable** par curseur (plan de clip Three.js,
+  demandé explicitement : « voir l'intérieur »), cadrage automatique sur le bâtiment, export
+  PNG de la vue courante. Matériaux plats simples, ombres désactivées, `pixelRatio` plafonné à
+  2 — comme demandé pour rester fluide sur mobile d'entrée de gamme.
+- **Three.js chargé en CDN** (`three@0.128.0` + son addon `OrbitControls`, jsdelivr), sur le
+  même principe déjà en place dans ce projet pour `@supabase/supabase-js` (`index.html`) :
+  aucune nouvelle dépendance de build, le site reste un site statique sans étape de
+  compilation. **Chargement défensif** : `threeAvailable()`/`webglAvailable()` sont vérifiés
+  avant toute tentative de créer la scène ; si la bibliothèque n'a pas pu se charger (réseau,
+  bloqueur de script) ou si WebGL n'est pas disponible, la vue affiche un message clair au
+  lieu de planter, et renvoie vers l'onglet Plan.
+- Pas de nouveau stockage : la vue 3D est une **lecture** du plan déjà enregistré (pas de
+  document séparé à sauvegarder) — se construit automatiquement dès qu'un plan existe pour le
+  projet, invite à ouvrir l'onglet Plan sinon.
+- Démontage propre en quittant la route (`unmountPlan3D()` : dispose du renderer/scène/
+  contrôles Three.js et du `ResizeObserver`), appelé depuis `js/app.js` sur le même principe
+  que pour le module Plan (addendum 7).
+
+### Ce qui a été vérifié par exécution réelle (`npm test`, **223 vérifications, 0 échec, 0
+erreur JS** — 206 avant cette section + 17 nouvelles)
+
+- Les fonctions de géométrie pure sont testées directement avec des données représentatives :
+  un mur avec porte pleine hauteur (pas de linteau), un mur avec porte standard 2100 mm dans
+  un mur de 2800 mm (linteau généré), une fenêtre avec allège (4 boîtes), la conversion
+  mur/poteau/symbole d'un plan complet vers une scène 3D, et le comportement sur une entrée
+  vide/invalide (ne lève pas d'exception, retourne une liste de niveaux vide).
+- **Repli gracieux vérifié en conditions réelles de test** : ce harnais (Node + jsdom) ne
+  charge délibérément aucun script externe (voir `boot()`, tous les `<script src>` sont
+  retirés du HTML avant injection), donc `window.THREE` n'existe pas — exactement le scénario
+  « bibliothèque 3D indisponible » que le code doit gérer en production sur un réseau capricieux
+  ou avec un bloqueur de script. Le test confirme que `threeAvailable()` renvoie bien `false`
+  dans ce cas, que le message de repli s'affiche au lieu d'une page cassée, et qu'aucune
+  exception n'est levée pendant le montage ni le démontage de la vue.
+
+### Ce qui n'a PAS été vérifié (même limitation que pour tout le reste du projet)
+
+- **Rendu 3D réel** (WebGL) : ne peut tout simplement pas être vérifié dans cet environnement
+  sans navigateur réel — ni par ce harnais de test (jsdom n'implémente pas WebGL), ni par
+  l'extension Chrome pilotable (toujours connectée à une autre machine que celle qui sert le
+  site, voir `NOTES_REPRISE_2026.md` point 4). Non vérifiés visuellement : l'orbite à la
+  souris/au doigt, la justesse des dimensions/proportions du bâtiment extrudé, la lisibilité
+  des marqueurs de symboles électriques en 3D, le curseur de coupe horizontale, l'export PNG.
+- **Chargement réel du CDN Three.js** : le code suppose que `three@0.128.0` et son addon
+  `OrbitControls` se chargent correctement depuis jsdelivr dans un vrai navigateur — jamais
+  exécuté dans un vrai navigateur dans cette session, seule la lecture attentive du code et la
+  cohérence avec l'usage documenté de Three.js (API stable depuis de nombreuses versions) le
+  laissent penser correct.
+- **Performance** sur un bâtiment à plusieurs niveaux/beaucoup de murs : non mesurée (pas
+  d'environnement de test avec rendu réel pour le faire).
+
+### Ce qui reste explicitement hors de portée (Phase 3 et au-delà)
+
+La **CAO mécanique 3D** (esquisse 2D → extrusion/révolution, booléens union/soustraction,
+bibliothèque de pièces paramétriques — vis, écrous, roulements, engrenages —, arbre de
+conception avec régénération, export STL) décrite dans le cahier reste un chantier séparé et
+nettement plus important : il ne réutilise aucune donnée déjà en place (contrairement à la vue
+3D du bâtiment, qui lit directement les données du plan) et nécessite de concevoir depuis zéro
+un modèle de données de type « historique de fonctions » avec régénération, une bibliothèque
+CSG, et un éditeur d'esquisse 2D sur plan de coupe. Non commencé cette session — voir
+`NOTES_REPRISE_2026.md` pour le détail de ce qui resterait à faire et pourquoi ce n'est pas une
+extension incrémentale du module 3D bâtiment qui vient d'être livré.

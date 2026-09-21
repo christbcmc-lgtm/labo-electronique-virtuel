@@ -160,7 +160,7 @@ const AFTER = {
   'reset-email': () => afterResetEmailView(), 'change-password': () => afterChangePasswordView(),
   dashboard: () => afterDashboardView(), 'shared': () => afterDashboardView(), 'composants': () => afterComposantsView(),
   project: () => afterProjectView(), devis: () => afterDevisView(), dimensionnement: () => afterDimensionnementView(),
-  plan: () => afterPlanView(),
+  plan: () => afterPlanView(), plan3d: () => afterPlan3DView(),
   discussion: () => afterDiscussionView(), messages: () => afterMessagesView(),
   admin: () => afterAdminView(), compte: () => afterCompteView(),
 };
@@ -173,6 +173,7 @@ async function render(){
   const needsAuth = !PUBLIC_ROUTES.includes(base);
   if (base !== 'project') closePresenceChannel();
   if (base !== 'plan' && window.AtelierPlanEditor) window.AtelierPlanEditor.unmount();
+  if (base !== 'plan3d') unmountPlan3D();
   if (needsAuth && !auth.currentUser){ go('login'); return; }
   if (auth.currentUser && auth.currentUser.mustChangePassword && base !== 'change-password'){ go('change-password'); return; }
   if (base === 'admin' && auth.currentUser?.role !== 'admin'){ go('dashboard'); toast("Accès réservé à l'administrateur."); return; }
@@ -182,7 +183,7 @@ async function render(){
     'reset-email': viewResetEmail, 'change-password': viewChangePassword,
     'dashboard' : () => viewDashboard(param), 'shared': viewShared, 'composants': viewComposants,
     'project'   : () => viewProject(param), 'devis': () => viewDevis(param), 'dimensionnement': () => viewDimensionnement(param),
-    'plan'      : () => viewPlan(param),
+    'plan'      : () => viewPlan(param), 'plan3d': () => viewPlan3D(param),
     'discussion': viewDiscussion, 'messages': viewMessages,
     'compte'    : viewCompte, 'admin': () => viewAdmin(param || 'overview'),
   };

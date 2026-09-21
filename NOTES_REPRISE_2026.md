@@ -122,14 +122,47 @@ Reste explicitement différé de ce sous-chantier :
   l'échelle papier, tactile pincement/deux doigts) — bloqué par le point 4 ci-dessous, comme
   le reste de ce document.
 
-Reste hors de portée pour l'instant (non commencé, non estimé) : tout le reste de ce cahier des
-charges élargi — CAO mécanique 3D, transformation 2D→3D du bâtiment, énergies renouvelables
+Reste hors de portée pour l'instant (non commencé, non estimé) : énergies renouvelables
 détaillées (PV/éolien/hydraulique/stockage), messagerie avancée (transfert de message, pièces
 jointes enrichies), assistant IA contextuel nommé, bibliothèques visuelles par domaine
 (électrotechnique/renouvelable/instrumentation séparées du catalogue électronique actuel),
 constructeur/import de composants personnalisés, sécurité admin côté serveur (RLS déjà en
 place pour le reste du projet, à étendre explicitement au strict nécessaire si ces nouveaux
 espaces sont un jour construits).
+
+## 7. Vue 3D du bâtiment — intégrée cette session (voir RAPPORT-FINAL.md, addendum 8)
+
+Nouveau 5ᵉ onglet « 3D » (`#/plan3d/:id`, `js/plan3d.js` + `css/plan3d.css`) : lit le plan déjà
+enregistré (point 6 ci-dessus) et l'affiche en 3D orbitable via Three.js chargé en CDN (murs
+extrudés avec ouvertures découpées, poteaux, symboles électriques positionnés à leur hauteur de
+pose, vues prédéfinies, coupe horizontale réglable, export PNG). Aucun nouveau stockage — vue
+en lecture seule dérivée du plan. Détails complets dans l'addendum 8 de `RAPPORT-FINAL.md`,
+notamment ce qui a pu être vérifié (géométrie pure, repli gracieux sans Three.js/WebGL) contre
+ce qui ne l'a pas pu (rendu WebGL réel, chargement réel du CDN — même limitation d'environnement
+que pour tout le reste de ce projet, voir point 4).
+
+## 8. CAO mécanique 3D — PROCHAINE ÉTAPE SUGGÉRÉE, NON COMMENCÉE
+
+C'est la Phase 3 du cahier reçu, volontairement laissée de côté cette session (chantier d'une
+tout autre ampleur que la vue 3D du bâtiment ci-dessus — voir la justification dans l'addendum
+8). Pour information, si ce chantier est repris un jour, le cahier original décrit :
+
+- primitives paramétriques (boîte/cylindre/sphère/cône/tube/tore) ;
+- esquisse 2D sur un plan (XY/XZ/YZ ou sur une face existante) → extrusion/révolution ;
+- opérations booléennes (union/soustraction/intersection), perçage ;
+- arbre de conception (liste des fonctions appliquées, modifier un paramètre régénère le
+  corps) — nécessite un modèle de données "historique de fonctions", pas seulement une liste
+  d'entités comme le plan 2D/3D bâtiment ;
+- bibliothèque de pièces standard paramétriques (vis, écrous, rondelles, roulements,
+  engrenages, profilés) ;
+- mesures, coupe, matériaux avec masse volumique (calcul de masse) ;
+- export STL (binaire) + OBJ, réimport.
+
+Techniquement : Three.js est déjà chargé (voir point 7) et pourrait servir de moteur de rendu,
+mais les opérations booléennes fiables nécessitent une bibliothèque CSG dédiée (ex.
+`three-bvh-csg`), non incluse actuellement. Ce module n'est PAS une extension du fichier
+`js/plan3d.js` existant (qui est volontairement une simple visualisation dérivée, sans édition)
+— il mérite son propre fichier/espace, son propre modèle de données, et une session dédiée.
 
 ## À faire avant de fusionner ce document dans le CDC définitif
 
@@ -142,3 +175,8 @@ espaces sont un jour construits).
       planche technique dimensionnée — que le système actuel ne sait pas produire).
 - [ ] Prioriser, avec le client, laquelle des pièces du cahier des charges élargi (point 6)
       traiter ensuite — il n'a pas donné d'ordre explicite au-delà de la liste complète.
+- [ ] Faire vérifier le rendu 3D réel (point 7) dans un vrai navigateur dès que possible —
+      c'est la partie la plus visuelle de tout ce qui a été livré jusqu'ici, et la seule à
+      n'avoir reçu aucune vérification pixel, même approximative.
+- [ ] Décider si la CAO mécanique 3D (point 8) est réellement souhaitée avant d'y investir une
+      session complète — c'est de loin le chantier le plus lourd de tout ce qui reste.

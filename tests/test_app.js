@@ -39,7 +39,7 @@ async function boot(){
   // browsers) — injecting real <script> elements does, exactly like the browser loading js/*.js
   // via <script src>. This is what actually behaves like the shipped page.
   const doc0 = dom.window.document;
-  for (const f of ['js/config.js','js/catalog.js','js/backend.js','js/editor.js','js/pdf.js','js/devis.js','js/dimensionnement.js','js/plan.js','js/app.js']){
+  for (const f of ['js/config.js','js/catalog.js','js/backend.js','js/editor.js','js/pdf.js','js/devis.js','js/dimensionnement.js','js/plan.js','js/plan3d.js','js/app.js']){
     const s = doc0.createElement('script');
     s.textContent = readFile(f);
     doc0.body.appendChild(s);
@@ -559,6 +559,44 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   await nav(win, 'project/' + projectId);
   await tick(200);
   assert(!doc.getElementById('plan-shell'), 'en quittant la route Plan, son DOM est bien retiré (remplacé par la vue Schéma)');
+
+  section('Vue 3D du bâtiment — géométrie pure (js/plan3d.js, sans WebGL/Three.js requis)');
+  // Porte pleine hauteur (h = hauteur du mur, allège 0) : aucun linteau ni allège, juste les 2 pans pleins.
+  const wDoorFullHeight = win.wallOpeningBoxes(5000, [{ offset: 2000, w: 900, h: 2800, sill: 0 }], 2800);
+  assert(wDoorFullHeight.length === 2, 'un mur de 5 m avec une porte pleine hauteur donne 2 pans pleins (avant/après), sans linteau ni allège (résultat: ' + wDoorFullHeight.length + ' boîte(s))');
+  assert(wDoorFullHeight.some(b => Math.abs(b.x1 - 2000) < 0.01) && wDoorFullHeight.some(b => Math.abs(b.x0 - 2900) < 0.01), 'l\'ouverture (2000 à 2900 mm) est bien l\'espace vide entre les deux pans de mur');
+  // Porte standard (h = 2100 < hauteur du mur 2800) : un linteau apparaît au-dessus.
+  const wDoorStd = win.wallOpeningBoxes(5000, [{ offset: 2000, w: 900, h: 2100, sill: 0 }], 2800);
+  assert(wDoorStd.length === 3, 'une porte standard (2100 mm) dans un mur de 2800 mm ajoute un linteau au-dessus (3 boîtes : avant, linteau, après ; résultat: ' + wDoorStd.length + ')');
+  const wWindowBoxes = win.wallOpeningBoxes(5000, [{ offset: 2000, w: 1200, h: 1200, sill: 900 }], 2800);
+  assert(wWindowBoxes.length === 4, 'un mur avec une fenêtre (allège 900, hauteur 1200) donne 4 boîtes : avant, allège, linteau, après (résultat: ' + wWindowBoxes.length + ')');
+  const sampleWallGeom = { id: 'w1', a: { x: 0, y: 0 }, b: { x: 5000, y: 0 }, t: 200, kind: 'porteur' };
+  const wSeg = win.wallSegments(sampleWallGeom, [], 2800);
+  assert(wSeg.boxes.length === 1 && Math.abs(wSeg.boxes[0].w - 5000) < 0.01, 'un mur sans ouverture donne une seule boîte pleine sur toute sa longueur');
+  assert(Math.abs(wSeg.angle) < 1e-9, 'l\'angle du mur horizontal (a→b sur x) est bien 0');
+  const sampleWall = Object.assign({ type: 'wall', level: 'L0', layer: 'A-MUR' }, sampleWallGeom);
+  const samplePlanFor3D = { levels: [{ id: 'L0', name: 'RDC', elevation: 0, height: 2800 }],
+    entities: [sampleWall, { id: 'c1', type: 'column', level: 'L0', x: 1000, y: 1000, s: 200, rot: 0 },
+      { id: 's1', type: 'symbol', level: 'L0', sym: 'prise16', x: 300, y: 100, rot: 0, h: 300 }] };
+  const scene3D = win.buildBuildingScene(samplePlanFor3D);
+  assert(scene3D.levels.length === 1, 'un niveau dans le plan donne un niveau dans la scène 3D');
+  assert(scene3D.levels[0].walls.length === 1 && scene3D.levels[0].columns.length === 1 && scene3D.levels[0].symbols.length === 1, 'les murs/poteaux/symboles du niveau sont bien repris dans la scène 3D (murs=' + scene3D.levels[0].walls.length + ', poteaux=' + scene3D.levels[0].columns.length + ', symboles=' + scene3D.levels[0].symbols.length + ')');
+  assert(scene3D.levels[0].symbols[0].h === 300, 'la hauteur de pose du symbole (300 mm, prise) est reprise telle quelle pour son placement 3D');
+  assert(win.buildBuildingScene(null).levels.length === 0 && win.buildBuildingScene({}).levels.length === 0, 'buildBuildingScene() ne lève pas d\'exception sur une entrée vide/invalide (retourne une liste de niveaux vide)');
+
+  section('Vue 3D du bâtiment — intégration routeur et repli gracieux sans WebGL (attendu dans ce harnais de test)');
+  const jsErrCountBefore3D = win.__jsErrors.length;
+  await nav(win, 'plan3d/' + projectId);
+  await tick(250);
+  assert(!!doc.getElementById('plan3d-shell'), 'la vue 3D est montée dans la page (conteneur #plan3d-shell présent)');
+  assert(!!doc.querySelector(`.ws-tabs-top a[href="#/plan3d/${projectId}"].active`), 'le 5e onglet "3D" est actif sur cette route');
+  assert(win.threeAvailable() === false, 'Three.js n\'est pas chargé dans ce harnais (scripts CDN retirés volontairement, voir boot()) — comportement attendu, pas une erreur');
+  assert(!doc.getElementById('p3d-fallback').classList.contains('hidden'), 'en l\'absence de Three.js, le message de repli est affiché au lieu de planter');
+  assert(doc.getElementById('p3d-fallback').textContent.includes('3D'), 'le message de repli explique que l\'aperçu 3D est indisponible');
+  assert(win.__jsErrors.length === jsErrCountBefore3D, 'aucune erreur JS non interceptée en montant la vue 3D sans Three.js disponible' + (win.__jsErrors.length > jsErrCountBefore3D ? ' — NOUVELLES ERREURS: ' + win.__jsErrors.slice(jsErrCountBefore3D).join(' | ') : ''));
+  await nav(win, 'project/' + projectId);
+  await tick(200);
+  assert(!doc.getElementById('plan3d-shell'), 'en quittant la route 3D, son DOM est bien retiré');
 
   section('Thème (§33)');
   const themeBtn = doc.querySelector('[data-theme-pick="clair"]');
