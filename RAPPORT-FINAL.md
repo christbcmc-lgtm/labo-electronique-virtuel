@@ -1374,3 +1374,51 @@ un modèle de données de type « historique de fonctions » avec régénératio
 CSG, et un éditeur d'esquisse 2D sur plan de coupe. Non commencé cette session — voir
 `NOTES_REPRISE_2026.md` pour le détail de ce qui resterait à faire et pourquoi ce n'est pas une
 extension incrémentale du module 3D bâtiment qui vient d'être livré.
+
+## ADDENDUM 9 — Composants Énergies Renouvelables manquants (protection DC/batterie, éolien, hydraulique, solaire thermique)
+
+Suite de « fais-moi le reste du cahier des charges » : avant d'ajouter quoi que ce soit, le
+catalogue existant (déjà riche : panneaux PV, régulateurs PWM/MPPT, batteries plomb/lithium/
+LiFePO4, onduleurs, éolienne, turbine hydraulique...) a été vérifié composant par composant par
+recherche dans `js/catalog.js` (pas de supposition) contre la liste très détaillée du cahier
+reçu. **17 composants explicitement cités et absents** ont été identifiés puis ajoutés, dans le
+domaine `energies-renouvelables` :
+
+- **Protection DC/batterie** (famille `Protections`) : `fusible_gpv`, `sectionneur_dc`,
+  `fusible_batterie`, `sectionneur_batterie` — réutilisent exactement les symboles déjà
+  vérifiés du fusible/sectionneur génériques (`fusible`, `sectionneur`, déjà utilisés ailleurs
+  dans le catalogue), avec une étiquette distinctive (gPV/DC/BAT) — pas de nouveau gabarit
+  graphique inventé.
+- **Conversion/régulation** : `optimiseur_pv` (`Conversion`), `bms` (`Stockage`, représentation
+  simplifiée à 2 bornes, documentée comme telle dans sa fiche plutôt que d'inventer un brochage
+  précis non vérifié).
+- **Éolien** (complète l'éolienne déjà existante) : `generatrice_eolienne`, `redresseur_eolien`,
+  `controleur_eolien`, `frein_eolien`.
+- **Hydraulique** (complète la turbine déjà existante) : `controleur_hydraulique`,
+  `vanne_hydraulique` (réutilise le symbole déjà vérifié de l'électrovanne).
+- **Solaire thermique — nouvelle famille**, absente du catalogue jusqu'ici (à ne pas confondre
+  avec le chauffe-eau électrique déjà présent en famille `Bâtiment`) : `capteur_solaire_thermique`,
+  `ballon_solaire`, `circulateur_solaire`, `regulateur_solaire_thermique`,
+  `sonde_temperature_solaire`.
+
+Tous réutilisent les gabarits de symboles déjà établis dans ce fichier (`T2`/`T4`,
+`TPL.boxLabel`/`TPL.circleLetter`, motif fusible/sectionneur/box-régulation déjà répété une
+dizaine de fois pour d'autres composants) — aucun nouveau type de gabarit graphique introduit,
+conformément à l'architecture « par gabarits » documentée en tête de `js/catalog.js`.
+
+### Vérifié par exécution réelle
+
+- `tests/verify_catalog.js` : **522 composants** (505 avant, +17), toujours **0 doublon d'ID,
+  0 SYM manquant, 0 borne non alignée** — chaque nouvelle borne déclarée correspond bien à un
+  trait réellement dessiné dans son symbole.
+- `npm test` : **227 vérifications, 0 échec** (223 avant + 4 nouvelles : présence des 17
+  composants dans le domaine Énergies Renouvelables, brochage simplifié du BMS documenté comme
+  tel, 4 bornes de l'optimiseur PV, cohérence de la nouvelle famille Solaire thermique).
+
+### Ce qui n'a pas été vérifié
+
+Même limitation que pour l'audit des symboles déjà documenté (point 1 de
+`NOTES_REPRISE_2026.md`) : la conformité stricte à la norme IEC 60617 de chaque nouveau
+symbole n'a pas été validée visuellement dans un vrai navigateur — ils reprennent des gabarits
+déjà en place et vérifiés géométriquement (bornes ↔ tracé), mais pas contre-vérifiés vue par
+vue avec un outil de référence normatif.

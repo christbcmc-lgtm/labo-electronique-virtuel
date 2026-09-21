@@ -180,3 +180,22 @@ mais les opérations booléennes fiables nécessitent une bibliothèque CSG déd
       n'avoir reçu aucune vérification pixel, même approximative.
 - [ ] Décider si la CAO mécanique 3D (point 8) est réellement souhaitée avant d'y investir une
       session complète — c'est de loin le chantier le plus lourd de tout ce qui reste.
+
+## 9. Énergies renouvelables — 17 composants manquants ajoutés cette session (voir RAPPORT-FINAL.md, addendum 9)
+
+Protection DC/batterie (fusible gPV, sectionneur DC, fusible/sectionneur batterie), optimiseur
+PV, BMS, éolien (génératrice, redresseur, contrôleur, frein), hydraulique (contrôleur, vanne),
+et une nouvelle famille "Solaire thermique" complète (capteur, ballon, circulateur, régulateur
+différentiel, sonde). Catalogue : 505 → 522 composants. Détail complet dans l'addendum 9.
+
+Reste explicitement non couvert de la section énergies renouvelables du cahier reçu (non
+vérifié comme manquant avec la même rigueur — à revérifier avant d'ajouter) : micro-réseaux
+hybrides détaillés (flux réseau ↔ stockage ↔ production), dimensionnement dédié à ces nouveaux
+composants (le module Dimensionnement §24 calcule déjà PV/batterie/onduleur mais n'a pas été
+étendu pour l'éolien/hydraulique/solaire thermique).
+
+## À faire avant de fusionner ce document dans le CDC définitif (suite)
+
+- [ ] Étendre le module Dimensionnement (§24) à l'éolien/hydraulique/solaire thermique
+      maintenant que leurs composants existent dans le catalogue (point 9) — sinon ces
+      familles peuvent être placées dans un schéma mais pas dimensionnées.

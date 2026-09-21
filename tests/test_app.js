@@ -910,6 +910,19 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(total >= 500, 'catalogue élargi (total=' + total + ' composants, 5 domaines) — garde-fou anti-régression, pas la cible finale de 900');
   assert(Object.keys(win.ESPACES).length === 5, '5 domaines disponibles (électronique, électrotechnique, bâtiment, renouvelables, automatisme)');
 
+  section('Énergies renouvelables — protection DC/batterie, éolien, hydraulique, solaire thermique (composants cités dans les mises à jour reçues, absents avant cette session)');
+  const renIds = ['fusible_gpv','sectionneur_dc','fusible_batterie','sectionneur_batterie','optimiseur_pv','bms',
+    'generatrice_eolienne','redresseur_eolien','controleur_eolien','frein_eolien',
+    'controleur_hydraulique','vanne_hydraulique',
+    'capteur_solaire_thermique','ballon_solaire','circulateur_solaire','regulateur_solaire_thermique','sonde_temperature_solaire'];
+  assert(renIds.every(id => win.COMPONENT_LIBRARY['energies-renouvelables'].some(c => c.id === id)), 'les 17 nouveaux composants sont bien présents dans le domaine Énergies Renouvelables (manquants: ' + renIds.filter(id => !win.COMPONENT_LIBRARY['energies-renouvelables'].some(c => c.id === id)).join(', ') + ')');
+  const bmsDef = win.findDef('bms');
+  assert(bmsDef && bmsDef.terminals.length === 2 && bmsDef.famille === 'Stockage', 'le BMS existe avec 2 bornes (représentation simplifiée pack +/-) dans la famille Stockage');
+  const optDef = win.findDef('optimiseur_pv');
+  assert(optDef && optDef.terminals.length === 4, "l'optimiseur de puissance PV existe avec 4 bornes (entrée/sortie)");
+  const thermSolaireIds = ['capteur_solaire_thermique','ballon_solaire','circulateur_solaire','regulateur_solaire_thermique','sonde_temperature_solaire'];
+  assert(thermSolaireIds.every(id => win.findDef(id).famille === 'Solaire thermique'), 'les 5 composants solaire thermique forment une famille cohérente et distincte du chauffe-eau électrique (Bâtiment)');
+
   section('Brochage DIP conforme + brochage réel affiché (correction de cette session)');
   const ne555Def = win.findDef('ne555');
   assert(ne555Def.terminals.length === 8, 'le NE555 a bien 8 broches');
