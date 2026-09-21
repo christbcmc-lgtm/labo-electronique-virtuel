@@ -285,16 +285,63 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   // attendues que celles réellement calculées par l'application, pas les coordonnées écran brutes.
   const expX2 = (222 - win.wsState.view.panX) / (win.wsState.view.scale||1);
   const expY2 = (111 - win.wsState.view.panY) / (win.wsState.view.scale||1);
-  assert(Math.abs(parseFloat(previewLine.getAttribute('x2')) - expX2) < 0.5 && Math.abs(parseFloat(previewLine.getAttribute('y2')) - expY2) < 0.5,
-    'la ligne de prévisualisation du fil suit bien le doigt (touchmove), pas seulement la souris (attendu ~' + expX2 + ',' + expY2 + ', obtenu ' + previewLine.getAttribute('x2') + ',' + previewLine.getAttribute('y2') + ')');
+  // La prévisualisation est désormais une polyligne à coude (départ → coin → curseur), jamais
+  // une diagonale (§3-§4 du cahier fils) : on vérifie le DERNIER point, qui suit le doigt/curseur.
+  const previewPts = previewLine.getAttribute('points').trim().split(/\s+/).map(p => p.split(',').map(Number));
+  const lastPt = previewPts[previewPts.length-1];
+  assert(previewPts.length === 3, 'la prévisualisation du fil a bien 3 points (départ, coin à angle droit, curseur) — jamais une diagonale directe');
+  assert(Math.abs(lastPt[0] - expX2) < 0.5 && Math.abs(lastPt[1] - expY2) < 0.5,
+    'la ligne de prévisualisation du fil suit bien le doigt (touchmove), pas seulement la souris (attendu ~' + expX2 + ',' + expY2 + ', obtenu ' + lastPt[0] + ',' + lastPt[1] + ')');
   click(win, term2_1);
   await tick(50);
   assert(win.wsState.schema.wires.length === wiresBeforeTouch + 1, 'le fil est bien créé après avoir tapoté la seconde borne au doigt');
   // Nettoyage : retire le fil ajouté par ce test tactile pour ne pas fausser les tests de
   // diagnostic qui suivent (ils comptent sur des bornes précises restées non connectées).
   win.wsState.schema.wires = win.wsState.schema.wires.filter(w => w.id !== win.wsState.schema.wires[win.wsState.schema.wires.length-1].id);
+
+  section('Fils — aimantation de borne et validation par clic proche (§5-§6 du cahier fils)');
+  // Toujours en outil "fil" à ce stade. On vise à côté de la borne (pas pile dessus) pour
+  // vérifier la tolérance de ~8px annoncée, plutôt qu'un clic pixel-parfait sur le petit cercle.
+  click(win, term1_1);
+  await tick(50);
+  assert(win.wsState.wireStart && win.wsState.wireStart.itemId === item1.id, 'première borne resélectionnée pour le test d\'aimantation');
+  const target = win.terminalAbsPos(item2, 1);
+  const scaleNow = win.wsState.view.scale || 1;
+  const nearClientX = target.x*scaleNow + win.wsState.view.panX + 4*scaleNow;
+  const nearClientY = target.y*scaleNow + win.wsState.view.panY + 4*scaleNow;
+  mouseAt(win, doc.getElementById('ws-svg'), 'mousemove', nearClientX, nearClientY);
+  await tick(50);
+  assert(win.wsState.wireSnapTarget && win.wsState.wireSnapTarget.itemId === item2.id && win.wsState.wireSnapTarget.term === 1,
+    'la borne proche (à quelques pixels, pas pile dessus) est détectée comme cible d\'aimantation');
+  const snapDot = doc.querySelector(`[data-term-item="${item2.id}"][data-term-idx="1"]`);
+  assert(snapDot.classList.contains('snap-target'), 'la borne visée est visuellement signalée (classe snap-target, indicateur vert)');
+  const indicator = doc.getElementById('wire-snap-indicator');
+  assert(indicator.style.display !== 'none', 'l\'indicateur vert de connexion possible est affiché');
+  const previewPtsNow = doc.getElementById('wire-preview-line').getAttribute('points').trim().split(/\s+/);
+  assert(previewPtsNow.length === 3, 'la prévisualisation reste un coude à 3 points même quand elle est aimantée à une borne');
+  // Clic sur le FOND du canevas près de la borne (pas sur le petit cercle exact) : doit quand
+  // même valider la connexion, grâce à la cible d'aimantation déjà détectée.
+  const wiresBeforeSnapClick = win.wsState.schema.wires.length;
+  mouseAt(win, doc.getElementById('ws-svg'), 'click', nearClientX, nearClientY);
+  await tick(50);
+  assert(win.wsState.schema.wires.length === wiresBeforeSnapClick + 1, 'le clic "proche" (pas pile sur la borne) valide bien la connexion');
+  const snappedWire = win.wsState.schema.wires[win.wsState.schema.wires.length-1];
+  assert(snappedWire.a.itemId === item1.id && snappedWire.b.itemId === item2.id && snappedWire.b.term === 1,
+    'le fil créé par aimantation relie bien les deux bonnes bornes, pas des coordonnées approximatives');
+  assert(win.wsState.wireStart === null && win.wsState.wireSnapTarget === null, 'le traçage se réinitialise après validation par aimantation');
+  // Nettoyage, même raison que ci-dessus : ne pas fausser les tests de diagnostic suivants.
+  win.wsState.schema.wires = win.wsState.schema.wires.filter(w => w.id !== snappedWire.id);
+
+  // Loin de toute borne : aucune aimantation ne doit se déclencher (pas de faux positif).
+  click(win, term1_1);
+  await tick(50);
+  mouseAt(win, doc.getElementById('ws-svg'), 'mousemove', win.wsState.view.panX + 900, win.wsState.view.panY + 500);
+  await tick(50);
+  assert(win.wsState.wireSnapTarget === null, 'aucune aimantation ne se déclenche quand le curseur est loin de toute borne');
+  assert(doc.getElementById('wire-snap-indicator').style.display === 'none', 'l\'indicateur vert reste caché en l\'absence de borne à portée');
   click(win, doc.querySelector('#tool-panel [data-tool="select"]'));
   await tick(50);
+  assert(win.wsState.wireStart === null, 'changer d\'outil annule bien le fil en cours de traçage');
 
   // 3. Glisser le fond du canevas au doigt fait bien un pan (comme à la souris).
   const panXBefore = win.wsState.view.panX;

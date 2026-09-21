@@ -20,7 +20,7 @@
 const GRID_SIZE = 20;
 const wsState = {
   projectId:null, view:{ panX:100, panY:80, scale:1 }, tool:'select',
-  wireStart:null, selectedId:null, selectedWireId:null, mobileTab:'canvas', schema:null,
+  wireStart:null, wireSnapTarget:null, selectedId:null, selectedWireId:null, mobileTab:'canvas', schema:null,
   armedType:null, ghostPos:null, dragWireEnd:null,
   readOnly:false, isOwner:true, remotePeers:{}, presenceMode:null,
 };
@@ -162,6 +162,31 @@ function orthoPoints(a, b){
 }
 function polylinePoints(pts){ return pts.map(p=>`${p.x},${p.y}`).join(' '); }
 
+/* ---- Fil provisoire (§3-§6) : coude simple départ→coin→arrivée, jamais de diagonale ---- */
+function previewCorner(a, b){ return [a, { x:b.x, y:a.y }, b]; }
+
+/* Détection automatique de borne pendant le traçage (§5-§6) : ~8px de tolérance à l'écran,
+   quel que soit le zoom courant — convertie en unités canevas via l'échelle réelle de l'écran. */
+function screenPxToCanvasUnits(px, svg){
+  const ctm = svg.getScreenCTM ? svg.getScreenCTM() : null;
+  const ctmScale = (ctm && ctm.a) ? ctm.a : 1; // repli à 1 en environnement de test (jsdom, pas de rendu réel)
+  return px / (wsState.view.scale * ctmScale);
+}
+function nearestTerminal(cur, svg, exclude){
+  let best = null, bestDist = Infinity;
+  wsState.schema.items.forEach(item => {
+    const def = findDef(item.typeId);
+    def.terminals.forEach((t, idx) => {
+      if (exclude && exclude.itemId===item.id && exclude.term===idx) return;
+      const pos = terminalAbsPos(item, idx);
+      const d = Math.hypot(pos.x-cur.x, pos.y-cur.y);
+      if (d < bestDist){ bestDist = d; best = { itemId:item.id, term:idx, pos }; }
+    });
+  });
+  const tolerance = screenPxToCanvasUnits(8, svg);
+  return (best && bestDist <= tolerance) ? best : null;
+}
+
 /* ==========================================================================
    NŒUDS ÉLECTRIQUES À UNE INTERSECTION DE FILS (priorité explicitement
    demandée pour la réalisation des circuits).
@@ -251,7 +276,7 @@ async function viewProject(id){
     wsState.projectId = id;
     wsState.schema = project.schema && project.schema.items ? project.schema : { items:[], wires:[] };
     wsState.view = { panX:100, panY:80, scale:1 };
-    wsState.tool = 'select'; wsState.wireStart = null; wsState.selectedId = null; wsState.selectedWireId = null;
+    wsState.tool = 'select'; wsState.wireStart = null; wsState.wireSnapTarget = null; wsState.selectedId = null; wsState.selectedWireId = null;
     wsState.armedType = null; wsState.ghostPos = null;
   }
   openPresenceChannel(id); // toujours réabonné en entrant sur cette vue (y compris retour depuis Devis/Dimensionnement)
@@ -536,14 +561,14 @@ function wireToolPanel(){
   document.getElementById('tool-panel-body').addEventListener('click', (e) => {
     const toolBtn = e.target.closest('[data-tool]');
     if (toolBtn){
-      wsState.tool = toolBtn.dataset.tool; wsState.wireStart = null; wsState.armedType = null;
+      wsState.tool = toolBtn.dataset.tool; wsState.wireStart = null; wsState.wireSnapTarget = null; wsState.armedType = null;
       const label = { select:'Sélection', fil:'Tracer un fil', supprimer:'Supprimer' }[wsState.tool];
       const ind = document.getElementById('tool-indicator'); if (ind) ind.textContent = 'Outil : ' + label;
       redrawCanvas();
       return;
     }
     if (e.target.closest('#tool-cancel')){
-      if (wsState.wireStart){ wsState.wireStart = null; redrawCanvas(); }
+      if (wsState.wireStart){ wsState.wireStart = null; wsState.wireSnapTarget = null; redrawCanvas(); }
       else if (wsState.armedType){ wsState.armedType = null; wsState.ghostPos = null; redrawCanvas(); }
       else toast("Rien à annuler pour l'instant.");
       return;
@@ -813,7 +838,8 @@ function renderCanvasSVG(){
       ${crossingsSvg()}
       ${ghostSvg}
       ${peerGhostsSvg}
-      <line id="wire-preview-line" class="wire-preview" style="display:none" x1="0" y1="0" x2="0" y2="0"/>
+      <polyline id="wire-preview-line" class="wire-preview" style="display:none" points=""/>
+      <circle id="wire-snap-indicator" class="snap-indicator" style="display:none" cx="0" cy="0" r="7"/>
     </g>
   </svg>
   ${wsState.armedType ? `<div class="staging-tray">Cliquez sur le canevas pour poser <strong style="margin:0 4px">${esc(findDef(wsState.armedType).nom)}</strong><button id="btn-cancel-armed" title="Annuler">✕</button></div>` : ''}
@@ -986,13 +1012,29 @@ function wireCanvasEvents(){
     if (wsState.tool === 'fil' && wsState.wireStart){
       if (e.cancelable) e.preventDefault();
       const line = document.getElementById('wire-preview-line');
+      const indicator = document.getElementById('wire-snap-indicator');
       const startItem = wsState.schema.items.find(i=>i.id===wsState.wireStart.itemId);
       if (line && startItem){
         const a = terminalAbsPos(startItem, wsState.wireStart.term);
         const cur = svgUserToCanvas(clientToSvgUser(e, svg));
-        line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
-        line.setAttribute('x2', cur.x); line.setAttribute('y2', cur.y);
+        const snap = nearestTerminal(cur, svg, wsState.wireStart);
+        wsState.wireSnapTarget = snap;
+        const end = snap ? snap.pos : cur;
+        line.setAttribute('points', polylinePoints(previewCorner(a, end)));
         line.style.display = '';
+        // Bornes proches : la borne visée s'agrandit et devient verte (§5-§6), plutôt qu'un
+        // simple survol natif — fonctionne aussi bien au tactile qu'à la souris.
+        svg.querySelectorAll('.terminal-dot.snap-target').forEach(el => el.classList.remove('snap-target'));
+        if (indicator){
+          if (snap){
+            indicator.setAttribute('cx', snap.pos.x); indicator.setAttribute('cy', snap.pos.y);
+            indicator.style.display = '';
+            const dot = svg.querySelector(`.terminal-dot[data-term-item="${snap.itemId}"][data-term-idx="${snap.term}"]`);
+            if (dot) dot.classList.add('snap-target');
+          } else {
+            indicator.style.display = 'none';
+          }
+        }
       }
     }
     if (wsState.armedType){
@@ -1040,6 +1082,16 @@ function wireCanvasEvents(){
       recordRecentComponent(wsState.armedType);
       wsState.armedType = null; wsState.ghostPos = null;
       persistSchema(); redrawCanvas(); refreshFavPanelBody(); toast(`${def.nom} posé.`);
+    } else if (wsState.tool === 'fil' && wsState.wireStart && wsState.wireSnapTarget){
+      // Validation par clic "proche" (§5-§6) : pas besoin de toucher exactement le petit
+      // cercle de la borne — un clic dans la zone de tolérance déjà signalée en vert suffit.
+      // Essentiel au tactile, où viser un point de quelques pixels est peu fiable.
+      if (guardReadOnly()) return;
+      const target = wsState.wireSnapTarget;
+      pushUndoSnapshot();
+      wsState.schema.wires.push({ id:'w_'+Math.random().toString(36).slice(2,8), a:wsState.wireStart, b:{ itemId:target.itemId, term:target.term } });
+      wsState.wireStart = null; wsState.wireSnapTarget = null;
+      persistSchema(); redrawCanvas();
     } else if (wsState.selectedWireId){
       wsState.selectedWireId = null; redrawCanvas();
     }
@@ -1061,10 +1113,10 @@ function wireCanvasEvents(){
       if (wsState.tool !== 'fil') return;
       if (guardReadOnly()) return;
       if (!wsState.wireStart){ wsState.wireStart = { itemId, term }; redrawCanvas(); return; }
-      if (wsState.wireStart.itemId === itemId && wsState.wireStart.term === term){ wsState.wireStart = null; redrawCanvas(); return; }
+      if (wsState.wireStart.itemId === itemId && wsState.wireStart.term === term){ wsState.wireStart = null; wsState.wireSnapTarget = null; redrawCanvas(); return; }
       pushUndoSnapshot();
       wsState.schema.wires.push({ id:'w_'+Math.random().toString(36).slice(2,8), a:wsState.wireStart, b:{itemId,term} });
-      wsState.wireStart = null; persistSchema(); redrawCanvas();
+      wsState.wireStart = null; wsState.wireSnapTarget = null; persistSchema(); redrawCanvas();
     });
   });
 
@@ -1180,7 +1232,7 @@ function wireCanvasEvents(){
 
   // clic droit sur le fond : annule un fil en cours plutôt que d'ouvrir le menu du navigateur
   svg.addEventListener('contextmenu', (e) => {
-    if (isCanvasBackground(e.target, svg) && wsState.tool === 'fil' && wsState.wireStart){ e.preventDefault(); wsState.wireStart = null; redrawCanvas(); }
+    if (isCanvasBackground(e.target, svg) && wsState.tool === 'fil' && wsState.wireStart){ e.preventDefault(); wsState.wireStart = null; wsState.wireSnapTarget = null; redrawCanvas(); }
   });
 
   // pan + zoom sur fond — souris ET tactile (glisser un doigt sur le fond du canevas déplace
@@ -1549,7 +1601,7 @@ function afterProjectView(){
     if (placeBtn){ armComponentForPlacement(placeBtn.dataset.place); return; }
     const toolBtn = e.target.closest('[data-tool]');
     if (toolBtn){
-      wsState.tool = toolBtn.dataset.tool; wsState.wireStart = null; wsState.armedType = null;
+      wsState.tool = toolBtn.dataset.tool; wsState.wireStart = null; wsState.wireSnapTarget = null; wsState.armedType = null;
       const label = { select:'Sélection', fil:'Tracer un fil', supprimer:'Supprimer' }[wsState.tool];
       document.getElementById('tool-indicator').textContent = 'Outil : ' + label;
       redrawCanvas();
