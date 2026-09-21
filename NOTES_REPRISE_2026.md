@@ -196,6 +196,10 @@ composants (le module Dimensionnement §24 calcule déjà PV/batterie/onduleur m
 
 ## À faire avant de fusionner ce document dans le CDC définitif (suite)
 
-- [ ] Étendre le module Dimensionnement (§24) à l'éolien/hydraulique/solaire thermique
-      maintenant que leurs composants existent dans le catalogue (point 9) — sinon ces
-      familles peuvent être placées dans un schéma mais pas dimensionnées.
+
+## 10. Dimensionnement éolien/hydraulique/solaire thermique — fait cette session (voir RAPPORT-FINAL.md, addendum 10)
+
+Le point ci-dessus (dimensionner ce qui a été ajouté au point 9) est traité : nouvel onglet
+« Éolien / Hydraulique / Solaire thermique » dans le module Dimensionnement, formules physiques
+standard (puissance du vent, puissance hydraulique, production solaire thermique), export PDF
+individuel comme les onglets existants. Détail complet dans l'addendum 10.

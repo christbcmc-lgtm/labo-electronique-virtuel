@@ -503,6 +503,43 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(etResultText.includes('10.0 A') || etResultText.includes('10 A'), 'calcul électrotechnique correct : courant nominal = 10 A (résultat: ' + etResultText.replace(/\s+/g,' ').slice(0,200) + ')');
   assert(!!doc.getElementById('et-export-pdf'), 'bouton "Exporter ce dimensionnement (PDF)" présent après un calcul');
 
+  section('Dimensionnement — Éolien / Hydraulique / Solaire thermique (§24 étendu, addendum 9 : formules ajoutées une fois les composants disponibles au catalogue)');
+  await nav(win, 'dimensionnement/' + projectId);
+  await tick(150);
+  click(win, [...doc.querySelectorAll('[data-dim-tab]')].find(a=>a.dataset.dimTab==='renouvelables'));
+  await tick(150);
+  setVal(win, doc.getElementById('eo-diametre'), '2');
+  setVal(win, doc.getElementById('eo-vitesse'), '10');
+  setVal(win, doc.getElementById('eo-cp'), '0.4');
+  setVal(win, doc.getElementById('eo-rho'), '1.2');
+  click(win, doc.getElementById('eo-calc'));
+  await tick(150);
+  const eoResultText = doc.getElementById('eo-result').textContent;
+  // A = π×1² = 3.14 m² ; P = 0.5×1.2×3.14×0.4×10³ ≈ 754 W
+  assert(eoResultText.includes('3.14'), 'calcul éolien correct : aire balayée ≈ 3,14 m² (résultat: ' + eoResultText.replace(/\s+/g,' ').slice(0,220) + ')');
+  assert(eoResultText.includes('754'), 'calcul éolien correct : puissance théorique ≈ 754 W');
+  assert(!!doc.getElementById('eo-export-pdf'), 'bouton "Exporter ce dimensionnement (PDF)" présent pour l\'éolien');
+
+  setVal(win, doc.getElementById('hy-debit'), '100');
+  setVal(win, doc.getElementById('hy-hauteur'), '10');
+  setVal(win, doc.getElementById('hy-rendement'), '80');
+  click(win, doc.getElementById('hy-calc'));
+  await tick(150);
+  const hyResultText = doc.getElementById('hy-result').textContent;
+  // P = 1000 × 9.81 × 0.1 × 10 × 0.8 = 7848 W
+  assert(hyResultText.includes('7848'), 'calcul hydraulique correct : puissance théorique = 7848 W (résultat: ' + hyResultText.replace(/\s+/g,' ').slice(0,220) + ')');
+  assert(!!doc.getElementById('hy-export-pdf'), 'bouton "Exporter ce dimensionnement (PDF)" présent pour l\'hydraulique');
+
+  setVal(win, doc.getElementById('st-surface'), '5');
+  setVal(win, doc.getElementById('st-irrad'), '5');
+  setVal(win, doc.getElementById('st-rendement'), '60');
+  click(win, doc.getElementById('st-calc'));
+  await tick(150);
+  const stResultText = doc.getElementById('st-result').textContent;
+  // E = 5 × 5 × 0.6 = 15 kWh/jour
+  assert(stResultText.includes('15.00'), 'calcul solaire thermique correct : production journalière = 15,00 kWh/jour (résultat: ' + stResultText.replace(/\s+/g,' ').slice(0,220) + ')');
+  assert(!!doc.getElementById('st-export-pdf'), 'bouton "Exporter ce dimensionnement (PDF)" présent pour le solaire thermique');
+
   section('Export PDF du dimensionnement seul (§15 Option 3 — indépendant du schéma)');
   // Fixe directement l'état que le vrai gestionnaire de clic pose avant d'appeler l'export
   // (évite de dépendre du comportement de window.confirm() non implémenté par jsdom).

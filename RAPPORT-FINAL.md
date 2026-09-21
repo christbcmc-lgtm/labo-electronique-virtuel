@@ -1422,3 +1422,36 @@ Même limitation que pour l'audit des symboles déjà documenté (point 1 de
 symbole n'a pas été validée visuellement dans un vrai navigateur — ils reprennent des gabarits
 déjà en place et vérifiés géométriquement (bornes ↔ tracé), mais pas contre-vérifiés vue par
 vue avec un outil de référence normatif.
+
+## ADDENDUM 10 — Dimensionnement étendu à l'éolien, l'hydraulique et le solaire thermique
+
+Suite directe de l'addendum 9 (point noté « à faire » dans `NOTES_REPRISE_2026.md`) : les 17
+composants ajoutés pouvaient être placés dans un schéma mais pas dimensionnés — le module
+Dimensionnement (§24) ne couvrait que le photovoltaïque, l'électrotechnique/bâtiment et
+l'électronique. Un nouvel onglet **« Éolien / Hydraulique / Solaire thermique »** a été ajouté
+à `js/dimensionnement.js`, avec le même principe que les onglets existants : formules physiques
+standard (pas inventées), valeurs saisies substituées dans la formule affichée, hypothèses
+explicites, export PDF indépendant.
+
+- **Éolien** : puissance théorique disponible dans le vent, $P = 0{,}5 \cdot \rho \cdot A \cdot
+  C_p \cdot v^3$ (formule standard de l'énergie cinétique du vent captée par un rotor). Hypothèse
+  documentée explicitement : $C_p$ ne peut physiquement pas dépasser la limite de Betz (0,593).
+- **Hydraulique** : puissance hydraulique théorique, $P = \rho_{eau} \cdot g \cdot Q \cdot H \cdot
+  \eta$ (formule standard, masse volumique de l'eau et pesanteur en constantes documentées).
+- **Solaire thermique** : production journalière, $E = Surface \times Irradiation \times
+  Rendement$ — même méthode que le calcul PV déjà existant (heures de soleil équivalentes),
+  transposée à un capteur thermique.
+
+### Vérifié par exécution réelle
+
+`npm test` : **234 vérifications, 0 échec** (227 avant + 7 nouvelles : aire balayée et
+puissance éolienne avec substitution numérique vérifiée à la main, puissance hydraulique,
+production solaire thermique, présence du bouton d'export PDF pour chacun des 3 nouveaux
+calculs).
+
+### Ce qui n'a pas été vérifié
+
+Comme pour les calculs PV/électrotechnique déjà en place : ce sont des formules physiques
+standard et vérifiables (aucune valeur de norme incertaine), mais le rendu visuel des 3
+nouvelles cartes dans l'onglet n'a pas été vérifié dans un vrai navigateur (même limitation
+que pour tout le reste de ce projet).
