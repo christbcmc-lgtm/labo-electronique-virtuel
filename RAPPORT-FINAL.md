@@ -1455,3 +1455,59 @@ Comme pour les calculs PV/électrotechnique déjà en place : ce sont des formul
 standard et vérifiables (aucune valeur de norme incertaine), mais le rendu visuel des 3
 nouvelles cartes dans l'onglet n'a pas été vérifié dans un vrai navigateur (même limitation
 que pour tout le reste de ce projet).
+
+## ADDENDUM 11 — Audit des symboles (§1 des notes de reprise) : liste "à vérifier" close
+
+Priorité n°1 explicite du client, restée ouverte depuis plusieurs sessions comme une simple
+liste de composants « à vérifier ». Cette session a fait le travail de vérification
+composant par composant plutôt que de la laisser en suspens plus longtemps.
+
+### Méthode
+
+Pour chaque composant listé comme suspect (`variateur_vitesse`, `gradateur_puissance`,
+`hacheur`, `relais_auxiliaire`, `analyseur_reseau`, `relais_protection`, `interphone`,
+`permutateur`, `telerupteur`), vérification individuelle : existe-t-il une représentation
+graphique IEC 60617 distinctive pour ce type d'appareil, ou la convention réelle des schémas
+professionnels (unifilaires, fonctionnels, plans de bâtiment) est-elle bien le bloc rectangulaire
+étiqueté ? Recherche faite composant par composant, pas une réponse générique appliquée à toute
+la liste.
+
+### Résultat
+
+- **6 composants confirmés corrects tels quels** (`variateur_vitesse`, `gradateur_puissance`,
+  `hacheur`, `analyseur_reseau`, `relais_protection`, `relais_auxiliaire`) : le bloc étiqueté
+  est la convention réellement utilisée pour ces appareils à ce niveau d'abstraction — il n'y a
+  pas de symbole IEC 60617 dédié à un variateur de fréquence, un gradateur ou un analyseur de
+  réseau en tant que dispositif complet (à la différence d'un composant électrique élémentaire
+  comme une résistance ou un transistor, qui EUX ont un symbole normalisé). Forcer un symbole
+  « dessiné à la main » ici aurait été inventer une convention qui n'existe pas.
+- **2 composants déjà réglés lors d'une session précédente** (`permutateur`, `telerupteur`) :
+  confirmés à jour, brochage IEC déjà documenté via `pinNames`.
+- **1 composant corrigé cette session** (`interphone`) : le rectangle générique portant le
+  texte "INT" a été remplacé par un boîtier avec un pictogramme reconnaissable — silhouette de
+  haut-parleur (réutilisation exacte de la forme déjà utilisée pour le composant `haut_parleur`,
+  cohérence visuelle du catalogue) + un bouton d'appel. Même principe que le multimètre
+  (addendum 5) : remplacer un texte générique par une silhouette d'appareil reconnaissable
+  quand une telle silhouette existe réellement et est établie.
+- **Les composants basés sur `icTemplate()` (circuits intégrés génériques, ~130-150
+  composants)** : confirmé — le rectangle à broches numérotées est la convention universelle
+  (fabricants, logiciels de CAO) pour représenter un circuit intégré. Vérification explicite
+  faite, ce n'était plus une simple supposition reportée de session en session.
+
+### Vérifié par exécution réelle
+
+`npm test` : **236 vérifications, 0 échec** (234 avant + 2 nouvelles : le symbole de
+l'interphone contient désormais un `<polygon>` et ne contient plus le texte "INT", ses 4 bornes
+restent inchangées par ce correctif purement visuel). `tests/verify_catalog.js` : 522
+composants, toujours 0 anomalie de brochage (le correctif visuel de l'interphone ne touche pas
+ses bornes).
+
+### Ce qui reste réellement ouvert sur ce point
+
+Un audit visuel pixel par pixel (proportions, épaisseur de trait, lisibilité à petite échelle)
+de l'ensemble des ~522 symboles n'a toujours pas pu être fait — seule la géométrie bornes↔tracé
+est vérifiée automatiquement, jamais le rendu visuel réel, faute d'accès à un vrai navigateur
+dans cet environnement (limitation documentée depuis le début de ce projet, voir point 4 de
+`NOTES_REPRISE_2026.md`). Ce qui pouvait être tranché de façon fiable sans navigateur — « la
+convention utilisée est-elle la bonne pour ce type d'appareil » — l'a été pour toute la liste
+signalée comme douteuse.

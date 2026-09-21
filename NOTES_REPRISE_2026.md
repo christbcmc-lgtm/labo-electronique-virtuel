@@ -35,22 +35,43 @@ bâclée. » Cette session a corrigé :
   (`icTemplate()`/`viewH`, addendum 6) : ce point précis est réglé, ne pas le re-signaler dans
   un audit futur.
 
+**Mise à jour (session suivante, voir RAPPORT-FINAL.md addendum 11)** : la liste "composants de
+contrôle/puissance en gabarit rectangle + sigle" ci-dessous a été revue un par un contre les
+conventions réelles de schématique électrique (pas juste relue en diagonale) :
+
+- `variateur_vitesse` (VFD), `gradateur_puissance`, `hacheur`, `analyseur_reseau`,
+  `relais_protection` : **confirmés corrects tels quels**. Aucun symbole IEC 60617 distinctif
+  n'existe pour ces appareils de conversion/mesure à ce niveau d'abstraction (dispositif complet,
+  pas son schéma interne) — le bloc fonctionnel étiqueté est la convention réellement utilisée
+  dans les schémas unifilaires et fonctionnels professionnels. Ne pas rouvrir sans nouvelle
+  information contraire.
+- `relais_auxiliaire` : déjà un symbole distinct (contacts courbes dessinés à la main, pas un
+  simple rectangle) — vérifié correct, rien à faire.
+- `permutateur`, `telerupteur` : déjà corrigés lors d'une session précédente (brochage IEC
+  documenté via `pinNames`, voir plus haut) — confirmés à jour, pas de nouveau problème trouvé.
+- `interphone` : **corrigé** — remplacé le rectangle générique portant le texte "INT" par un
+  boîtier avec un pictogramme reconnaissable (silhouette de haut-parleur, réutilisant la forme
+  déjà employée pour `haut_parleur`, + bouton d'appel), sur le même principe que le multimètre
+  (addendum 5). Aucun autre composant de cette liste ne présentait un vrai déficit de ce type
+  après vérification individuelle.
+
 Restent à auditer, par ordre de valeur probable :
 
-- Les composants de contrôle/puissance encore en gabarit "rectangle + sigle" (`variateur_vitesse`,
-  `gradateur_puissance`, `hacheur`, `relais_auxiliaire`, `analyseur_reseau`,
-  `relais_protection`, `interphone`, `permutateur`, `telerupteur`...) : à vérifier composant
-  par composant si un symbole IEC 60617 distinctif existe et vaut la peine d'être dessiné à la
-  main, ou si le bloc fonctionnel étiqueté reste la convention correcte (c'est déjà le cas
-  pour beaucoup d'appareils de commande/contrôle dans les schémas fonctionnels réels — à ne
-  pas changer par principe).
 - Les ~130-150 composants basés sur `icTemplate()` (circuits intégrés génériques) : le
-  rectangle à broches numérotées **est** la convention IEC/pratique standard pour un CI, ce
-  n'est probablement pas à corriger — mais mérite une vérification explicite plutôt qu'une
-  supposition.
+  rectangle à broches numérotées **est** la convention IEC/pratique standard pour un CI —
+  **confirmé** (vérification explicite faite cette session, pas une simple supposition reportée) :
+  c'est la convention universellement utilisée par les fabricants et les logiciels de CAO
+  électronique pour représenter un circuit intégré. Rien à corriger sur ce point.
 - Les composants "vedettes" dessinés à la main (résistance, diodes, transistors, portes
   logiques, AOP, transformateurs...) sont déjà vérifiés (RAPPORT-FINAL section D/O3) — ne pas
   les rouvrir sans raison précise.
+- **Ce qui reste réellement ouvert** : un audit visuel pixel par pixel (proportions, épaisseur
+  de trait, lisibilité à petite échelle) de l'ensemble des ~522 symboles n'a toujours pas pu
+  être fait, faute d'accès à un vrai navigateur (voir point 4) — seule la géométrie
+  bornes↔tracé est vérifiée automatiquement (`tests/verify_catalog.js`), pas le rendu visuel
+  réel. La question « la convention utilisée est-elle la bonne » (posée composant par
+  composant, sans navigateur) est en revanche désormais traitée pour toutes les familles
+  identifiées comme douteuses.
 
 Une méthode possible pour la suite : lister les symboles par famille avec une capture/aperçu
 (la fiche détail de la bibliothèque 3 colonnes, ajoutée cette session, permet justement de

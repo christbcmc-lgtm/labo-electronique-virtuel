@@ -1019,6 +1019,10 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(!!win.findDef('voltmetre'), 'un voltmètre existe désormais comme instrument séparé du multimètre');
   assert(!!win.findDef('alimentation'), 'une alimentation stabilisée existe désormais dans les instruments de banc');
 
+  section('Audit des symboles (§1 des notes de reprise) — interphone redessiné avec un pictogramme reconnaissable');
+  assert(win.SYM['interphone'].includes('<polygon') && !win.SYM['interphone'].includes('>INT<'), 'le symbole de l\'interphone est désormais un boîtier avec pictogramme haut-parleur + bouton d\'appel, pas un rectangle générique avec le texte "INT" (résultat brut: ' + win.SYM['interphone'].replace(/\s+/g,' ').slice(0,160) + ')');
+  assert(win.findDef('interphone').terminals.length === 4, 'le nombre de bornes de l\'interphone (4) est inchangé par ce correctif purement visuel');
+
   console.log('\n=== Erreurs JS non interceptées pendant toute la session ===');
   console.log(win.__jsErrors.length ? win.__jsErrors.join('\n---\n') : '(aucune)');
 

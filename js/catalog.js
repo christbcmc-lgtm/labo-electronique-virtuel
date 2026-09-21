@@ -1072,7 +1072,11 @@ const BATIMENT = [
     { unit:'s', defaultValue:120, valueOptions:[60,120,300], famille:'Commande éclairage', def:"Coupe automatiquement l'éclairage des parties communes après une durée réglable.", wiki:'Minuterie', alias:'minuterie temporisee escalier' }),
   defRow('detecteur_fumee','Détecteur de fumée (DAAF)', T2, `${leadLine(0,15,10,15)}${leadLine(50,15,60,15)}<circle cx="30" cy="15" r="10" fill="none" stroke="currentColor" stroke-width="2"/>${ctext(30,19,'DAAF',5)}`,
     { famille:'Bâtiment', def:"Détecte les fumées d'incendie et déclenche une alarme sonore, obligatoire dans l'habitat.", wiki:'Détecteur_de_fumée', alias:'daaf alarme incendie' }),
-  defRow('interphone','Interphone / visiophone', T4, `${leadLine(0,8,16,8)}${leadLine(0,22,16,22)}${leadLine(44,8,60,8)}${leadLine(44,22,60,22)}<rect x="16" y="3" width="28" height="24" fill="none" stroke="currentColor" stroke-width="1.8"/>${ctext(30,17,'INT',7)}`,
+  // Boîtier + pictogramme haut-parleur (même trapèze que `haut_parleur` ci-dessus, pour rester
+  // cohérent) + bouton d'appel : remplace le texte générique "INT" par une silhouette reconnaissable
+  // d'appareil de communication, sur le principe déjà appliqué au multimètre (voir RAPPORT-FINAL,
+  // addendum 5) plutôt qu'un simple rectangle étiqueté (audit des symboles, §1 des notes de reprise).
+  defRow('interphone','Interphone / visiophone', T4, `${leadLine(0,8,16,8)}${leadLine(0,22,16,22)}${leadLine(44,8,60,8)}${leadLine(44,22,60,22)}<rect x="16" y="3" width="28" height="24" fill="none" stroke="currentColor" stroke-width="1.8"/><polygon points="21,11 27,11 33,7 33,21 27,17 21,17" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="38" cy="20" r="2" fill="none" stroke="currentColor" stroke-width="1.3"/>`,
     { famille:'Bâtiment', def:"Permet la communication (audio ou vidéo) entre l'entrée d'un logement et l'intérieur.", wiki:'Portier_(sécurité)', alias:'visiophone portier' }),
   defRow('prise_usb_murale','Prise murale avec USB', T2, `${leadLine(0,15,20,15)}${leadLine(40,15,60,15)}<circle cx="30" cy="15" r="10" fill="none" stroke="currentColor" stroke-width="1.8"/>${ctext(30,19,'USB',5)}`,
     { unit:'A', defaultValue:16, valueOptions:[16,20], famille:'Bâtiment', def:"Prise de courant intégrant un ou deux ports de charge USB.", wiki:'Prise_de_courant', alias:'prise usb chargeur mural' }),
