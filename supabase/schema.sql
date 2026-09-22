@@ -88,6 +88,7 @@ create table if not exists public.projects (
   schema        jsonb not null default '{"items":[],"wires":[]}'::jsonb,
   devis         jsonb not null default '{"lignes":[],"remisePct":0,"tauxTaxe":20,"taxeActive":false}'::jsonb, -- §22/§23
   plan          jsonb,                                                                                       -- plan de bâtiment/électricité (js/plan.js), null tant qu'aucun plan n'a été créé
+  cad3d         jsonb,                                                                                       -- CAO mécanique 3D (js/cao3d.js), null tant qu'aucune pièce n'a été créée
   erreurs       integer not null default 0,
   statut        text not null default 'brouillon' check (statut in ('brouillon','en_cours','verification','finalise','exporte')), -- §6 des notes en cours
   created_at    timestamptz not null default now(),
@@ -229,6 +230,7 @@ alter table public.profiles add column if not exists suspended boolean not null 
 alter table public.profiles add column if not exists storage_quota bigint not null default 2097152;
 alter table public.projects add column if not exists devis jsonb not null default '{"lignes":[],"remisePct":0,"tauxTaxe":20,"taxeActive":false}'::jsonb;
 alter table public.projects add column if not exists plan jsonb;
+alter table public.projects add column if not exists cad3d jsonb;
 alter table public.projects add column if not exists statut text not null default 'brouillon';
 do $$
 begin

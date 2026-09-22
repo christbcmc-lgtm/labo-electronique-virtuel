@@ -8,14 +8,17 @@
      js/config.js — l'app tourne alors en mode démo locale et cette librairie
      reste inutilisée). Doit être chargé AVANT js/config.js. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<!-- Three.js (r128, CDN) : utilisé uniquement par la vue 3D du bâtiment (js/plan3d.js). Chargement
-     non bloquant pour le reste du site ; si indisponible (réseau, bloqueur), la vue 3D affiche
-     un message au lieu de planter -- voir threeAvailable()/webglAvailable() dans js/plan3d.js. -->
+<!-- Three.js (r128, CDN) : utilisé par la vue 3D du bâtiment (js/plan3d.js) et l'atelier CAO
+     mécanique 3D (js/cao3d.js). Chargement non bloquant pour le reste du site ; si indisponible
+     (réseau, bloqueur), ces deux vues affichent un message au lieu de planter -- voir
+     threeAvailable()/webglAvailable() dans chacun de ces fichiers. -->
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/STLExporter.js"></script>
 <link rel="stylesheet" href="css/style.css">
 <link rel="stylesheet" href="css/plan.css">
 <link rel="stylesheet" href="css/plan3d.css">
+<link rel="stylesheet" href="css/cao3d.css">
 </head>
 <body>
   <header class="topbar" id="topbar"></header>
@@ -34,6 +37,7 @@
   <script src="js/dimensionnement.js"></script>
   <script src="js/plan.js"></script>
   <script src="js/plan3d.js"></script>
+  <script src="js/cao3d.js"></script>
   <script src="js/composant-builder.js"></script>
   <script src="js/app.js"></script>
 </body>

@@ -240,3 +240,20 @@ Reste explicitement non couvert :
   ces composants ne sont jamais `simulable`).
 - Import depuis un fichier externe (JSON/SVG) — seule la création via formulaire est
   disponible, pas d'import de définition déjà existante.
+
+## 12. CAO mécanique 3D — fait cette session (voir RAPPORT-FINAL.md, addendum 13)
+
+Le point 8 ci-dessus (Phase 3, "prochaine étape suggérée, non commencée") est traité, avec un
+périmètre délibérément réduit et documenté : primitives, esquisse extrudée avec perçage,
+révolution, bibliothèque de pièces standard (vis/écrou/rondelle/profilé/engrenage
+approximatif), assemblage par positionnement (pas de fusion booléenne), matériaux/masse,
+coupe, export STL. Nouvel onglet "CAO 3D" (6e onglet). Détail complet dans l'addendum 13.
+
+Reste explicitement non couvert (choix de périmètre assumé, pas un oubli) :
+- Opérations booléennes 3D générales (union/soustraction/intersection entre solides
+  quelconques) — nécessiterait une bibliothèque CSG dédiée non incluse.
+- Éditeur d'esquisse 2D visuel (à la souris, avec contraintes/cotes) — les profils se saisissent
+  aujourd'hui sous forme de listes de coordonnées numériques.
+- Denture réelle des engrenages (représentés en disque avec alésage).
+- Congés/chanfreins, coupes/vues de mise en plan, export DXF.
+- Vérification visuelle réelle du rendu — bloquée par le point 4 comme tout le reste.

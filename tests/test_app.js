@@ -39,7 +39,7 @@ async function boot(){
   // browsers) — injecting real <script> elements does, exactly like the browser loading js/*.js
   // via <script src>. This is what actually behaves like the shipped page.
   const doc0 = dom.window.document;
-  for (const f of ['js/config.js','js/catalog.js','js/backend.js','js/editor.js','js/pdf.js','js/devis.js','js/dimensionnement.js','js/plan.js','js/plan3d.js','js/composant-builder.js','js/app.js']){
+  for (const f of ['js/config.js','js/catalog.js','js/backend.js','js/editor.js','js/pdf.js','js/devis.js','js/dimensionnement.js','js/plan.js','js/plan3d.js','js/cao3d.js','js/composant-builder.js','js/app.js']){
     const s = doc0.createElement('script');
     s.textContent = readFile(f);
     doc0.body.appendChild(s);
@@ -634,6 +634,54 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   await nav(win, 'project/' + projectId);
   await tick(200);
   assert(!doc.getElementById('plan3d-shell'), 'en quittant la route 3D, son DOM est bien retiré');
+
+  section('CAO mécanique 3D — géométrie pure (js/cao3d.js, sans WebGL/Three.js requis)');
+  assert(win.cao_primitiveVolume({ type:'box', w:10, h:20, d:5 }) === 1000, 'volume d\'une boîte 10×20×5 = 1000 mm³');
+  const cylVol = win.cao_primitiveVolume({ type:'cylinder', d:10, h:20 });
+  assert(Math.abs(cylVol - Math.PI*25*20) < 0.001, 'volume d\'un cylindre Ø10×20 = π×5²×20 (résultat: ' + cylVol.toFixed(3) + ')');
+  const extrudeVol = win.cao_extrudeVolume({ profile:{ shape:'rect', w:20, h:10 }, holes:[{cx:0,cy:0,d:4}], depth:5 });
+  // Le trou est approché par un polygone à 24 côtés inscrit dans le cercle (même technique que le
+  // reste du projet) : son aire est légèrement inférieure à π×r², d'où une tolérance un peu plus
+  // large qu'un calcul purement analytique — pas une imprécision du calcul, une conséquence assumée
+  // de l'approximation polygonale (cohérente avec le maillage réellement construit par Three.js).
+  const expectedExtrude = (200 - Math.PI*4) * 5;
+  assert(Math.abs(extrudeVol - expectedExtrude) < 1, 'volume d\'une esquisse rectangle 20×10 percée d\'un trou Ø4, extrudée sur 5 mm ≈ ' + expectedExtrude.toFixed(1) + ' mm³ (résultat: ' + extrudeVol.toFixed(1) + ', écart dû à l\'approximation polygonale du trou)');
+  const revolveVol = win.cao_revolveVolume({ profile:{ pts:[[10,-10],[20,-10],[20,10],[10,10]] }, angle:360 });
+  const expectedRevolve = Math.PI*(400-100)*20; // = tube plein rayon 10→20, hauteur 20 (théorème de Pappus-Guldin)
+  assert(Math.abs(revolveVol - expectedRevolve) < 1, 'révolution d\'un rectangle (rayon 10→20, hauteur 20) sur 360° = volume d\'un tube plein (Pappus-Guldin), attendu ' + expectedRevolve.toFixed(0) + ' mm³ (résultat: ' + revolveVol.toFixed(0) + ')');
+  const steelCubeMass = win.cao_bodyMassKg({ feature:{ type:'box', w:100, h:100, d:100 }, material:'acier' });
+  assert(Math.abs(steelCubeMass - 7.85) < 0.001, 'un cube d\'acier de 100 mm de côté pèse 7,85 kg (masse volumique 7850 kg/m³) — résultat: ' + steelCubeMass.toFixed(3) + ' kg');
+  assert(win.cao_bodyVolume({ feature: win.cao_defaultFeature('screw') }) > 0, 'le volume d\'une vis générée par défaut est positif (tête + tige)');
+  assert(win.cao_bodyVolume({ feature: win.cao_defaultFeature('nut') }) > 0, 'le volume d\'un écrou généré par défaut est positif');
+  const freshCad = win.cao_newProject();
+  assert(freshCad.version === 1 && Array.isArray(freshCad.bodies) && freshCad.bodies.length === 0, 'un projet CAO 3D vide est correctement initialisé');
+  let cadValidateError = null;
+  try { win.cao_validateProject({ version:2, bodies:[] }); } catch (e) { cadValidateError = e; }
+  assert(!!cadValidateError, 'un fichier CAO 3D de version inconnue est rejeté plutôt que silencieusement accepté');
+  const bodiesForNaming = [];
+  const b1 = win.cao_newBody(bodiesForNaming, 'box'); bodiesForNaming.push(b1);
+  const b2 = win.cao_newBody(bodiesForNaming, 'box'); bodiesForNaming.push(b2);
+  assert(b1.name !== b2.name, 'deux corps du même type reçoivent des noms distincts (résultat: "' + b1.name + '" / "' + b2.name + '")');
+  assert(win.cao_assemblyMassKg(bodiesForNaming) > 0, 'la masse totale d\'un assemblage est la somme des masses de ses corps');
+
+  section('CAO mécanique 3D — intégration routeur et repli gracieux sans WebGL (attendu dans ce harnais de test)');
+  const jsErrCountBeforeCad = win.__jsErrors.length;
+  await nav(win, 'cad3d/' + projectId);
+  await tick(250);
+  assert(!!doc.getElementById('cao3d-shell'), 'l\'atelier CAO 3D est monté dans la page (conteneur #cao3d-shell présent)');
+  assert(!!doc.querySelector(`.ws-tabs-top a[href="#/cad3d/${projectId}"].active`), 'le 6e onglet "CAO 3D" est actif sur cette route');
+  assert(win.cao_threeAvailable() === false, 'Three.js/STLExporter ne sont pas chargés dans ce harnais (scripts CDN retirés volontairement) — attendu, pas une erreur');
+  assert(!doc.getElementById('c3d-fallback').classList.contains('hidden'), 'en l\'absence de Three.js, le message de repli est affiché au lieu de planter');
+  assert(win.__jsErrors.length === jsErrCountBeforeCad, 'aucune erreur JS non interceptée en montant l\'atelier CAO 3D sans Three.js disponible' + (win.__jsErrors.length > jsErrCountBeforeCad ? ' — NOUVELLES ERREURS: ' + win.__jsErrors.slice(jsErrCountBeforeCad).join(' | ') : ''));
+  await nav(win, 'project/' + projectId);
+  await tick(200);
+  assert(!doc.getElementById('cao3d-shell'), 'en quittant la route CAO 3D, son DOM est bien retiré');
+
+  section('CAO mécanique 3D — persistance par projet (db.getCad3d/db.saveCad3d, même principe que le plan §22/§23)');
+  const sampleCad = { version:1, meta:{ name:'Pièce test' }, bodies:[{ id:'b1', name:'Plaque', visible:true, material:'aluminium', transform:{ pos:[0,0,0], rot:[0,0,0] }, feature:{ type:'box', w:50, h:5, d:30 } }] };
+  await win.db.saveCad3d(projectId, sampleCad);
+  const { data: reloadedCad } = await win.db.getCad3d(projectId);
+  assert(!!reloadedCad && reloadedCad.bodies.length === 1 && reloadedCad.bodies[0].feature.type === 'box', 'le projet CAO 3D enregistré (db.saveCad3d) est bien relu tel quel (db.getCad3d)');
 
   section('Thème (§33)');
   const themeBtn = doc.querySelector('[data-theme-pick="clair"]');

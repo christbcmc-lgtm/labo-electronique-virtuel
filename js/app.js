@@ -160,7 +160,7 @@ const AFTER = {
   'reset-email': () => afterResetEmailView(), 'change-password': () => afterChangePasswordView(),
   dashboard: () => afterDashboardView(), 'shared': () => afterDashboardView(), 'composants': () => afterComposantsView(),
   project: () => afterProjectView(), devis: () => afterDevisView(), dimensionnement: () => afterDimensionnementView(),
-  plan: () => afterPlanView(), plan3d: () => afterPlan3DView(),
+  plan: () => afterPlanView(), plan3d: () => afterPlan3DView(), cad3d: () => afterCad3DView(),
   discussion: () => afterDiscussionView(), messages: () => afterMessagesView(),
   admin: () => afterAdminView(), compte: () => afterCompteView(),
 };
@@ -193,6 +193,7 @@ async function render(){
   if (base !== 'project') closePresenceChannel();
   if (base !== 'plan' && window.AtelierPlanEditor) window.AtelierPlanEditor.unmount();
   if (base !== 'plan3d') unmountPlan3D();
+  if (base !== 'cad3d') unmountCad3D();
   if (needsAuth && !auth.currentUser){ go('login'); return; }
   ensureCustomComponentsLoaded(); // volontairement non attendu (voir commentaire de la fonction)
   if (auth.currentUser && auth.currentUser.mustChangePassword && base !== 'change-password'){ go('change-password'); return; }
@@ -203,7 +204,7 @@ async function render(){
     'reset-email': viewResetEmail, 'change-password': viewChangePassword,
     'dashboard' : () => viewDashboard(param), 'shared': viewShared, 'composants': viewComposants,
     'project'   : () => viewProject(param), 'devis': () => viewDevis(param), 'dimensionnement': () => viewDimensionnement(param),
-    'plan'      : () => viewPlan(param), 'plan3d': () => viewPlan3D(param),
+    'plan'      : () => viewPlan(param), 'plan3d': () => viewPlan3D(param), 'cad3d': () => viewCad3D(param),
     'discussion': viewDiscussion, 'messages': viewMessages,
     'compte'    : viewCompte, 'admin': () => viewAdmin(param || 'overview'),
   };

@@ -32,6 +32,7 @@ const DB = {
   storageRequests: [], // { id, userId, montantOctets, motif, statut:'en attente'|'acceptee'|'refusee', createdAt }
   devis: {},           // projectId -> { lignes:[], remisePct, tauxTaxe, taxeActive }
   plans: {},           // projectId -> projet Atelier Plan (murs/ouvertures/symboles/circuits...), voir js/plan.js
+  cad3d: {},           // projectId -> projet CAO mécanique 3D (corps paramétriques), voir js/cao3d.js
   customComponents: {},// userId -> [ fiche composant personnalisé ] (§23/§26), voir js/composant-builder.js
   notifications: [],   // { id, userId, type:'important'|'normal', titre, texte, lien, lu, notified, createdAt }
 };
@@ -60,6 +61,7 @@ function loadDB(){
     });
     if (!Array.isArray(DB.notifications)) DB.notifications = [];
     if (!DB.plans || typeof DB.plans !== 'object') DB.plans = {};
+    if (!DB.cad3d || typeof DB.cad3d !== 'object') DB.cad3d = {};
     if (!DB.customComponents || typeof DB.customComponents !== 'object') DB.customComponents = {};
   }catch(e){}
 }
@@ -454,6 +456,18 @@ const mockDb = {
   async savePlan(projectId, plan){
     await wait(80);
     DB.plans[projectId] = plan;
+    persistDB();
+    return { error:null };
+  },
+
+  // CAO mécanique 3D (§ Phase 3 du cahier) : stocké par projet, même principe que le plan ci-dessus.
+  async getCad3d(projectId){
+    await wait(80);
+    return { data: DB.cad3d[projectId] || null, error:null };
+  },
+  async saveCad3d(projectId, data){
+    await wait(80);
+    DB.cad3d[projectId] = data;
     persistDB();
     return { error:null };
   },
@@ -866,6 +880,16 @@ const supabaseDb = {
   },
   async savePlan(projectId, plan){
     const { error } = await supabaseClient.from('projects').update({ plan }).eq('id', projectId);
+    return { error: error ? { message:error.message } : null };
+  },
+
+  async getCad3d(projectId){
+    const { data, error } = await supabaseClient.from('projects').select('cad3d').eq('id', projectId).single();
+    if (error) return { data:null, error:null };
+    return { data: data.cad3d || null, error:null };
+  },
+  async saveCad3d(projectId, data){
+    const { error } = await supabaseClient.from('projects').update({ cad3d: data }).eq('id', projectId);
     return { error: error ? { message:error.message } : null };
   },
 

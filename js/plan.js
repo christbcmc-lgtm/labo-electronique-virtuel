@@ -2321,6 +2321,7 @@ async function viewPlan(projectId) {
         <a href="#/dimensionnement/${projectId}">Dimensionnement</a>
         <a href="#/plan/${projectId}" class="active">Plan</a>
         <a href="#/plan3d/${projectId}">3D</a>
+        <a href="#/cad3d/${projectId}">CAO 3D</a>
       </div>
     </div>
     <div style="flex:1;min-height:0;position:relative">${planShellHTML()}</div>

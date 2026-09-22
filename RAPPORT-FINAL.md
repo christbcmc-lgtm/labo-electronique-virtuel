@@ -1575,3 +1575,93 @@ backend (`db.listCustomComponents`), et retiré de `findDef()` après suppressio
   dans `SYM`), mais il ne réapparaît plus dans la recherche — comportement documenté dans le
   message de confirmation de suppression, pas une fonctionnalité de "composant orphelin"
   travaillée en profondeur.
+
+## ADDENDUM 13 — CAO mécanique 3D (Phase 3 du cahier, demandée explicitement)
+
+Nouveau **6ᵉ onglet « CAO 3D »** (`#/cad3d/:id`, `js/cao3d.js` + `css/cao3d.css`), sur le même
+principe de montage/démontage et de repli gracieux sans Three.js/WebGL que la vue 3D du bâtiment
+(addendum 8). C'est le chantier explicitement décrit dans `NOTES_REPRISE_2026.md` (point 8) comme
+« une tout autre ampleur » — traité cette session sur demande explicite du client, avec un
+périmètre délimité honnêtement plutôt qu'une promesse de noyau CAO complet non fiable.
+
+### Choix de périmètre assumé : pas d'opérations booléennes 3D générales
+
+Le cahier décrit un enchaînement esquisse → extrusion/révolution → **booléens (union/
+soustraction/intersection)** → arbre de conception. Les booléens 3D fiables entre solides
+quelconques nécessitent une bibliothèque CSG dédiée (ex. `three-bvh-csg`) — non incluse ici, et
+dont la fiabilité n'aurait de toute façon pas pu être vérifiée dans un environnement sans
+navigateur réel. Plutôt que d'intégrer une dépendance supplémentaire non vérifiable ou de
+simuler un faux résultat booléen, deux mécanismes honnêtes et réellement fiables couvrent
+l'essentiel des besoins réels :
+
+- **Perçage** : les trous se creusent dans l'esquisse 2D **avant** extrusion
+  (`Shape.holes` de Three.js — une vraie ouverture traversante calculée par le moteur de
+  triangulation, pas un artifice visuel). Couvre le cas le plus fréquent en pratique : plaques,
+  brides, supports, profilés percés.
+- **Assemblage** : plusieurs corps se positionnent (translation/rotation) dans la même scène,
+  comme un vrai assemblage mécanique — pas de fusion en un solide unique. La nomenclature et la
+  masse totale fonctionnent normalement sur un assemblage de plusieurs corps.
+
+Documenté explicitement dans l'aide intégrée du module (bouton « Aide ») pour que l'utilisateur
+ne s'attende pas à un booléen général qui n'existe pas.
+
+### Ce qui a été construit
+
+- **Primitives paramétriques** : boîte, cylindre, sphère, cône/tronc, tube (creux, via esquisse
+  anneau + extrusion), tore.
+- **Esquisse extrudée** : profil rectangle ou cercle, saisi numériquement (pas de dessin à la
+  souris — une simplification assumée, cf. limites ci-dessous), trous traversants optionnels
+  ("cx,cy,d" en liste), profondeur, option symétrique.
+- **Révolution** : profil "rayon,hauteur" tourné autour de l'axe vertical, angle réglable
+  (tour complet ou partiel).
+- **Bibliothèque de pièces standard paramétriques** : vis (M3 à M12, tête + tige, cotes
+  normalisées d'usage courant), écrou (hexagonal percé), rondelle (anneau), profilé
+  (carré/rond creux), engrenage (approximation disque au diamètre primitif + alésage — la
+  denture réelle n'est pas modélisée géométriquement, voir limites).
+- **Arbre de conception** : liste des corps, visibilité, sélection ; modifier un paramètre
+  régénère immédiatement la géométrie de ce corps (régénération par re-création complète du
+  maillage à partir de ses paramètres stockés — un modèle de régénération simple mais réel,
+  pas un historique de fonctions chaînées comme un vrai noyau paramétrique).
+- **Matériaux avec masse volumique** → masse par corps et masse totale de l'assemblage,
+  affichées en continu et exportables en CSV (nomenclature).
+- **Coupe horizontale réglable** (plan de clip Three.js, même technique que la vue 3D du
+  bâtiment) pour voir l'intérieur d'un assemblage.
+- **Export STL binaire** (`THREE.STLExporter`, chargé en CDN comme `OrbitControls`) —
+  utilisable directement pour l'impression 3D ou l'import dans un autre logiciel de CAO.
+- Persistance par projet (`db.getCad3d`/`saveCad3d`, `js/backend.js`, mock + Supabase, colonne
+  `cad3d` sur `projects`), même principe que le plan de bâtiment.
+
+### Vérifié par exécution réelle (`npm test`, **265 vérifications, 0 échec**, 247 avant cette
+section + 18 nouvelles)
+
+- **Géométrie pure vérifiée analytiquement**, sans dépendance à Three.js/WebGL : volume d'une
+  boîte, d'un cylindre (comparé à la formule πr²h), d'une esquisse extrudée avec trou (comparée
+  au calcul analytique, écart résiduel expliqué et attendu — approximation polygonale du
+  cercle), d'une révolution (comparée au théorème de Pappus-Guldin sur un cas simple dont le
+  résultat est calculable à la main), masse d'un cube d'acier de 100 mm (7,85 kg — masse
+  volumique 7850 kg/m³, résultat rond volontairement choisi comme cas de test vérifiable),
+  volumes positifs pour les pièces composites (vis, écrou), nommage automatique distinct pour
+  deux corps du même type, rejet d'un fichier de version inconnue.
+- **Repli gracieux vérifié en conditions réelles** (même situation que pour la vue 3D du
+  bâtiment) : ce harnais ne charge aucun script CDN, donc `Three.js`/`STLExporter` sont
+  absents — le module le détecte et affiche un message au lieu de planter, sans erreur JS.
+- **Persistance** : cycle complet `db.saveCad3d()` → `db.getCad3d()` vérifié par le vrai chemin
+  backend (mock).
+
+### Ce qui n'a PAS été vérifié (honnêteté, même limitation que tout ce projet)
+
+- **Rendu 3D réel** : comme pour la vue 3D du bâtiment, aucune vérification visuelle dans un
+  vrai navigateur n'a été possible dans cet environnement. Non vérifiés visuellement en
+  particulier : l'apparence des maillages générés (esquisse/révolution/bibliothèque), l'orbite
+  à la souris, le curseur de coupe, l'export STL ouvert dans un logiciel tiers.
+- **Pas d'opérations booléennes 3D générales** (voir choix de périmètre ci-dessus) — limite
+  assumée et documentée dans l'interface, pas un oubli.
+- **Pas d'esquisse dessinée à la souris** : les profils d'extrusion/révolution se saisissent
+  sous forme de listes de coordonnées numériques, pas par un éditeur d'esquisse visuel sur un
+  plan — simplification délibérée compte tenu de l'effort que demanderait un éditeur de
+  croquis 2D contraint (cotes, contraintes géométriques) fiable.
+- **Engrenage approximatif** : représenté comme un disque au diamètre primitif avec alésage,
+  sans denture géométrique réelle — suffisant pour l'encombrement/la masse indicative d'un
+  assemblage, explicitement pas un profil d'engrenage usinable.
+- **Export STL non vérifié dans un logiciel tiers** (pas d'environnement pour le faire ici) —
+  seule la présence de la fonction et son exécution sans exception ont pu être confirmées.
