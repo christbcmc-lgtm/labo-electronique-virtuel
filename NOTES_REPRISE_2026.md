@@ -162,7 +162,13 @@ notamment ce qui a pu être vérifié (géométrie pure, repli gracieux sans Thr
 ce qui ne l'a pas pu (rendu WebGL réel, chargement réel du CDN — même limitation d'environnement
 que pour tout le reste de ce projet, voir point 4).
 
-## 8. CAO mécanique 3D — PROCHAINE ÉTAPE SUGGÉRÉE, NON COMMENCÉE
+## 8. CAO mécanique 3D — FAIT (session suivante), voir point 12 et RAPPORT-FINAL.md addendum 13
+
+**Mise à jour** : ce chantier, décrit ci-dessous comme différé, a finalement été traité dans une
+session suivante sur demande explicite du client — voir le point 12 plus bas pour ce qui a été
+livré et le périmètre assumé (pas d'opérations booléennes 3D générales). Le texte original de ce
+point est conservé tel quel ci-dessous à titre d'historique (c'est la description du besoin telle
+que comprise avant réalisation, utile pour comparer à ce qui a été effectivement livré) :
 
 C'est la Phase 3 du cahier reçu, volontairement laissée de côté cette session (chantier d'une
 tout autre ampleur que la vue 3D du bâtiment ci-dessus — voir la justification dans l'addendum
@@ -199,8 +205,9 @@ mais les opérations booléennes fiables nécessitent une bibliothèque CSG déd
 - [ ] Faire vérifier le rendu 3D réel (point 7) dans un vrai navigateur dès que possible —
       c'est la partie la plus visuelle de tout ce qui a été livré jusqu'ici, et la seule à
       n'avoir reçu aucune vérification pixel, même approximative.
-- [ ] Décider si la CAO mécanique 3D (point 8) est réellement souhaitée avant d'y investir une
-      session complète — c'est de loin le chantier le plus lourd de tout ce qui reste.
+- [x] CAO mécanique 3D (point 8) — faite, périmètre délimité (voir point 12).
+- [ ] Décider si les opérations booléennes 3D générales (union/soustraction entre solides
+      quelconques, hors périmètre du point 12) valent l'ajout d'une dépendance CSG dédiée.
 
 ## 9. Énergies renouvelables — 17 composants manquants ajoutés cette session (voir RAPPORT-FINAL.md, addendum 9)
 
