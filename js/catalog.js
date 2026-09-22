@@ -1321,10 +1321,19 @@ const INSTRUMENT_LIBRARY = [
 /* ==========================================================================
    RECHERCHE ET ACCÈS AU CATALOGUE
    ========================================================================== */
+// Composants personnalisés (§23/§26) : liste réactualisée à la connexion/à l'ouverture d'un
+// projet par js/composant-builder.js (setCustomComponents), propre à l'utilisateur connecté —
+// jamais écrite dans les tableaux statiques ci-dessus (qui restent le catalogue partagé).
+// Chaque fiche custom porte déjà `groupe:'personnel'` (posé par setCustomComponents), inutile
+// de le rajouter dans fullCatalog().
+let CUSTOM_COMPONENTS = [];
+function setCustomComponents(list){ CUSTOM_COMPONENTS = (list||[]).map(c => ({ ...c, groupe:'personnel' })); }
+
 function fullCatalog(){
   const out = COMMON_COMPONENTS.map(c => ({ ...c, groupe:'commun' }));
   Object.entries(COMPONENT_LIBRARY).forEach(([espace, list]) => list.forEach(c => out.push({ ...c, groupe:espace })));
   INSTRUMENT_LIBRARY.forEach(c => out.push({ ...c, groupe:'instrument' }));
+  CUSTOM_COMPONENTS.forEach(c => out.push(c));
   return out;
 }
 function searchCatalog(query){
@@ -1337,7 +1346,8 @@ function searchCatalog(query){
 function findDef(typeId){
   const common = COMMON_COMPONENTS.find(c=>c.id===typeId); if (common) return common;
   for (const list of Object.values(COMPONENT_LIBRARY)) { const f = list.find(c=>c.id===typeId); if (f) return f; }
-  return INSTRUMENT_LIBRARY.find(c=>c.id===typeId);
+  const instr = INSTRUMENT_LIBRARY.find(c=>c.id===typeId); if (instr) return instr;
+  return CUSTOM_COMPONENTS.find(c=>c.id===typeId);
 }
 // Regroupe une liste de composants par famille, en conservant l'ordre d'apparition (pour affichage en catégories repliables — §36).
 function groupByFamille(list){

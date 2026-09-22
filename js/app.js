@@ -165,6 +165,25 @@ const AFTER = {
   admin: () => afterAdminView(), compte: () => afterCompteView(),
 };
 
+// Charge les composants personnalisés (§23/§26) de l'utilisateur connecté une seule fois par
+// session (pas à chaque navigation) : setCustomComponents() les rend immédiatement utilisables
+// partout où le catalogue est consulté (recherche, éditeur de schéma) — voir js/catalog.js.
+// Volontairement PAS attendue (pas de `await`) par son appelant dans render() : cette fonction
+// est asynchrone (appel réseau/mock), et l'attendre retarderait TOUTE navigation (y compris les
+// redirections d'authentification qui suivent immédiatement dans render() — un bug réel a été
+// observé en la faisant bloquer : elle s'intercalait entre la connexion et la redirection
+// "changement de mot de passe obligatoire", cassant ce parcours). Les composants personnalisés
+// ne sont utiles qu'une fois sur l'éditeur/la page Composants, largement le temps qu'elle finisse.
+let __customComponentsLoaded = null;
+async function ensureCustomComponentsLoaded(){
+  if (!auth.currentUser){ if (__customComponentsLoaded !== null){ setCustomComponents([]); __customComponentsLoaded = null; } return; }
+  if (__customComponentsLoaded === auth.currentUser.id) return;
+  __customComponentsLoaded = auth.currentUser.id;
+  const { data } = await db.listCustomComponents(auth.currentUser.id);
+  setCustomComponents(data || []);
+}
+window.refreshCustomComponents = async () => { __customComponentsLoaded = null; await ensureCustomComponentsLoaded(); };
+
 let __renderGen = 0;
 async function render(){
   const myGen = ++__renderGen;
@@ -175,6 +194,7 @@ async function render(){
   if (base !== 'plan' && window.AtelierPlanEditor) window.AtelierPlanEditor.unmount();
   if (base !== 'plan3d') unmountPlan3D();
   if (needsAuth && !auth.currentUser){ go('login'); return; }
+  ensureCustomComponentsLoaded(); // volontairement non attendu (voir commentaire de la fonction)
   if (auth.currentUser && auth.currentUser.mustChangePassword && base !== 'change-password'){ go('change-password'); return; }
   if (base === 'admin' && auth.currentUser?.role !== 'admin'){ go('dashboard'); toast("Accès réservé à l'administrateur."); return; }
 
@@ -522,9 +542,10 @@ async function viewComposants(){
         <div class="ws-tabs-top">
           <a href="#" data-comp-mode="recherche" class="${mode==='recherche'?'active':''}">Recherche &amp; favoris</a>
           <a href="#" data-comp-mode="parcourir" class="${mode==='parcourir'?'active':''}">Parcourir la bibliothèque</a>
+          <a href="#" data-comp-mode="creer" class="${mode==='creer'?'active':''}">Créer un composant</a>
         </div>
       </div>
-      ${mode === 'parcourir' ? viewComposantsParcourirHTML() : viewComposantsRechercheHTML()}
+      ${mode === 'parcourir' ? viewComposantsParcourirHTML() : mode === 'creer' ? viewComposantCreerHTML() : viewComposantsRechercheHTML()}
     </div></div>`;
 }
 function viewComposantsRechercheHTML(){
@@ -642,6 +663,8 @@ function afterComposantsView(){
     state.compMode = a.dataset.compMode;
     render();
   });
+
+  if (state.compMode === 'creer') wireComposantCreer();
 
   document.getElementById('lib-browser')?.addEventListener('click', (e) => {
     const famBtn = e.target.closest('[data-browse-fam]');

@@ -94,6 +94,17 @@ create table if not exists public.projects (
   updated_at    timestamptz not null default now()
 );
 
+-- Composants personnalisés (§23/§26) : propres à leur créateur, réutilisables dans tous ses
+-- projets. `id` est l'identifiant de type de composant (même rôle que les clés statiques de
+-- js/catalog.js, ex. "resistance") — préfixé "custom_" côté client pour ne jamais entrer en
+-- collision avec le catalogue partagé ni avec les composants d'un autre utilisateur.
+create table if not exists public.custom_components (
+  id          text primary key,
+  owner_id    uuid not null references public.profiles(id) on delete cascade,
+  definition  jsonb not null,
+  created_at  timestamptz not null default now()
+);
+
 create table if not exists public.project_collaborators (
   project_id  uuid not null references public.projects(id) on delete cascade,
   user_id     uuid not null references public.profiles(id) on delete cascade,
@@ -264,6 +275,7 @@ alter table public.suggestions           enable row level security;
 alter table public.group_members         enable row level security;
 alter table public.storage_requests      enable row level security;
 alter table public.notifications         enable row level security;
+alter table public.custom_components     enable row level security;
 
 -- PROFILES : lecture ouverte à tout utilisateur connecté (annuaire nécessaire
 -- pour la messagerie, les noms d'auteurs de commentaires/suggestions, etc. —
@@ -409,6 +421,13 @@ create policy "notifications_insert_authenticated" on public.notifications
   for insert with check (auth.role() = 'authenticated');
 create policy "notifications_update_own" on public.notifications
   for update using (user_id = auth.uid());
+
+-- CUSTOM_COMPONENTS (§23/§26) : entièrement privés à leur créateur — ni lecture ni écriture
+-- pour les autres utilisateurs (contrairement aux profils/messages ci-dessus, un composant
+-- personnalisé n'a pas vocation à être visible par d'autres avant un partage explicite,
+-- fonctionnalité non prévue dans ce schéma).
+create policy "custom_components_owner_all" on public.custom_components
+  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 
 -- ============================================================================
 -- FIN DU SCHÉMA.

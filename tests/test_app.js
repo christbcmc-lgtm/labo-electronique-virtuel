@@ -39,7 +39,7 @@ async function boot(){
   // browsers) — injecting real <script> elements does, exactly like the browser loading js/*.js
   // via <script src>. This is what actually behaves like the shipped page.
   const doc0 = dom.window.document;
-  for (const f of ['js/config.js','js/catalog.js','js/backend.js','js/editor.js','js/pdf.js','js/devis.js','js/dimensionnement.js','js/plan.js','js/plan3d.js','js/app.js']){
+  for (const f of ['js/config.js','js/catalog.js','js/backend.js','js/editor.js','js/pdf.js','js/devis.js','js/dimensionnement.js','js/plan.js','js/plan3d.js','js/composant-builder.js','js/app.js']){
     const s = doc0.createElement('script');
     s.textContent = readFile(f);
     doc0.body.appendChild(s);
@@ -777,6 +777,38 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   await tick(100);
   assert(win.getFavoris().includes('ne555'), 'favori ajouté depuis la page de recherche dédiée');
   win.toggleFavorite('ne555'); // nettoyage
+
+  section('Constructeur de composant personnalisé (§23/§26)');
+  click(win, doc.querySelector('[data-comp-mode="creer"]'));
+  await tick(150);
+  assert(!!doc.getElementById('cb-nom'), 'formulaire du constructeur de composant affiché');
+  setVal(win, doc.getElementById('cb-nom'), 'Module capteur test');
+  setVal(win, doc.getElementById('cb-nbornes'), '3');
+  doc.getElementById('cb-nbornes').dispatchEvent(new win.Event('input', { bubbles:true }));
+  await tick(80);
+  assert(doc.querySelectorAll('.cb-pinname').length === 3, 'trois champs de nom de broche générés après avoir saisi 3 bornes');
+  setVal(win, doc.querySelectorAll('.cb-pinname')[0], 'VCC');
+  setVal(win, doc.querySelectorAll('.cb-pinname')[1], 'GND');
+  setVal(win, doc.querySelectorAll('.cb-pinname')[2], 'OUT');
+  click(win, doc.getElementById('cb-preview'));
+  await tick(100);
+  assert(doc.querySelector('#cb-preview-box svg'), 'un aperçu du symbole (boîtier + broches) est généré automatiquement, sans que l\'utilisateur ait dessiné quoi que ce soit');
+  assert(!doc.getElementById('cb-save').disabled, 'le bouton Enregistrer est activé une fois l\'aperçu généré');
+  click(win, doc.getElementById('cb-save'));
+  await tick(250);
+  const customDef = win.findDef('custom_module_capteur_test');
+  assert(!!customDef, 'le composant personnalisé est immédiatement retrouvable par findDef() après enregistrement (id=' + (customDef && customDef.id) + ')');
+  assert(customDef && customDef.terminals.length === 3, 'le composant personnalisé enregistré a bien ses 3 bornes');
+  assert(customDef && Array.isArray(customDef.pinNames) && customDef.pinNames.join(',') === 'VCC,GND,OUT', 'le brochage saisi (VCC/GND/OUT) est conservé tel quel (résultat: ' + JSON.stringify(customDef && customDef.pinNames) + ')');
+  assert(win.searchCatalog('Module capteur test').some(c => c.id === 'custom_module_capteur_test'), 'le composant personnalisé apparaît dans la recherche globale du catalogue, comme n\'importe quel composant existant');
+  assert(!!doc.querySelector('[data-mine-id="custom_module_capteur_test"]'), 'le composant personnalisé apparaît dans la liste "Mes composants"');
+  const { data: savedList } = await win.db.listCustomComponents(win.auth.currentUser.id);
+  assert(savedList.some(c => c.id === 'custom_module_capteur_test'), 'le composant personnalisé est bien persisté côté backend (db.listCustomComponents)');
+  const origConfirmCb = win.confirm; win.confirm = () => true;
+  click(win, doc.querySelector('[data-del-mine="custom_module_capteur_test"]'));
+  await tick(250);
+  win.confirm = origConfirmCb;
+  assert(!win.findDef('custom_module_capteur_test'), 'le composant personnalisé supprimé n\'est plus retrouvable par findDef()');
 
   section('Bibliothèque 3 colonnes — Famille → Sous-famille → Fiche (§6/§7 des mises à jour reçues)');
   click(win, doc.querySelector('[data-comp-mode="parcourir"]'));

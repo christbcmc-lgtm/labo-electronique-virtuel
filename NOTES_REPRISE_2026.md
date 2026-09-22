@@ -224,3 +224,19 @@ Le point ci-dessus (dimensionner ce qui a été ajouté au point 9) est traité 
 « Éolien / Hydraulique / Solaire thermique » dans le module Dimensionnement, formules physiques
 standard (puissance du vent, puissance hydraulique, production solaire thermique), export PDF
 individuel comme les onglets existants. Détail complet dans l'addendum 10.
+
+## 11. Constructeur de composant personnalisé — fait cette session (voir RAPPORT-FINAL.md, addendum 12)
+
+Nouvelle page "Créer un composant" (3e onglet de la page Composants) : génère automatiquement
+le symbole via icTemplate() (même gabarit que les CI génériques, donc géométriquement correct
+par construction), stocké par utilisateur (nouvelle table Supabase `custom_components` + RLS),
+immédiatement utilisable dans tous ses projets (recherche, éditeur de schéma) sans avoir touché
+au reste du moteur. Détail complet dans l'addendum 12.
+
+Reste explicitement non couvert :
+- Choix de forme de boîtier (un seul gabarit rectangulaire disponible actuellement).
+- Modèle électrique/simulation pour un composant personnalisé (le cahier distingue
+  explicitement symbole graphique et modèle électrique, §24 — seul le symbole est couvert ici,
+  ces composants ne sont jamais `simulable`).
+- Import depuis un fichier externe (JSON/SVG) — seule la création via formulaire est
+  disponible, pas d'import de définition déjà existante.

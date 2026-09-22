@@ -1511,3 +1511,67 @@ dans cet environnement (limitation documentée depuis le début de ce projet, vo
 `NOTES_REPRISE_2026.md`). Ce qui pouvait être tranché de façon fiable sans navigateur — « la
 convention utilisée est-elle la bonne pour ce type d'appareil » — l'a été pour toute la liste
 signalée comme douteuse.
+
+## ADDENDUM 12 — Constructeur de composant personnalisé (§23/§26)
+
+Nouvelle page **« Créer un composant »** (3ᵉ onglet de la page Composants, `js/composant-builder.js`),
+qui répond directement à la demande du cahier : permettre à l'utilisateur d'ajouter un composant
+au catalogue sans toucher au code.
+
+### Choix d'architecture
+
+Plutôt que de construire un éditeur de symbole graphique libre (dessin à main levée, hors de
+portée raisonnable pour une session, et risqué : un symbole mal dessiné avec des bornes
+décorrélées de son tracé est exactement le défaut que ce projet corrige activement ailleurs —
+voir addenda 6 et 11), le constructeur **réutilise `icTemplate()`**, le gabarit déjà utilisé par
+~150 circuits intégrés du catalogue existant et déjà vérifié géométriquement
+(`tests/verify_catalog.js`) : l'utilisateur ne saisit qu'un nombre de bornes, le symbole
+(boîtier + broches numérotées, hauteur qui s'adapte automatiquement à la densité de broches —
+addendum 6) est généré et donc **automatiquement correct**, jamais désaligné.
+
+- Composant stocké **par utilisateur** (pas par projet) : `db.getPlan`/`saveCustomComponent`/
+  `deleteCustomComponent` (`js/backend.js`, mock + Supabase, nouvelle table
+  `custom_components` avec RLS stricte — un utilisateur ne voit jamais les composants d'un
+  autre) et immédiatement réutilisable dans **tous** ses projets.
+- Intégration au moteur existant par un seul point d'entrée : `CUSTOM_COMPONENTS` (nouveau
+  tableau mutable dans `js/catalog.js`), fusionné dans `fullCatalog()`/`findDef()`. Résultat :
+  la recherche de composants (page dédiée **et** panneau de l'éditeur de schéma, qui appellent
+  toutes deux `searchCatalog()`), le placement sur le canevas, l'affichage du symbole, le PDF —
+  **aucun de ces systèmes n'a eu besoin d'être modifié** pour comprendre les composants
+  personnalisés : c'est exactement l'extensibilité « ajouter une ligne à un tableau » déjà
+  documentée en tête de `js/catalog.js` (§16), simplement étendue à une source de données
+  chargée à l'exécution plutôt qu'écrite dans le code.
+- Chargement des composants personnalisés une fois par session de connexion
+  (`ensureCustomComponentsLoaded()`, `js/app.js`), **volontairement non bloquant** : un premier
+  essai qui l'attendait (`await`) dans `render()` a cassé le parcours de redirection après
+  connexion (le changement de mot de passe obligatoire n'était plus déclenché) — corrigé en le
+  laissant s'exécuter en tâche de fond, cf. commentaire dans le code. Ce genre de régression est
+  précisément ce que la suite de tests est censée attraper, et elle l'a fait : détectée avant le
+  commit, pas après.
+
+### Vérifié par exécution réelle
+
+`npm test` : **247 vérifications, 0 échec** (236 avant + 11 nouvelles) : formulaire affiché,
+génération dynamique des champs de nom de broche selon le nombre saisi, aperçu du symbole généré
+automatiquement, activation du bouton d'enregistrement, retrouvable par `findDef()` juste après
+enregistrement avec le bon nombre de bornes et le brochage saisi conservé tel quel, présent dans
+la recherche globale du catalogue, présent dans la liste « Mes composants », persisté côté
+backend (`db.listCustomComponents`), et retiré de `findDef()` après suppression.
+
+### Ce qui n'a pas été vérifié / limites connues
+
+- **Rendu visuel réel** du formulaire et de l'aperçu — même limitation que pour tout ce projet
+  (pas de navigateur réel disponible dans cet environnement).
+- **Supabase réel** : la table `custom_components` et sa policy RLS n'ont pu être vérifiées que
+  par relecture attentive (cohérente avec le style des policies déjà en place), jamais exécutées
+  contre un vrai projet Supabase.
+- Le symbole généré reste volontairement **simple** (boîtier rectangulaire + broches) : pas de
+  forme personnalisée (cercle, triangle, boîtier réaliste) — cohérent avec le choix de ne
+  jamais produire un symbole géométriquement incorrect, mais moins riche visuellement qu'un
+  composant "vedette" dessiné à la main. À faire évoluer si le besoin s'en fait sentir
+  (par exemple : proposer un choix parmi 2-3 gabarits de boîtier plutôt qu'un seul).
+- Suppression d'un composant personnalisé : les schémas qui l'utilisent déjà continuent de
+  l'afficher correctement tant que la page n'est pas rechargée (le symbole reste en mémoire
+  dans `SYM`), mais il ne réapparaît plus dans la recherche — comportement documenté dans le
+  message de confirmation de suppression, pas une fonctionnalité de "composant orphelin"
+  travaillée en profondeur.
