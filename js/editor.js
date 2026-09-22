@@ -154,6 +154,27 @@ function terminalAbsPos(item, idx){
   return { x:item.x + r.x, y:item.y + r.y };
 }
 
+/* ==========================================================================
+   EXTRÉMITÉ DE FIL GÉNÉRALISÉE (§12 du cahier fils) : une extrémité est soit
+   une vraie borne de composant { itemId, term }, soit un point de raccordement
+   sur un AUTRE fil déjà existant { tap:{ wireId, x, y } } — jamais les deux.
+   Toute la logique (rendu, sélection, diagnostic électrique) passe par ces
+   deux fonctions plutôt que d'aller lire itemId/term directement, pour que
+   les deux formes d'extrémité restent interchangeables partout.
+   ========================================================================== */
+function endpointAbsPos(schema, end){
+  if (end.tap) return { x: end.tap.x, y: end.tap.y };
+  const item = schema.items.find(i => i.id === end.itemId);
+  return item ? terminalAbsPos(item, end.term) : null;
+}
+function wireEndKey(end){
+  // Clé stable pour l'union-find électrique. Un point de raccordement n'est pas une broche :
+  // il est uniquement identifié par le fil qu'il tape + sa position (voir l'union explicite
+  // ajoutée dans buildWireUnion, qui le rattache au même nœud que ce fil tapé).
+  return end.tap ? ('tap#'+end.tap.wireId+'@'+Math.round(end.tap.x)+','+Math.round(end.tap.y))
+                 : (end.itemId+'#'+end.term);
+}
+
 /* ---- Routage orthogonal (§5) : jamais de diagonale, angles à 90° ---- */
 function orthoPoints(a, b){
   if (Math.abs(a.x-b.x) < 0.5 || Math.abs(a.y-b.y) < 0.5) return [a, b]; // déjà aligné
@@ -186,6 +207,30 @@ function nearestTerminal(cur, svg, exclude){
   const tolerance = screenPxToCanvasUnits(8, svg);
   return (best && bestDist <= tolerance) ? best : null;
 }
+// Point le plus proche sur un SEGMENT de fil existant (§12) : permet de démarrer/terminer un
+// nouveau fil directement sur un fil déjà tracé, pas seulement sur une borne de composant.
+function nearestWirePoint(cur, svg, excludeWireId){
+  let best = null, bestDist = Infinity;
+  wsState.schema.wires.forEach(w => {
+    if (w.id === excludeWireId) return;
+    wireSegments(wsState.schema, w).forEach(([p,q]) => {
+      const dx = q.x-p.x, dy = q.y-p.y;
+      const len2 = dx*dx+dy*dy;
+      let t = len2 ? ((cur.x-p.x)*dx + (cur.y-p.y)*dy)/len2 : 0;
+      t = Math.max(0, Math.min(1, t));
+      const proj = { x:p.x+t*dx, y:p.y+t*dy };
+      const d = Math.hypot(proj.x-cur.x, proj.y-cur.y);
+      if (d < bestDist){ bestDist = d; best = { tap:{ wireId:w.id, x:Math.round(proj.x), y:Math.round(proj.y) }, pos:{ x:Math.round(proj.x), y:Math.round(proj.y) } }; }
+    });
+  });
+  const tolerance = screenPxToCanvasUnits(8, svg);
+  return (best && bestDist <= tolerance) ? best : null;
+}
+// Cible d'aimantation, toutes sources confondues : une vraie borne est toujours prioritaire
+// sur un simple point de raccordement sur fil (plus précis, moins ambigu pour l'utilisateur).
+function nearestSnapTarget(cur, svg, excludeTerminal, excludeWireId){
+  return nearestTerminal(cur, svg, excludeTerminal) || nearestWirePoint(cur, svg, excludeWireId);
+}
 
 /* ==========================================================================
    NŒUDS ÉLECTRIQUES À UNE INTERSECTION DE FILS (priorité explicitement
@@ -203,9 +248,9 @@ function nearestTerminal(cur, svg, exclude){
    réels, puisqu'elles sont physiquement la même broche.
    ========================================================================== */
 function wireSegments(schema, wire){
-  const ai = schema.items.find(i=>i.id===wire.a.itemId), bi = schema.items.find(i=>i.id===wire.b.itemId);
-  if (!ai || !bi) return [];
-  const pts = orthoPoints(terminalAbsPos(ai, wire.a.term), terminalAbsPos(bi, wire.b.term));
+  const a = endpointAbsPos(schema, wire.a), b = endpointAbsPos(schema, wire.b);
+  if (!a || !b) return [];
+  const pts = orthoPoints(a, b);
   const segs = [];
   for (let i=0;i<pts.length-1;i++) segs.push([pts[i], pts[i+1]]);
   return segs;
@@ -610,12 +655,22 @@ function buildWireUnion(schema){
   const parent = new Map();
   const find = (k) => { if (!parent.has(k)) parent.set(k,k); let r=k; while (parent.get(r)!==r) r=parent.get(r); parent.set(k,r); return r; };
   const union = (a,b) => { const ra=find(a), rb=find(b); if (ra!==rb) parent.set(ra,rb); };
-  schema.wires.forEach(w => union(w.a.itemId+'#'+w.a.term, w.b.itemId+'#'+w.b.term));
+  schema.wires.forEach(w => union(wireEndKey(w.a), wireEndKey(w.b)));
+  // Raccordement sur un fil existant (§12 du cahier fils) : électriquement confondu avec le
+  // fil tapé — on l'unit explicitement à l'une de ses deux bornes (déjà unies entre elles
+  // ci-dessus, donc rejoindre l'une revient à rejoindre tout le fil tapé).
+  schema.wires.forEach(w => {
+    [w.a, w.b].forEach(end => {
+      if (!end.tap) return;
+      const tapped = schema.wires.find(x => x.id === end.tap.wireId);
+      if (tapped) union(wireEndKey(end), wireEndKey(tapped.a));
+    });
+  });
   // Nœuds explicites à une intersection de fils (§2 des notes en cours) : deux fils qui se
   // croisent ne sont électriquement communs que si l'utilisateur a placé un nœud à ce point.
   (schema.junctions||[]).forEach(j => {
     const touching = schema.wires.filter(w => wireSegments(schema, w).some(seg => pointOnSegment(seg, j)));
-    for (let i=1;i<touching.length;i++) union(touching[0].a.itemId+'#'+touching[0].a.term, touching[i].a.itemId+'#'+touching[i].a.term);
+    for (let i=1;i<touching.length;i++) union(wireEndKey(touching[0].a), wireEndKey(touching[i].a));
   });
   return { find, union };
 }
@@ -636,7 +691,7 @@ function diagnosticHTML(schema){
   const items = schema.items, wires = schema.wires;
   if (items.length === 0) return `<div class="empty">Aucun composant posé pour l'instant.</div>`;
   const connected = new Set();
-  wires.forEach(w => { connected.add(w.a.itemId+'#'+w.a.term); connected.add(w.b.itemId+'#'+w.b.term); });
+  wires.forEach(w => { connected.add(wireEndKey(w.a)); connected.add(wireEndKey(w.b)); });
 
   const errors = [], warnings = [];
   // Bornes non connectées
@@ -646,9 +701,10 @@ function diagnosticHTML(schema){
       if (!connected.has(item.id+'#'+idx)) warnings.push(`${def.nom} — borne ${idx+1} non connectée.`);
     });
   });
-  // Court-circuit direct : un fil relie les deux bornes du même composant
+  // Court-circuit direct : un fil relie les deux bornes du même composant (les extrémités sur
+  // un simple point de raccordement n'ont pas d'itemId — jamais concernées par ce cas).
   wires.forEach(w => {
-    if (w.a.itemId === w.b.itemId){
+    if (w.a.itemId && w.a.itemId === w.b.itemId){
       const def = findDef(findItem(schema,w.a.itemId)?.typeId);
       errors.push(`${def?.nom||'Composant'} — un fil relie deux de ses propres bornes : cela court-circuite directement le composant.`);
     }
@@ -768,15 +824,14 @@ function renderCanvasSVG(){
   const endpointCount = new Map();
   const addPt = (p) => { const k = Math.round(p.x)+','+Math.round(p.y); endpointCount.set(k, (endpointCount.get(k)||0)+1); };
   wires.forEach(w => {
-    const ai = items.find(i=>i.id===w.a.itemId), bi = items.find(i=>i.id===w.b.itemId);
-    if (ai) addPt(terminalAbsPos(ai, w.a.term));
-    if (bi) addPt(terminalAbsPos(bi, w.b.term));
+    const a = endpointAbsPos(wsState.schema, w.a), b = endpointAbsPos(wsState.schema, w.b);
+    if (a) addPt(a);
+    if (b) addPt(b);
   });
 
   const wiresSvg = wires.map(w => {
-    const ai = items.find(i=>i.id===w.a.itemId), bi = items.find(i=>i.id===w.b.itemId);
-    if (!ai || !bi) return '';
-    const a = terminalAbsPos(ai, w.a.term), b = terminalAbsPos(bi, w.b.term);
+    const a = endpointAbsPos(wsState.schema, w.a), b = endpointAbsPos(wsState.schema, w.b);
+    if (!a || !b) return '';
     const pts = orthoPoints(a,b);
     const custom = w.color && w.id!==wsState.selectedWireId ? ` style="stroke:${esc(w.color)}"` : '';
     return `<polyline class="wire-line ${w.id===wsState.selectedWireId?'selected':''}" data-wire="${w.id}" points="${polylinePoints(pts)}" fill="none"${custom}/>`;
@@ -786,6 +841,13 @@ function renderCanvasSVG(){
     const [x,y] = k.split(',').map(Number);
     return `<circle class="wire-junction" cx="${x}" cy="${y}" r="3"/>`;
   }).join('');
+
+  // Points de raccordement sur un fil existant (§12) : toujours affichés — l'utilisateur les a
+  // créés explicitement, contrairement aux jonctions automatiques ci-dessus qui ne le sont
+  // qu'à partir de 3 extrémités confondues.
+  const tapPoints = new Map();
+  wires.forEach(w => { [w.a, w.b].forEach(end => { if (end.tap){ tapPoints.set(end.tap.x+','+end.tap.y, end.tap); } }); });
+  const tapsSvg = [...tapPoints.values()].map(p => `<circle class="wire-tap" cx="${p.x}" cy="${p.y}" r="3"/>`).join('');
 
   const itemsSvg = items.map(item => {
     const def = findDef(item.typeId);
@@ -834,6 +896,7 @@ function renderCanvasSVG(){
       <rect id="ws-grid-bg" x="-4000" y="-4000" width="9000" height="9000" fill="url(#grid-pattern)"/>
       ${wiresSvg}
       ${junctionsSvg}
+      ${tapsSvg}
       ${itemsSvg}
       ${crossingsSvg()}
       ${ghostSvg}
@@ -1013,24 +1076,27 @@ function wireCanvasEvents(){
       if (e.cancelable) e.preventDefault();
       const line = document.getElementById('wire-preview-line');
       const indicator = document.getElementById('wire-snap-indicator');
-      const startItem = wsState.schema.items.find(i=>i.id===wsState.wireStart.itemId);
-      if (line && startItem){
-        const a = terminalAbsPos(startItem, wsState.wireStart.term);
+      const a = endpointAbsPos(wsState.schema, wsState.wireStart);
+      if (line && a){
         const cur = svgUserToCanvas(clientToSvgUser(e, svg));
-        const snap = nearestTerminal(cur, svg, wsState.wireStart);
+        const excludeTerm = wsState.wireStart.itemId ? wsState.wireStart : null;
+        const excludeWireId = wsState.wireStart.tap ? wsState.wireStart.tap.wireId : null;
+        const snap = nearestSnapTarget(cur, svg, excludeTerm, excludeWireId);
         wsState.wireSnapTarget = snap;
         const end = snap ? snap.pos : cur;
         line.setAttribute('points', polylinePoints(previewCorner(a, end)));
         line.style.display = '';
-        // Bornes proches : la borne visée s'agrandit et devient verte (§5-§6), plutôt qu'un
-        // simple survol natif — fonctionne aussi bien au tactile qu'à la souris.
+        // Bornes/points de fil proches : la cible s'agrandit et devient verte (§5-§6-§12),
+        // plutôt qu'un simple survol natif — fonctionne aussi bien au tactile qu'à la souris.
         svg.querySelectorAll('.terminal-dot.snap-target').forEach(el => el.classList.remove('snap-target'));
         if (indicator){
           if (snap){
             indicator.setAttribute('cx', snap.pos.x); indicator.setAttribute('cy', snap.pos.y);
             indicator.style.display = '';
-            const dot = svg.querySelector(`.terminal-dot[data-term-item="${snap.itemId}"][data-term-idx="${snap.term}"]`);
-            if (dot) dot.classList.add('snap-target');
+            if (!snap.tap){
+              const dot = svg.querySelector(`.terminal-dot[data-term-item="${snap.itemId}"][data-term-idx="${snap.term}"]`);
+              if (dot) dot.classList.add('snap-target');
+            }
           } else {
             indicator.style.display = 'none';
           }
@@ -1053,7 +1119,7 @@ function wireCanvasEvents(){
     window.__wireEscBound = true;
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape'){
-        if (wsState.wireStart){ wsState.wireStart = null; redrawCanvas(); }
+        if (wsState.wireStart){ wsState.wireStart = null; wsState.wireSnapTarget = null; redrawCanvas(); }
         else if (wsState.armedType){ wsState.armedType = null; wsState.ghostPos = null; redrawCanvas(); }
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && wsState.selectedWireId && document.getElementById('ws-svg') && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){
@@ -1061,6 +1127,7 @@ function wireCanvasEvents(){
         if (guardReadOnly()) return;
         pushUndoSnapshot();
         wsState.schema.wires = wsState.schema.wires.filter(w=>w.id!==wsState.selectedWireId);
+        pruneOrphanTapWires(wsState.schema);
         wsState.selectedWireId = null; persistSchema(); redrawCanvas(); toast('Fil supprimé.');
       }
       // Ctrl+Z / Ctrl+Y (ou Ctrl+Maj+Z) : annuler/rétablir la dernière action sur le schéma.
@@ -1089,7 +1156,8 @@ function wireCanvasEvents(){
       if (guardReadOnly()) return;
       const target = wsState.wireSnapTarget;
       pushUndoSnapshot();
-      wsState.schema.wires.push({ id:'w_'+Math.random().toString(36).slice(2,8), a:wsState.wireStart, b:{ itemId:target.itemId, term:target.term } });
+      wsState.schema.wires.push({ id:'w_'+Math.random().toString(36).slice(2,8), a:wsState.wireStart,
+        b: target.tap ? { tap:target.tap } : { itemId:target.itemId, term:target.term } });
       wsState.wireStart = null; wsState.wireSnapTarget = null;
       persistSchema(); redrawCanvas();
     } else if (wsState.selectedWireId){
@@ -1196,7 +1264,33 @@ function wireCanvasEvents(){
         if (guardReadOnly()) return;
         pushUndoSnapshot();
         wsState.schema.wires = wsState.schema.wires.filter(w=>w.id!==id);
+        pruneOrphanTapWires(wsState.schema);
         persistSchema(); redrawCanvas(); toast('Fil supprimé.');
+        return;
+      }
+      if (wsState.tool === 'fil'){
+        // Raccordement sur un fil existant (§12 du cahier fils) : le clic n'est pas forcément
+        // tombé pile sur le point déjà signalé par l'aimantation (wireSnapTarget) — on
+        // recalcule le point exact sur CE fil précisément cliqué, tolérance identique.
+        if (guardReadOnly()) return;
+        const cur = svgUserToCanvas(clientToSvgUser(e, svg));
+        let onThisWire = null, bestDist = Infinity;
+        wireSegments(wsState.schema, wsState.schema.wires.find(w=>w.id===id)).forEach(([p,q]) => {
+          const dx=q.x-p.x, dy=q.y-p.y, len2=dx*dx+dy*dy;
+          let t = len2 ? ((cur.x-p.x)*dx+(cur.y-p.y)*dy)/len2 : 0; t = Math.max(0,Math.min(1,t));
+          const proj = { x:p.x+t*dx, y:p.y+t*dy }; const d = Math.hypot(proj.x-cur.x, proj.y-cur.y);
+          if (d < bestDist){ bestDist = d; onThisWire = { x:Math.round(proj.x), y:Math.round(proj.y) }; }
+        });
+        if (!onThisWire) return;
+        const tapEnd = { tap:{ wireId:id, x:onThisWire.x, y:onThisWire.y } };
+        if (!wsState.wireStart){ wsState.wireStart = tapEnd; wsState.wireSnapTarget = null; redrawCanvas(); return; }
+        if (wsState.wireStart.tap && wsState.wireStart.tap.wireId===id && wsState.wireStart.tap.x===tapEnd.tap.x && wsState.wireStart.tap.y===tapEnd.tap.y){
+          wsState.wireStart = null; wsState.wireSnapTarget = null; redrawCanvas(); return;
+        }
+        pushUndoSnapshot();
+        wsState.schema.wires.push({ id:'w_'+Math.random().toString(36).slice(2,8), a:wsState.wireStart, b:tapEnd });
+        wsState.wireStart = null; wsState.wireSnapTarget = null;
+        persistSchema(); redrawCanvas();
         return;
       }
       wsState.selectedWireId = (wsState.selectedWireId === id) ? null : id;
@@ -1277,8 +1371,22 @@ function deleteItem(id){
   pushUndoSnapshot();
   wsState.schema.items = wsState.schema.items.filter(i=>i.id!==id);
   wsState.schema.wires = wsState.schema.wires.filter(w=>w.a.itemId!==id && w.b.itemId!==id);
+  pruneOrphanTapWires(wsState.schema);
   if (wsState.selectedId===id) wsState.selectedId=null;
   persistSchema(); redrawCanvas(); toast('Élément supprimé.');
+}
+// Un fil supprimé (ici ou ailleurs) peut être le support d'un raccordement (§12) fait par un
+// AUTRE fil : ce dernier perdrait son point d'ancrage et doit être retiré aussi, en chaîne
+// (un raccordement peut lui-même avoir été raccordé par un autre raccordement).
+function pruneOrphanTapWires(schema){
+  let changed = true;
+  while (changed){
+    changed = false;
+    const ids = new Set(schema.wires.map(w=>w.id));
+    const before = schema.wires.length;
+    schema.wires = schema.wires.filter(w => !([w.a,w.b].some(end => end.tap && !ids.has(end.tap.wireId))));
+    if (schema.wires.length !== before) changed = true;
+  }
 }
 
 function redrawCanvasLight(){
@@ -1290,19 +1398,21 @@ function redrawCanvasLight(){
     if (g){ const viewH = findDef(item.typeId).viewH || 30; g.setAttribute('transform', `translate(${item.x},${item.y}) rotate(${item.rot||0},30,${viewH/2})`); }
   });
   const viewport = document.getElementById('ws-viewport');
-  viewport.querySelectorAll('.wire-line, .wire-junction').forEach(l=>l.remove());
+  viewport.querySelectorAll('.wire-line, .wire-junction, .wire-tap').forEach(l=>l.remove());
   const endpointCount = new Map();
   const addPt = (p) => { const k = Math.round(p.x)+','+Math.round(p.y); endpointCount.set(k, (endpointCount.get(k)||0)+1); };
   const wiresSvg = wsState.schema.wires.map(w => {
-    const ai = wsState.schema.items.find(i=>i.id===w.a.itemId), bi = wsState.schema.items.find(i=>i.id===w.b.itemId);
-    if (!ai || !bi) return '';
-    const a = terminalAbsPos(ai, w.a.term), b = terminalAbsPos(bi, w.b.term);
+    const a = endpointAbsPos(wsState.schema, w.a), b = endpointAbsPos(wsState.schema, w.b);
+    if (!a || !b) return '';
     addPt(a); addPt(b);
     const custom = w.color && w.id!==wsState.selectedWireId ? ` style="stroke:${esc(w.color)}"` : '';
     return `<polyline class="wire-line ${w.id===wsState.selectedWireId?'selected':''}" data-wire="${w.id}" points="${polylinePoints(orthoPoints(a,b))}" fill="none"${custom}/>`;
   }).join('');
   const junctionsSvg = [...endpointCount.entries()].filter(([,n])=>n>=3).map(([k]) => { const [x,y]=k.split(',').map(Number); return `<circle class="wire-junction" cx="${x}" cy="${y}" r="3"/>`; }).join('');
-  viewport.insertAdjacentHTML('afterbegin', wiresSvg + junctionsSvg);
+  const tapPointsLight = new Map();
+  wsState.schema.wires.forEach(w => { [w.a, w.b].forEach(end => { if (end.tap){ tapPointsLight.set(end.tap.x+','+end.tap.y, end.tap); } }); });
+  const tapsSvgLight = [...tapPointsLight.values()].map(p => `<circle class="wire-tap" cx="${p.x}" cy="${p.y}" r="3"/>`).join('');
+  viewport.insertAdjacentHTML('afterbegin', wiresSvg + junctionsSvg + tapsSvgLight);
   viewport.querySelectorAll('.wire-crossing').forEach(c=>c.remove());
   viewport.insertAdjacentHTML('beforeend', crossingsSvg());
   viewport.querySelectorAll('.peer-ghost').forEach(g=>g.remove());
@@ -1555,7 +1665,7 @@ function afterProjectView(){
     if (!AI_CONFIGURED){ toast("Interprétation IA non configurée — voir AI_EDGE_FUNCTION_URL en tête de fichier et supabase/functions/ai-interpret."); return; }
     const items = wsState.schema.items, wires = wsState.schema.wires;
     const connected = new Set();
-    wires.forEach(w => { connected.add(w.a.itemId+'#'+w.a.term); connected.add(w.b.itemId+'#'+w.b.term); });
+    wires.forEach(w => { connected.add(wireEndKey(w.a)); connected.add(wireEndKey(w.b)); });
     const nonConnectees = items.reduce((n,item) => n + findDef(item.typeId).terminals.filter((t,idx)=>!connected.has(item.id+'#'+idx)).length, 0);
     const { data: project } = await db.getProject(wsState.projectId);
     toast('Interprétation en cours…');

@@ -51,23 +51,25 @@ function renderTechnicalSchema(schema, refs){
   const w = Math.max(400, maxX-minX), h = Math.max(300, maxY-minY);
 
   const wiresSvg = wires.map(w2 => {
-    const ai = items.find(i=>i.id===w2.a.itemId), bi = items.find(i=>i.id===w2.b.itemId);
-    if (!ai || !bi) return '';
-    const a = terminalAbsPos(ai, w2.a.term), b = terminalAbsPos(bi, w2.b.term);
+    const a = endpointAbsPos(schema, w2.a), b = endpointAbsPos(schema, w2.b);
+    if (!a || !b) return '';
     return `<polyline points="${polylinePoints(orthoPoints(a,b))}" fill="none" stroke="${esc(w2.color||'#111')}" stroke-width="1.6"/>`;
   }).join('');
 
-  // Nœuds réels : bornes partagées par ≥3 fils, + nœuds explicitement placés à une intersection.
+  // Nœuds réels : bornes partagées par ≥3 fils, + nœuds explicitement placés à une intersection,
+  // + points de raccordement sur un fil existant (§12 du cahier fils — toujours des nœuds réels).
   const endpointCount = new Map();
   const addPt = (p) => { const k = Math.round(p.x)+','+Math.round(p.y); endpointCount.set(k, (endpointCount.get(k)||0)+1); };
   wires.forEach(w2 => {
-    const ai = items.find(i=>i.id===w2.a.itemId), bi = items.find(i=>i.id===w2.b.itemId);
-    if (ai) addPt(terminalAbsPos(ai, w2.a.term));
-    if (bi) addPt(terminalAbsPos(bi, w2.b.term));
+    const a = endpointAbsPos(schema, w2.a), b = endpointAbsPos(schema, w2.b);
+    if (a) addPt(a);
+    if (b) addPt(b);
   });
   const autoJunctions = [...endpointCount.entries()].filter(([,n])=>n>=3).map(([k]) => { const [x,y]=k.split(',').map(Number); return {x,y}; });
   const manualJunctions = schema.junctions || [];
-  const junctionsSvg = [...autoJunctions, ...manualJunctions].map(j => `<circle cx="${j.x}" cy="${j.y}" r="3" fill="#111"/>`).join('');
+  const tapJunctions = [];
+  wires.forEach(w2 => { [w2.a, w2.b].forEach(end => { if (end.tap) tapJunctions.push({ x:end.tap.x, y:end.tap.y }); }); });
+  const junctionsSvg = [...autoJunctions, ...manualJunctions, ...tapJunctions].map(j => `<circle cx="${j.x}" cy="${j.y}" r="3" fill="#111"/>`).join('');
 
   const itemsSvg = items.map(item => {
     const def = findDef(item.typeId);
@@ -109,9 +111,9 @@ function buildDiagnosticText(schema){
   const items = schema.items, wires = schema.wires;
   if (items.length === 0) return '<p>Aucun composant posé.</p>';
   const connected = new Set();
-  wires.forEach(w => { connected.add(w.a.itemId+'#'+w.a.term); connected.add(w.b.itemId+'#'+w.b.term); });
+  wires.forEach(w => { connected.add(wireEndKey(w.a)); connected.add(wireEndKey(w.b)); });
   const rows = [];
-  wires.filter(w=>w.a.itemId===w.b.itemId).forEach(w => {
+  wires.filter(w=>w.a.itemId && w.a.itemId===w.b.itemId).forEach(w => {
     const nom = findDef(findItem(schema,w.a.itemId)?.typeId)?.nom || 'Composant';
     rows.push({ gravite:'err', type:'Court-circuit', element:nom, description:'Fil reliant deux de ses propres bornes.' });
   });
@@ -264,7 +266,7 @@ async function exportRapportCompletPDF(projectId, schema){
   const items = schema.items, wires = schema.wires;
   const refs = assignReferences(items);
   const connected = new Set();
-  wires.forEach(w => { connected.add(w.a.itemId+'#'+w.a.term); connected.add(w.b.itemId+'#'+w.b.term); });
+  wires.forEach(w => { connected.add(wireEndKey(w.a)); connected.add(wireEndKey(w.b)); });
 
   const bom = buildBOM(items, refs);
   const diagText = buildDiagnosticText(schema);

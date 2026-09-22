@@ -343,6 +343,70 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   await tick(50);
   assert(win.wsState.wireStart === null, 'changer d\'outil annule bien le fil en cours de traçage');
 
+  section('Fils — raccordement sur un fil EXISTANT, pas seulement sur une borne (§12 du cahier fils)');
+  // Un 3e composant, pour servir de bout "normal" au nouveau fil de raccordement.
+  click(win, doc.querySelector('[data-place="led"]'));
+  await tick(150);
+  mouseAt(win, doc.getElementById('ws-grid-bg'), 'click', 700, 320);
+  await tick(150);
+  const item3 = win.wsState.schema.items[win.wsState.schema.items.length-1];
+  assert(!!item3 && item3.typeId === 'led', '3e composant (LED) posé pour le test de raccordement');
+
+  click(win, doc.querySelector('#tool-panel [data-tool="fil"]'));
+  await tick(50);
+  const term3_0 = doc.querySelector(`[data-term-item="${item3.id}"][data-term-idx="0"]`);
+  click(win, term3_0);
+  await tick(50);
+  assert(win.wsState.wireStart && win.wsState.wireStart.itemId === item3.id, 'fil démarré depuis la borne du 3e composant');
+
+  // Point milieu du premier segment de wire1 (item1↔item2) : un point QUELCONQUE de ce fil,
+  // pas une de ses deux extrémités — c'est précisément ce que le §12 demande de pouvoir viser.
+  const wire1Segs = win.wireSegments(win.wsState.schema, wire1);
+  const midCanvas = { x:(wire1Segs[0][0].x+wire1Segs[0][1].x)/2, y:(wire1Segs[0][0].y+wire1Segs[0][1].y)/2 };
+  const midClientX = midCanvas.x*scaleNow + win.wsState.view.panX;
+  const midClientY = midCanvas.y*scaleNow + win.wsState.view.panY;
+  const wire1Line = doc.querySelector(`[data-wire="${wire1.id}"]`);
+
+  mouseAt(win, doc.getElementById('ws-svg'), 'mousemove', midClientX, midClientY);
+  await tick(50);
+  assert(win.wsState.wireSnapTarget && win.wsState.wireSnapTarget.tap && win.wsState.wireSnapTarget.tap.wireId === wire1.id,
+    'un point au milieu d\'un fil existant est bien détecté comme cible d\'aimantation (pas seulement les bornes)');
+  assert(doc.getElementById('wire-snap-indicator').style.display !== 'none', 'indicateur vert affiché pour un raccordement sur fil, comme pour une borne');
+
+  const wiresBeforeTap = win.wsState.schema.wires.length;
+  mouseAt(win, wire1Line, 'click', midClientX, midClientY);
+  await tick(50);
+  assert(win.wsState.schema.wires.length === wiresBeforeTap + 1, 'le clic sur le fil existant valide bien la création du nouveau fil');
+  const tapWire = win.wsState.schema.wires[win.wsState.schema.wires.length-1];
+  assert(tapWire.a.itemId === item3.id && !!tapWire.b.tap && tapWire.b.tap.wireId === wire1.id,
+    'le nouveau fil relie bien le 3e composant à un point de raccordement sur wire1, pas à une fausse borne');
+  assert(win.wsState.wireStart === null && win.wsState.wireSnapTarget === null, 'le traçage se réinitialise après un raccordement sur fil');
+
+  // Topologie électrique (§19) : le point de raccordement doit être électriquement confondu
+  // avec le fil tapé, pas juste dessiné au même endroit par coïncidence graphique.
+  const { find } = win.buildWireUnion(win.wsState.schema);
+  assert(find(item3.id+'#0') === find(item1.id+'#0'), 'le raccordement forme bien un seul et même nœud électrique avec le fil tapé (union-find)');
+
+  // Rendu : un point cyan doit matérialiser le raccordement sur le schéma (visible, pas caché).
+  const tapDot = doc.querySelector(`.wire-tap[cx="${midCanvas.x}"][cy="${midCanvas.y}"]`) || doc.querySelector('.wire-tap');
+  assert(!!tapDot, 'un point de raccordement (.wire-tap) est bien dessiné sur le schéma');
+
+  // Suppression en cascade (§15, généralisé) : si le fil SUPPORT (wire1) disparaît, le fil qui
+  // s'y raccordait doit disparaître aussi — pas une connexion fantôme vers un fil inexistant.
+  win.wsState.selectedWireId = wire1.id;
+  win.wsState.schema.wires = win.wsState.schema.wires.filter(w => w.id !== wire1.id);
+  win.pruneOrphanTapWires(win.wsState.schema);
+  assert(!win.wsState.schema.wires.some(w => w.id === tapWire.id),
+    'supprimer le fil support supprime en cascade le fil qui s\'y raccordait (pas de référence pendante)');
+  win.wsState.selectedWireId = null; // nettoyage : ne pas fausser le test de sélection qui suit
+
+  // Remise en état pour ne pas fausser les tests de diagnostic suivants : on recrée un fil1
+  // "normal" (borne à borne) équivalent à celui d'origine, et on retire le 3e composant de test.
+  win.wsState.schema.items = win.wsState.schema.items.filter(i => i.id !== item3.id);
+  win.wsState.schema.wires.push({ id: wire1.id, a:{ itemId:item1.id, term:0 }, b:{ itemId:item2.id, term:0 } });
+  click(win, doc.querySelector('#tool-panel [data-tool="select"]'));
+  await tick(50);
+
   // 3. Glisser le fond du canevas au doigt fait bien un pan (comme à la souris).
   const panXBefore = win.wsState.view.panX;
   touchAt(win, doc.getElementById('ws-grid-bg'), 'touchstart', 400, 400);
