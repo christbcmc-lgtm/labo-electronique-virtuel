@@ -593,6 +593,10 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(doc.getElementById('cv') && doc.getElementById('cv').innerHTML.includes('<line'), 'le mur rechargé est effectivement dessiné dans le SVG (pas seulement présent dans l\'état)');
   assert(win.__jsErrors.length === jsErrCountBeforePlan, 'aucune erreur JS non interceptée pendant le montage/démontage/remontage de l\'éditeur de plan' + (win.__jsErrors.length > jsErrCountBeforePlan ? ' — NOUVELLES ERREURS: ' + win.__jsErrors.slice(jsErrCountBeforePlan).join(' | ') : ''));
 
+  section('Plan bâtiment — logo partagé dans le cartouche du PDF (limite fermée : addendum 7 signalait la planche indépendante de l\'identité visuelle des autres PDF)');
+  const planSheetSvg = win.AtelierPlan.sheetSVG({});
+  assert(planSheetSvg.includes('rx="2.5"') && planSheetSvg.includes('<svg'), 'la planche imprimable du plan intègre désormais le même symbole de logo vectoriel que les 4 autres exports PDF (résultat contient-il le logo ? ' + planSheetSvg.includes('rx="2.5"') + ')');
+
   await nav(win, 'project/' + projectId);
   await tick(200);
   assert(!doc.getElementById('plan-shell'), 'en quittant la route Plan, son DOM est bien retiré (remplacé par la vue Schéma)');
@@ -1003,6 +1007,27 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   win.duplicateItem(win.wsState.schema.items[0].id);
   assert(win.wsState.schema.items.length === itemsBefore, 'un collaborateur en lecture seule ne peut pas dupliquer un composant');
   assert(!doc.getElementById('btn-save-project') && !doc.getElementById('btn-share'), 'les boutons Enregistrer/Partager sont masqués en lecture seule');
+
+  section('Plan bâtiment en lecture seule — vérification du verrouillage complet (limite documentée dans l\'addendum 7, revérifiée ici)');
+  await nav(win, 'plan/' + projectId);
+  await tick(300);
+  assert(doc.querySelector('.ws-topbar .pill')?.textContent.includes('Lecture seule') || [...doc.querySelectorAll('.ws-topbar .pill')].some(p=>p.textContent.includes('Lecture seule')), 'le bandeau "Lecture seule" est bien affiché pour Bob sur le plan');
+  const planEntitiesBefore = win.AtelierPlan.getProject().entities.length;
+  const murBtn = doc.querySelector('#ribbon [title="Mur"]');
+  if (murBtn) click(win, murBtn);
+  const cvEl = doc.getElementById('cv');
+  mouseAt(win, cvEl, 'click', 50, 50);
+  await tick(80);
+  mouseAt(win, cvEl, 'click', 150, 50);
+  await tick(80);
+  setVal(win, doc.getElementById('cmd'), 'MU');
+  doc.getElementById('cmd').dispatchEvent(new win.KeyboardEvent('keydown', { key:'Enter', bubbles:true, cancelable:true }));
+  await tick(80);
+  mouseAt(win, cvEl, 'click', 50, 150);
+  await tick(80);
+  mouseAt(win, cvEl, 'click', 150, 150);
+  await tick(80);
+  assert(win.AtelierPlan.getProject().entities.length === planEntitiesBefore, 'aucune entité n\'a été ajoutée au plan malgré les tentatives de tracé (clic ruban + clics canevas + commande clavier "MU") en lecture seule — résultat: ' + win.AtelierPlan.getProject().entities.length + ' (attendu ' + planEntitiesBefore + ')');
 
   await win.auth.signOut();
   await nav(win, 'login');

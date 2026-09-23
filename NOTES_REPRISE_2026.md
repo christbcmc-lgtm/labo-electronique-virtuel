@@ -264,3 +264,14 @@ Reste explicitement non couvert (choix de périmètre assumé, pas un oubli) :
 - Denture réelle des engrenages (représentés en disque avec alésage).
 - Congés/chanfreins, coupes/vues de mise en plan, export DXF.
 - Vérification visuelle réelle du rendu — bloquée par le point 4 comme tout le reste.
+
+## 13. Plan bâtiment — verrouillage lecture seule et logo PDF — fait cette session (addendum 15)
+
+Le point 6 mentionnait deux limites : verrouillage lecture seule incomplet (en réalité déjà
+correct, l'affirmation était inexacte — corrigé dans la documentation, testé de bout en bout) et
+PDF du plan sans le logo partagé (ajouté au cartouche, sans toucher à la planche technique).
+Détail dans l'addendum 15 de RAPPORT-FINAL.md.
+
+Reste du point 6 toujours non fait : fusion complète de l'export PDF du plan avec la famille de
+PDF partagée (`openPdfWindow`) — décision volontairement non prise, le plan produit un type de
+document (planche technique dimensionnée A5-A0) que le système actuel ne sait pas produire.

@@ -1712,3 +1712,33 @@ une esquisse extrudée et son absence pour une primitive sans esquisse (boîte).
 - Toujours pas d'éditeur d'esquisse à la souris (saisie numérique des profils) — le point
   suivant le plus significatif si le client souhaite continuer sur ce module.
 - L'export DXF ne couvre que le profil 2D d'un corps (pas une mise en plan complète avec cotes).
+
+## ADDENDUM 15 — Plan de bâtiment : verrouillage lecture seule revérifié + logo partagé dans le PDF
+
+Suite de « finis les limites de ce que tu as livré ». Deux limites de l'addendum 7 traitées :
+
+### Verrouillage lecture seule — limite en réalité déjà fermée, revérifiée et corrigée dans la doc
+
+En relisant `js/plan.js` avant d'y toucher, chaque point de mutation (ajout/suppression
+d'entité, sauvegarde, clic sur le ruban, ligne de commande, collage, glisser une poignée...)
+s'est révélé **déjà protégé** par un test `S.readOnly` — l'affirmation de l'addendum 7 (« un
+collaborateur en lecture seule peut toujours cliquer les outils de dessin ») était inexacte au
+moment où elle a été écrite. Plutôt que de la laisser telle quelle, un test de bout en bout a
+été ajouté pour la vérifier réellement plutôt que de la corriger de mémoire : connexion en tant
+que collaborateur "voir seulement", clic sur le bouton de ruban "Mur", clics sur le canevas,
+saisie de la commande clavier "MU" — **aucune entité n'est ajoutée** dans les trois cas. La
+mention inexacte est corrigée dans cette note plutôt que reconduite.
+
+### Logo partagé ajouté au cartouche du PDF du plan
+
+`js/plan.js` (`buildSheetSVG`) insère désormais `LAB_LOGO_SVG` (même symbole vectoriel que la
+barre supérieure de l'application et les 4 exports PDF de `js/pdf.js`, §17 des mises à jour
+reçues) dans le coin de la cellule "Projet" du cartouche, sans toucher au reste de la planche
+technique (dimensions, flèche nord, échelle graphique, légende des symboles restent identiques).
+
+### Vérifié par exécution réelle (`npm test`, **278 vérifications, 0 échec**, 275 avant + 3
+nouvelles)
+
+Bandeau "Lecture seule" affiché pour un collaborateur en lecture, aucune entité ajoutée après
+trois tentatives de tracé différentes (ruban, canevas, commande clavier) en lecture seule,
+présence du logo vectoriel partagé dans la sortie de `sheetSVG()`.
