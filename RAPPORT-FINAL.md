@@ -1742,3 +1742,73 @@ nouvelles)
 Bandeau "Lecture seule" affiché pour un collaborateur en lecture, aucune entité ajoutée après
 trois tentatives de tracé différentes (ruban, canevas, commande clavier) en lecture seule,
 présence du logo vectoriel partagé dans la sortie de `sheetSVG()`.
+
+## ADDENDUM 16 — Constructeur de composant : second gabarit de boîtier + import JSON
+
+Suite de « finis les limites de ce que tu as livré ». Les deux limites explicitement listées en
+fin d'addendum 12 sont fermées :
+
+### Second gabarit de boîtier (`js/composant-builder.js`)
+
+Nouvelle fonction `circularTemplate(n, label)`, construite sur le même principe de garantie
+géométrique que `icTemplate()` (aucun moteur de dessin libre, aucune borne pouvant être
+désynchronisée de son tracé) : `n` broches réparties à 360° autour d'un cercle, chaque
+extrémité de `leadLine()` **est** directement poussée dans le tableau des bornes — la
+coordonnée de la ligne et celle de la borne sont littéralement la même valeur, pas deux valeurs
+qui doivent rester synchronisées manuellement. Un sélecteur `<select id="cb-boitier">` (options
+`BUILDER_BOITIERS.rect` / `.circle`) choisit le gabarit avant génération de l'aperçu ; le reste
+du formulaire (nombre de bornes, noms de broches, familles, enregistrement) est inchangé et
+partagé entre les deux gabarits.
+
+### Import JSON (`js/composant-builder.js`)
+
+Nouvelle carte « Importer un composant (JSON) » sur la page du constructeur : un fichier
+`.json` (champs attendus `nom`/`sym`/`terminals`, `famille`/`def`/`pinNames`/`refTechnique`/
+`boitier`/`viewH` optionnels) est validé par `validateCustomComponentImport()` — rejette tout
+objet sans `nom`, sans `sym` non vide, ou dont `terminals` n'est pas une liste de couples
+`[x, y]` numériques — puis enregistré via le même `db.saveCustomComponent` que le formulaire.
+
+Différence assumée et documentée avec le formulaire : un composant importé **n'a pas** la
+garantie géométrique par construction des gabarits `icTemplate`/`circularTemplate` (le SVG et
+les bornes viennent d'une source externe, potentiellement désynchronisés). Plutôt que de
+prétendre à une vérification qui n'existe pas, le champ `niveauVerification` du composant
+importé le dit explicitement : « bornes ↔ tracé NON garanties par construction... à vérifier
+avant un usage critique » — cohérent avec le principe déjà appliqué partout ailleurs dans ce
+projet (ne jamais documenter comme vérifié ce qui ne l'a été que par relecture).
+
+### Vérifié par exécution réelle (`npm test`, **289 vérifications, 0 échec**, 278 avant + 11
+nouvelles)
+
+Les deux options de boîtier sont listées dans le sélecteur ; générer l'aperçu avec le gabarit
+circulaire produit bien un SVG contenant un `<circle>` (pas le rectangle par défaut) ;
+enregistrement d'un composant à boîtier circulaire avec le bon nombre de bornes ; **chaque
+borne enregistrée correspond exactement à l'extrémité d'une ligne réellement tracée dans le
+SVG** (même check que `tests/verify_catalog.js` applique au catalogue statique, reproduit ici
+en ligne car les composants personnalisés n'y sont pas soumis) ; import d'un fichier JSON valide
+retrouvable par `findDef()` avec ses bornes et son brochage conservés tels quels, et son
+`niveauVerification` signalant honnêtement l'absence de garantie automatique ; import d'un
+fichier JSON invalide (sans `terminals`) rejeté avec un message d'erreur clair, sans exception
+non interceptée et sans enregistrer de composant. `tests/verify_catalog.js` re-exécuté sans
+changement (522 composants, 0 anomalie — les gabarits du constructeur ne touchent pas au
+catalogue statique).
+
+### Ce qui n'a pas été vérifié / limites connues
+
+- **Rendu visuel réel** du sélecteur de boîtier et de la carte d'import — même limitation que
+  pour tout ce projet (pas de navigateur réel disponible dans cet environnement).
+- Le gabarit circulaire reste un **cercle simple avec broches radiales régulières** — pas un
+  vrai boîtier de potentiomètre/capteur à l'apparence réaliste, ni une forme triangulaire ou un
+  boîtier réaliste type TO-220. Cohérent avec le principe déjà établi de ne jamais produire un
+  symbole géométriquement incorrect, mais reste un gabarit générique plutôt qu'une bibliothèque
+  de boîtiers réalistes.
+- L'import JSON ne vérifie **que la forme** des données (types, présence des champs requis) —
+  il ne peut pas garantir que le SVG fourni dans `sym` dessine réellement des lignes qui se
+  terminent aux coordonnées déclarées dans `terminals` (impossible à garantir pour un SVG
+  arbitraire sans un moteur de rendu réel) ; c'est explicitement signalé à l'utilisateur dans le
+  texte de la carte d'import et dans `niveauVerification`, plutôt que caché.
+- Pas de validation du SVG importé contre une liste blanche de balises (un `sym` importé
+  pourrait en théorie contenir n'importe quel SVG) — comme tout le reste du symbole est déjà
+  injecté via `innerHTML`/`dangerouslySetInnerHTML`-style rendu dans ce projet (aucun sandboxing
+  SVG nulle part dans le catalogue existant), ce n'est pas une régression introduite ici, mais
+  ça reste une limite à garder en tête si l'import est un jour ouvert à des fichiers non fournis
+  par l'utilisateur lui-même.

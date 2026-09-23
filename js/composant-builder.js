@@ -17,6 +17,51 @@
 
 const BUILDER_FAMILLES = ['Électronique personnalisé', 'Électrotechnique personnalisé', 'Capteurs et modules', 'Circuits intégrés', 'Bâtiment', 'Autre'];
 
+// Second gabarit de boîtier (le premier, rectangulaire, réutilise icTemplate() — voir plus bas) :
+// un boîtier circulaire avec broches réparties à 360°, même principe de garantie géométrique
+// (le point de fin de chaque leadLine() EST la borne, par construction, jamais désynchronisé).
+// Hauteur logique fixe (radial, pas empilé sur 2 côtés comme icTemplate — n'a pas besoin de
+// grandir avec le nombre de broches pour rester lisible).
+function circularTemplate(n, label){
+  const cx = 30, R = 14, leadLen = 10, viewH = 2 * (R + leadLen) + 8, cy = viewH / 2;
+  const terms = []; let leads = '';
+  for (let i = 0; i < n; i++){
+    const a = (i / n) * Math.PI * 2 - Math.PI / 2;
+    const x1 = cx + R * Math.cos(a), y1 = cy + R * Math.sin(a);
+    const x2 = cx + (R + leadLen) * Math.cos(a), y2 = cy + (R + leadLen) * Math.sin(a);
+    leads += leadLine(x1, y1, x2, y2);
+    terms.push([x2, y2]);
+  }
+  const sym = `${leads}<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="currentColor" stroke-width="1.6"/>${ctext(cx, cy + 2, label, 6)}`;
+  return { sym, terminals: terms, viewH };
+}
+const BUILDER_BOITIERS = { rect: { label: 'Rectangulaire (broches sur 2 côtés)', build: icTemplate }, circle: { label: 'Circulaire (broches à 360°)', build: circularTemplate } };
+
+// Valide un composant personnalisé importé depuis un fichier JSON (export d'un autre constructeur
+// ou fiche préparée à la main). Contrairement à un composant généré par ce module (icTemplate/
+// circularTemplate garantissent bornes ↔ tracé par construction), un import externe n'offre pas
+// cette garantie automatique — signalé explicitement dans niveauVerification plutôt que présenté
+// comme vérifié.
+function validateCustomComponentImport(obj){
+  if (!obj || typeof obj !== 'object') throw new Error('Fichier JSON invalide (objet attendu).');
+  if (typeof obj.nom !== 'string' || !obj.nom.trim()) throw new Error('Champ "nom" manquant ou vide.');
+  if (typeof obj.sym !== 'string' || !obj.sym.trim()) throw new Error('Champ "sym" (symbole SVG) manquant ou vide.');
+  if (!Array.isArray(obj.terminals) || !obj.terminals.length || !obj.terminals.every(t => Array.isArray(t) && t.length === 2 && Number.isFinite(Number(t[0])) && Number.isFinite(Number(t[1]))))
+    throw new Error('Champ "terminals" invalide (attendu : une liste de [x, y]).');
+  return {
+    nom: obj.nom.trim().slice(0, 120),
+    terminals: obj.terminals.map(t => [Number(t[0]), Number(t[1])]),
+    sym: obj.sym,
+    famille: typeof obj.famille === 'string' && obj.famille.trim() ? obj.famille.trim() : 'Autre',
+    def: typeof obj.def === 'string' ? obj.def.trim() : '',
+    alias: typeof obj.alias === 'string' ? obj.alias.trim() : '',
+    pinNames: Array.isArray(obj.pinNames) ? obj.pinNames.slice(0, obj.terminals.length).map(String) : undefined,
+    refTechnique: typeof obj.refTechnique === 'string' && obj.refTechnique.trim() ? obj.refTechnique.trim() : obj.nom.trim(),
+    boitier: typeof obj.boitier === 'string' ? obj.boitier.trim() : '',
+    viewH: Number.isFinite(Number(obj.viewH)) && Number(obj.viewH) > 0 ? Number(obj.viewH) : 30,
+  };
+}
+
 function slugifyComponentId(s){
   const base = String(s || '').toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -51,7 +96,10 @@ function viewComposantCreerHTML(){
       <div class="field"><label>Famille</label><select id="cb-famille">${BUILDER_FAMILLES.map(f=>`<option>${esc(f)}</option>`).join('')}</select></div>
     </div>
     <div class="field"><label>Description / fonction</label><textarea id="cb-def" rows="2" placeholder="À quoi sert ce composant"></textarea></div>
-    <div class="field" style="max-width:220px"><label>Nombre de bornes * (1 à 40)</label><input id="cb-nbornes" type="number" min="1" max="40" value="4"></div>
+    <div class="grid grid-2">
+      <div class="field" style="max-width:220px"><label>Nombre de bornes * (1 à 40)</label><input id="cb-nbornes" type="number" min="1" max="40" value="4"></div>
+      <div class="field"><label>Forme du boîtier</label><select id="cb-boitier">${Object.entries(BUILDER_BOITIERS).map(([k,v])=>`<option value="${k}">${esc(v.label)}</option>`).join('')}</select></div>
+    </div>
     <div id="cb-pinnames">${builderPinRowsHTML(4)}</div>
     <div class="row" style="margin-top:8px">
       <button class="btn btn-ghost btn-sm" id="cb-preview">Générer l'aperçu</button>
@@ -59,6 +107,13 @@ function viewComposantCreerHTML(){
     </div>
     <div id="cb-preview-box" style="margin-top:12px"></div>
     <div id="cb-msg" style="margin-top:8px;font-size:.85em"></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h3>Importer un composant (JSON)</h3>
+    <p style="font-size:.85em;color:var(--text-muted)">Importe une fiche préparée à l'avance ou exportée depuis un autre poste (champs attendus : <code>nom</code>, <code>sym</code>, <code>terminals</code> — <code>famille</code>, <code>def</code>, <code>pinNames</code>, <code>refTechnique</code>, <code>boitier</code>, <code>viewH</code> optionnels). Contrairement aux composants générés ci-dessus, la cohérence bornes ↔ tracé d'un import n'est pas garantie automatiquement — à vérifier avant un usage critique.</p>
+    <input type="file" id="cb-import-file" accept="application/json,.json" style="display:none">
+    <button class="btn btn-ghost btn-sm" id="cb-import-btn">Choisir un fichier .json…</button>
+    <div id="cb-import-msg" style="margin-top:8px;font-size:.85em"></div>
   </div>
   <div class="card" style="margin-top:16px">
     <h3>Mes composants (${mine.length})</h3>
@@ -83,16 +138,17 @@ let __cbDraft = null;
 function cbGeneratePreview(){
   const nom = document.getElementById('cb-nom').value.trim();
   const n = Math.max(1, Math.min(40, parseInt(document.getElementById('cb-nbornes').value, 10) || 0));
+  const boitierKey = document.getElementById('cb-boitier').value;
   const msg = document.getElementById('cb-msg');
   if (!nom){ msg.textContent = 'Le nom est obligatoire.'; msg.style.color = 'var(--danger)'; document.getElementById('cb-save').disabled = true; return; }
   const label = nom.length > 10 ? nom.slice(0, 9) + '…' : nom;
-  const t = icTemplate(n, label);
+  const t = (BUILDER_BOITIERS[boitierKey] || BUILDER_BOITIERS.rect).build(n, label);
   const pinNames = [...document.querySelectorAll('.cb-pinname')].map(i => i.value.trim() || 'Broche');
-  __cbDraft = { nom, n, t, pinNames };
+  __cbDraft = { nom, n, t, pinNames, boitierKey };
   document.getElementById('cb-preview-box').innerHTML = `
     <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
       <svg viewBox="-6 -6 72 ${t.viewH+12}" class="component-symbol-preview" xmlns="http://www.w3.org/2000/svg" style="width:140px;height:auto"><g>${t.sym}</g></svg>
-      <div style="font-size:.82em"><strong>Aperçu</strong> — ${n} borne(s), boîtier ${t.viewH>30?'agrandi (forte densité)':'standard'}.</div>
+      <div style="font-size:.82em"><strong>Aperçu</strong> — ${n} borne(s), boîtier ${(BUILDER_BOITIERS[boitierKey]||BUILDER_BOITIERS.rect).label.toLowerCase()}${boitierKey==='rect' && t.viewH>30 ? ' (agrandi, forte densité)' : ''}.</div>
     </div>`;
   msg.textContent = '';
   document.getElementById('cb-save').disabled = false;
@@ -110,7 +166,7 @@ async function cbSaveComponent(){
   const def_ = defRow(id, nom, __cbDraft.t.terminals, __cbDraft.t.sym, {
     famille, def: def || ('Composant personnalisé : ' + nom), alias: [ref, fab].filter(Boolean).join(' '),
     pinNames: __cbDraft.pinNames, refTechnique: ref || nom, boitier: fab || '',
-    niveauVerification: 'Composant personnalisé — symbole généré automatiquement (gabarit icTemplate, bornes ↔ tracé vérifiées comme le reste du catalogue), brochage saisi par son créateur, non revu par un tiers.',
+    niveauVerification: `Composant personnalisé — symbole généré automatiquement (gabarit ${(BUILDER_BOITIERS[__cbDraft.boitierKey]||BUILDER_BOITIERS.rect).label}, bornes ↔ tracé garanties par construction comme le reste du catalogue), brochage saisi par son créateur, non revu par un tiers.`,
     viewH: __cbDraft.t.viewH,
   });
   const { error } = await db.saveCustomComponent(auth.currentUser.id, def_);
@@ -119,6 +175,30 @@ async function cbSaveComponent(){
   toast(`Composant "${nom}" enregistré — utilisable dès maintenant dans vos schémas.`);
   __cbDraft = null;
   render();
+}
+async function cbImportJSON(file){
+  const msg = document.getElementById('cb-import-msg');
+  msg.style.color = '';
+  msg.textContent = 'Lecture…';
+  try {
+    const raw = JSON.parse(await file.text());
+    const clean = validateCustomComponentImport(raw);
+    const id = uniqueComponentId(slugifyComponentId(clean.nom));
+    const def_ = defRow(id, clean.nom, clean.terminals, clean.sym, {
+      famille: clean.famille, def: clean.def || ('Composant personnalisé importé : ' + clean.nom), alias: clean.alias,
+      pinNames: clean.pinNames, refTechnique: clean.refTechnique, boitier: clean.boitier,
+      niveauVerification: 'Composant personnalisé importé depuis un fichier JSON — bornes ↔ tracé NON garanties par construction (contrairement aux composants générés par le formulaire ci-dessus), à vérifier avant un usage critique.',
+      viewH: clean.viewH,
+    });
+    const { error } = await db.saveCustomComponent(auth.currentUser.id, def_);
+    if (error){ msg.textContent = 'Échec de l\'enregistrement : ' + error.message; msg.style.color = 'var(--danger)'; return; }
+    await window.refreshCustomComponents();
+    toast(`Composant "${clean.nom}" importé.`);
+    render();
+  } catch (e) {
+    msg.textContent = 'Import impossible : ' + e.message;
+    msg.style.color = 'var(--danger)';
+  }
 }
 async function cbDeleteComponent(id){
   if (!confirm('Supprimer définitivement ce composant personnalisé ? Il restera visible sur les schémas qui l\'utilisent déjà, mais ne sera plus disponible à la recherche/au placement.')) return;
@@ -138,5 +218,11 @@ function wireComposantCreer(){
   document.getElementById('cb-mine-list')?.addEventListener('click', (e) => {
     const b = e.target.closest('[data-del-mine]');
     if (b) cbDeleteComponent(b.dataset.delMine);
+  });
+  document.getElementById('cb-import-btn')?.addEventListener('click', () => document.getElementById('cb-import-file').click());
+  document.getElementById('cb-import-file')?.addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (f) cbImportJSON(f);
+    e.target.value = '';
   });
 }

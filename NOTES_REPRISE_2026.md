@@ -241,12 +241,12 @@ immédiatement utilisable dans tous ses projets (recherche, éditeur de schéma)
 au reste du moteur. Détail complet dans l'addendum 12.
 
 Reste explicitement non couvert :
-- Choix de forme de boîtier (un seul gabarit rectangulaire disponible actuellement).
+- Choix de forme de boîtier — **fait, voir point 14** (second gabarit circulaire ajouté).
 - Modèle électrique/simulation pour un composant personnalisé (le cahier distingue
   explicitement symbole graphique et modèle électrique, §24 — seul le symbole est couvert ici,
-  ces composants ne sont jamais `simulable`).
-- Import depuis un fichier externe (JSON/SVG) — seule la création via formulaire est
-  disponible, pas d'import de définition déjà existante.
+  ces composants ne sont jamais `simulable`). Choix de périmètre assumé, pas traité au point 14.
+- Import depuis un fichier externe — **fait, voir point 14** (import JSON ajouté ; pas de SVG
+  externe autonome, un import reste un JSON structuré contenant `sym` en tant que chaîne SVG).
 
 ## 12. CAO mécanique 3D — fait cette session (voir RAPPORT-FINAL.md, addendum 13)
 
@@ -275,3 +275,21 @@ Détail dans l'addendum 15 de RAPPORT-FINAL.md.
 Reste du point 6 toujours non fait : fusion complète de l'export PDF du plan avec la famille de
 PDF partagée (`openPdfWindow`) — décision volontairement non prise, le plan produit un type de
 document (planche technique dimensionnée A5-A0) que le système actuel ne sait pas produire.
+
+## 14. Constructeur de composant — second gabarit de boîtier + import JSON — fait cette session (addendum 16)
+
+Les deux limites du point 11 sont fermées : un second gabarit `circularTemplate()` (broches à
+360° autour d'un cercle, même garantie géométrique par construction que `icTemplate()`) est
+sélectionnable dans le formulaire, et une carte "Importer un composant (JSON)" permet
+d'enregistrer un composant depuis un fichier `.json` structuré (`nom`/`sym`/`terminals`
+obligatoires), validé et signalé honnêtement comme non garanti géométriquement (contrairement
+aux gabarits générés). Détail complet dans l'addendum 16 de RAPPORT-FINAL.md.
+
+Reste explicitement non couvert (choix de périmètre assumé) :
+- Bibliothèque de boîtiers réalistes (TO-220, potentiomètre à l'apparence réelle, triangle...)
+  — le gabarit circulaire reste générique (cercle + broches radiales régulières).
+- Validation du contenu du SVG importé (aucun sandboxing/liste blanche de balises) — cohérent
+  avec le reste du catalogue qui injecte déjà tous les symboles sans sandboxing, pas une
+  régression introduite ici.
+- Modèle électrique/simulation pour un composant importé — même limite que pour un composant
+  créé via formulaire (voir point 11).

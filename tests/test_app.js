@@ -886,6 +886,60 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   win.confirm = origConfirmCb;
   assert(!win.findDef('custom_module_capteur_test'), 'le composant personnalisé supprimé n\'est plus retrouvable par findDef()');
 
+  section('Constructeur de composant — boîtier circulaire (limite fermée : un seul gabarit disponible avant cette session)');
+  assert(!!doc.getElementById('cb-boitier'), 'sélecteur de forme de boîtier présent dans le formulaire');
+  const boitierOptions = [...doc.getElementById('cb-boitier').options].map(o => o.value);
+  assert(boitierOptions.includes('rect') && boitierOptions.includes('circle'), 'deux gabarits de boîtier proposés : rectangulaire et circulaire (options: ' + boitierOptions.join(',') + ')');
+  setVal(win, doc.getElementById('cb-nom'), 'Capteur rond test');
+  setVal(win, doc.getElementById('cb-nbornes'), '5');
+  doc.getElementById('cb-nbornes').dispatchEvent(new win.Event('input', { bubbles:true }));
+  await tick(80);
+  doc.getElementById('cb-boitier').value = 'circle';
+  click(win, doc.getElementById('cb-preview'));
+  await tick(100);
+  const circlePreviewSvg = doc.querySelector('#cb-preview-box svg');
+  assert(!!circlePreviewSvg && circlePreviewSvg.innerHTML.includes('<circle'), 'l\'aperçu du boîtier circulaire contient bien un <circle> (pas le gabarit rectangulaire par défaut)');
+  click(win, doc.getElementById('cb-save'));
+  await tick(250);
+  const circleDef = win.findDef('custom_capteur_rond_test');
+  assert(!!circleDef && circleDef.terminals.length === 5, 'le composant à boîtier circulaire est enregistré avec ses 5 bornes (résultat: ' + (circleDef && circleDef.terminals.length) + ')');
+  // Vérifie la même garantie bornes ↔ tracé que tests/verify_catalog.js applique au reste du
+  // catalogue : chaque borne déclarée doit être l'extrémité exacte d'un <line> réellement dessiné.
+  const circleLineEnds = [...win.SYM['custom_capteur_rond_test'].matchAll(/<line[^>]*x2="([-\d.]+)"[^>]*y2="([-\d.]+)"/g)].map(m => [Number(m[1]), Number(m[2])]);
+  const circleBornesOk = circleDef.terminals.every(([tx, ty]) => circleLineEnds.some(([lx, ly]) => Math.abs(lx - tx) < 1e-9 && Math.abs(ly - ty) < 1e-9));
+  assert(circleBornesOk, 'chaque borne du boîtier circulaire correspond exactement à l\'extrémité d\'une ligne tracée (garantie par construction, comme icTemplate)');
+  const origConfirmCircle = win.confirm; win.confirm = () => true;
+  click(win, doc.querySelector('[data-del-mine="custom_capteur_rond_test"]'));
+  await tick(250);
+  win.confirm = origConfirmCircle;
+
+  section('Constructeur de composant — import JSON (limite fermée : aucun import possible avant cette session)');
+  assert(!!doc.getElementById('cb-import-file') && !!doc.getElementById('cb-import-btn'), 'bouton et champ fichier d\'import JSON présents');
+  const validImportJSON = JSON.stringify({
+    nom: 'Module importé test',
+    sym: '<line x1="0" y1="15" x2="60" y2="15" stroke="currentColor" stroke-width="2"/><rect x="10" y="5" width="40" height="20" fill="none" stroke="currentColor"/>',
+    terminals: [[0, 15], [60, 15]],
+    pinNames: ['IN', 'OUT'],
+    famille: 'Autre',
+  });
+  const validImportFile = new win.File([validImportJSON], 'composant.json', { type: 'application/json' });
+  await win.cbImportJSON(validImportFile);
+  await tick(150);
+  const importedDef = win.findDef('custom_module_importe_test');
+  assert(!!importedDef, 'le composant importé depuis un fichier JSON est retrouvable par findDef() après import');
+  assert(importedDef && importedDef.terminals.length === 2 && importedDef.pinNames.join(',') === 'IN,OUT', 'les bornes et le brochage du fichier JSON importé sont conservés tels quels');
+  assert(importedDef && /non garanties/i.test(importedDef.niveauVerification), 'le niveau de vérification d\'un import signale honnêtement l\'absence de garantie automatique bornes ↔ tracé (contrairement aux composants générés par le formulaire)');
+  const origConfirmImp = win.confirm; win.confirm = () => true;
+  click(win, doc.querySelector('[data-del-mine="custom_module_importe_test"]'));
+  await tick(250);
+  win.confirm = origConfirmImp;
+
+  const invalidImportFile = new win.File(['{"nom":"Sans bornes"}'], 'bad.json', { type: 'application/json' });
+  await win.cbImportJSON(invalidImportFile);
+  await tick(150);
+  assert(doc.getElementById('cb-import-msg').textContent.includes('Import impossible'), 'un fichier JSON invalide (sans "terminals") produit un message d\'erreur clair, sans lever d\'exception non interceptée');
+  assert(!win.findDef('custom_sans_bornes'), 'un import invalide n\'enregistre aucun composant');
+
   section('Bibliothèque 3 colonnes — Famille → Sous-famille → Fiche (§6/§7 des mises à jour reçues)');
   click(win, doc.querySelector('[data-comp-mode="parcourir"]'));
   await tick(150);
