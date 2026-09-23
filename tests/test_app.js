@@ -692,6 +692,71 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(b1.name !== b2.name, 'deux corps du même type reçoivent des noms distincts (résultat: "' + b1.name + '" / "' + b2.name + '")');
   assert(win.cao_assemblyMassKg(bodiesForNaming) > 0, 'la masse totale d\'un assemblage est la somme des masses de ses corps');
 
+  section('CAO mécanique 3D — éditeur d\'esquisse à la souris (limite fermée : profils numériques uniquement avant cette session)');
+  // Transform écran <-> monde pure (mêmes constantes que js/cao3d.js) : aller-retour exact, et
+  // vérification que l'axe Y écran (vers le bas) est bien inversé pour donner un Y monde vers le
+  // haut (convention déjà utilisée par les profils de révolution existants, ex. cao_defaultFeature).
+  const sk1 = win.cao_sketchToScreen(10, 20);
+  const back1 = win.cao_sketchToWorld(sk1[0], sk1[1]);
+  assert(Math.abs(back1[0]-10) < 1e-9 && Math.abs(back1[1]-20) < 1e-9, 'aller-retour écran<->monde exact pour un point d\'esquisse (résultat: ' + JSON.stringify(back1) + ')');
+  const skOrigin = win.cao_sketchToScreen(0, 0);
+  const skUp = win.cao_sketchToScreen(0, 10);
+  assert(skUp[1] < skOrigin[1], 'un Y monde positif (vers le haut) correspond à une coordonnée écran plus petite (Y écran croît vers le bas) — convention cohérente avec les profils de révolution déjà en place');
+
+  // cao_ensurePolygonProfile : bascule un profil rectangle en contour libre à 4 points sans le
+  // vider, puis un second appel sur un polygone déjà vide retombe sur un contour par défaut
+  // plutôt que de laisser un profil inutilisable.
+  const polyFeature = { type:'extrude', profile:{ shape:'rect', w:40, h:20 }, depth:5 };
+  win.cao_ensurePolygonProfile(polyFeature);
+  assert(polyFeature.profile.shape === 'polygon' && polyFeature.profile.pts.length === 4, 'basculer un profil rectangle en contour libre conserve 4 points de départ (le rectangle tracé), pas un contour vide (résultat: ' + JSON.stringify(polyFeature.profile.pts) + ')');
+  polyFeature.profile.pts = [];
+  win.cao_ensurePolygonProfile(polyFeature);
+  assert(polyFeature.profile.pts.length === 4, 'un contour libre vidé revient à un contour par défaut exploitable plutôt que de rester vide (résultat: ' + polyFeature.profile.pts.length + ' point(s))');
+  // Le volume d'une esquisse extrudée en contour libre (rectangle 40×20 retracé point par point)
+  // doit rester cohérent avec le même rectangle exprimé directement en profil 'rect' — preuve que
+  // le contour libre n'est pas un second moteur de calcul divergent, juste une autre façon
+  // d'exprimer le même polygone.
+  const rectVolDirect = win.cao_extrudeVolume({ profile:{ shape:'rect', w:40, h:20 }, depth:5 });
+  const rectVolAsPolygon = win.cao_extrudeVolume({ profile: polyFeature.profile, depth:5 });
+  assert(Math.abs(rectVolDirect - rectVolAsPolygon) < 1e-6, 'le volume d\'un rectangle retracé en contour libre est identique à celui du même rectangle en profil paramétrique (résultat: ' + rectVolDirect + ' vs ' + rectVolAsPolygon + ')');
+
+  const sketchBodyExtrude = win.cao_newBody([], 'extrude');
+  const extrudePts = win.cao_sketchProfilePts(sketchBodyExtrude);
+  assert(Array.isArray(extrudePts) && extrudePts.length >= 3 && sketchBodyExtrude.feature.profile.shape === 'polygon', 'ouvrir l\'esquisse d\'une extrusion rectangle/cercle la convertit automatiquement en contour libre exploitable par l\'éditeur graphique');
+  const sketchBodyRevolve = win.cao_newBody([], 'revolve');
+  sketchBodyRevolve.feature.profile.pts = [];
+  const revolvePts = win.cao_sketchProfilePts(sketchBodyRevolve);
+  assert(Array.isArray(revolvePts) && revolvePts.length === 4, 'ouvrir l\'esquisse d\'une révolution sans profil défini fournit un profil de départ exploitable plutôt qu\'un contour vide');
+
+  // cao_sketchOpen/Close pilotent l'état affiché par cao_propsHTML (observé indirectement via le
+  // HTML généré, la variable d'état interne n'étant volontairement pas exposée hors du module —
+  // même principe que C3D/c3dSelected, cf. tests d'intégration routeur ci-dessous).
+  win.cao_sketchClose();
+  const propsClosed = win.cao_propsHTML(sketchBodyExtrude);
+  assert(!propsClosed.includes('c3d-sketch-svg'), 'sans esquisse ouverte, le panneau de propriétés n\'affiche pas l\'éditeur graphique');
+  win.cao_sketchOpen(sketchBodyExtrude);
+  const propsOpenExtrude = win.cao_propsHTML(sketchBodyExtrude);
+  assert(propsOpenExtrude.includes('id="c3d-sketch-svg"'), 'ouvrir l\'esquisse d\'un corps affiche l\'éditeur graphique (SVG) dans le panneau de propriétés');
+  assert((propsOpenExtrude.match(/data-pt="/g)||[]).length === extrudePts.length, 'l\'éditeur graphique affiche exactement un point cliquable par point du contour (résultat: ' + (propsOpenExtrude.match(/data-pt="/g)||[]).length + ' pour ' + extrudePts.length + ' point(s))');
+  assert((propsOpenExtrude.match(/data-del="/g)||[]).length === extrudePts.length, 'chaque point de l\'esquisse a son propre bouton de suppression (✕)');
+  // Chaque point cliquable est placé à la coordonnée écran exacte issue de cao_sketchToScreen —
+  // même garantie "coordonnée déclarée = coordonnée réellement dessinée" que pour les gabarits de
+  // symboles du catalogue (tests/verify_catalog.js), appliquée ici à l'esquisse.
+  const firstPt = extrudePts[0], firstScreen = win.cao_sketchToScreen(firstPt[0], firstPt[1]);
+  assert(propsOpenExtrude.includes(`data-pt="0" cx="${firstScreen[0]}" cy="${firstScreen[1]}"`), 'le premier point de l\'esquisse est dessiné exactement à la coordonnée écran calculée par cao_sketchToScreen (pas une valeur désynchronisée)');
+  const propsClosedAfter = (() => { win.cao_sketchClose(); return win.cao_propsHTML(sketchBodyExtrude); })();
+  assert(!propsClosedAfter.includes('c3d-sketch-svg'), 'fermer l\'esquisse retire l\'éditeur graphique du panneau de propriétés');
+
+  // cao_fieldsHTML expose les nouvelles commandes : option "Contour libre" pour une extrusion,
+  // bouton "Dessiner à la souris" pour une révolution — sans rien retirer de la saisie numérique
+  // déjà en place (le champ "__pts" texte reste présent pour la révolution, ajout pas remplacement).
+  const extrudeFieldsRect = win.cao_fieldsHTML({ type:'extrude', profile:{ shape:'rect', w:40, h:20 }, depth:5 });
+  assert(extrudeFieldsRect.includes('value="polygon"'), 'l\'option "Contour libre (esquisse)" est proposée pour une extrusion, en plus de rectangle/cercle');
+  const extrudeFieldsPoly = win.cao_fieldsHTML({ type:'extrude', profile: polyFeature.profile, depth:5 });
+  assert(extrudeFieldsPoly.includes('data-sketch-open'), 'quand le profil d\'extrusion est déjà en contour libre, le bouton pour dessiner à la souris est affiché');
+  const revolveFields = win.cao_fieldsHTML({ type:'revolve', profile:{ pts:[[0,-20],[10,-20],[10,20],[0,20]] }, angle:360 });
+  assert(revolveFields.includes('data-sketch-open') && revolveFields.includes('data-f="__pts"'), 'le champ de révolution propose à la fois la saisie numérique existante ("__pts") ET le nouveau bouton pour dessiner à la souris — ajout, pas remplacement');
+
   section('CAO mécanique 3D — intégration routeur et repli gracieux sans WebGL (attendu dans ce harnais de test)');
   const jsErrCountBeforeCad = win.__jsErrors.length;
   await nav(win, 'cad3d/' + projectId);

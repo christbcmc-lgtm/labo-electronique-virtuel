@@ -1812,3 +1812,77 @@ catalogue statique).
   SVG nulle part dans le catalogue existant), ce n'est pas une régression introduite ici, mais
   ça reste une limite à garder en tête si l'import est un jour ouvert à des fichiers non fournis
   par l'utilisateur lui-même.
+
+## ADDENDUM 17 — CAO 3D : éditeur d'esquisse 2D à la souris (contour extrudé + profil de révolution)
+
+Suite de « finis les limites... continue avec les autres modules ». La limite la plus
+significative encore listée pour la CAO 3D (addendum 14 : « pas d'éditeur d'esquisse à la
+souris — le point suivant le plus significatif si le client souhaite continuer sur ce module »)
+est fermée dans `js/cao3d.js`, sans nouvelle dépendance.
+
+### Ce qui a été fait
+
+- **Un contour libre** (`shape:'polygon'`) rejoint rectangle/cercle comme forme de profil pour
+  une esquisse extrudée — nouveau, n'existait pas avant cette session (l'extrusion se limitait à
+  rectangle/cercle). `cao_ensurePolygonProfile()` bascule vers ce contour en repartant de la
+  forme actuelle (le rectangle ou le cercle déjà dessiné, converti en liste de points), jamais
+  d'un contour vide.
+- **Un éditeur graphique** (`cao_sketchEditorHTML`, SVG intégré au panneau de propriétés) permet
+  de dessiner ce contour libre, ou le profil rayon/hauteur d'une révolution, à la souris ou au
+  doigt : cliquer le fond ajoute un point à la suite du contour, glisser un point le déplace,
+  cliquer son "✕" le supprime. Un bouton "Dessiner à la souris" ouvre l'éditeur depuis le panneau
+  de propriétés du corps sélectionné.
+- **La saisie numérique existante n'est pas retirée** — pour une révolution, le champ texte
+  "rayon,hauteur ; ..." (`__pts`) reste affiché à côté du nouveau bouton graphique ; les deux
+  agissent sur le même tableau `feature.profile.pts`, donc restent toujours synchronisés, sans
+  code de conversion séparé à maintenir.
+- **Même principe de transform déjà éprouvé dans ce projet** (`js/plan.js`) plutôt qu'une
+  nouvelle approche : décalage écran via `getBoundingClientRect()` (offset seulement, jamais une
+  division par la taille rendue — donc stable même quand cette taille vaut 0, comme sous jsdom),
+  mise à l'échelle via une constante locale fixe (`C3D_SKETCH_SCALE`) plutôt que la géométrie SVG
+  réelle (`getScreenCTM`/`createSVGPoint`, non fournie par le harnais de test). Pendant le
+  glisser d'un point, seul le SVG est mis à jour directement (comme le déplacement des panneaux
+  flottants de `js/editor.js`) ; le relâchement déclenche le recalcul volume/masse/scène 3D et la
+  sauvegarde — pas chaque pixel du mouvement.
+- Écouteurs souris/tactile posés une seule fois sur `#c3d-props` (délégation), qui reste le même
+  élément entre deux rendus (seul son contenu est remplacé) — aucune fuite de listener à nettoyer,
+  cohérent avec le reste de ce module qui n'a pas de logique de démontage dédiée à ses panneaux.
+
+### Vérifié par exécution réelle (`npm test`, **305 vérifications, 0 échec**, 289 avant + 16
+nouvelles)
+
+Toute la logique **indépendante du rendu 3D/DOM réel** a été vérifiée directement : aller-retour
+exact de la transformation écran↔monde et sens de l'axe Y (convention "vers le haut" cohérente
+avec les profils de révolution déjà en place) ; `cao_ensurePolygonProfile` conserve les 4 points
+du rectangle de départ au lieu de vider le contour, et un contour vidé revient à un contour par
+défaut exploitable ; le volume d'un rectangle retracé point par point en contour libre est
+identique à celui du même rectangle exprimé en profil paramétrique (le contour libre n'est pas un
+second moteur de calcul divergent) ; ouvrir l'esquisse d'une extrusion rectangle/cercle la
+convertit bien en contour libre, et celle d'une révolution sans profil fournit un profil de
+départ ; le panneau de propriétés n'affiche l'éditeur graphique que lorsque l'esquisse est
+ouverte pour le corps sélectionné (et plus après fermeture) ; chaque point du contour a bien son
+propre repère cliquable et son bouton de suppression, dessinés exactement à la coordonnée écran
+calculée par `cao_sketchToScreen` (même garantie "coordonnée déclarée = coordonnée réellement
+dessinée" que pour les gabarits du catalogue, `tests/verify_catalog.js`) ; le nouveau bouton
+graphique est bien ajouté aux côtés de la saisie numérique existante pour une révolution, jamais
+à sa place. `tests/verify_catalog.js` re-exécuté sans changement (522 composants, 0 anomalie).
+
+### Ce qui n'a pas été vérifié / limites connues
+
+- **Interaction souris/tactile réelle** (glisser un point, cliquer précisément dans le SVG) :
+  n'a pas pu être vérifiée de bout en bout dans ce harnais, pour une raison structurelle et non
+  contournable — `afterCad3DView()` s'arrête au message de repli dès que Three.js est absent
+  (systématiquement le cas ici, les balises `<script src>` étant retirées volontairement par le
+  harnais), donc le panneau `#c3d-props` et ses écouteurs souris ne sont jamais montés dans cet
+  environnement. Toute la logique qui NE dépend PAS de ce montage (transform, génération HTML,
+  conversion de profil) a été vérifiée directement par des appels de fonction ; seule
+  l'interaction DOM en direct (`c3dSketchDown`/`c3dSketchMove`/`c3dSketchUp`) reste non exercée
+  par ce harnais — même limitation, pour la même raison, que le reste du rendu 3D de ce module.
+- **Rendu visuel réel** de l'éditeur (positionnement des points à l'écran, ergonomie du glisser,
+  lisibilité sur petit écran tactile) — même limitation que pour tout ce projet.
+- **Toujours pas d'opérations booléennes 3D générales** (seule limite de périmètre volontairement
+  restante pour ce module — nécessiterait une bibliothèque CSG dédiée, contraire au principe
+  "aucune nouvelle dépendance" suivi jusqu'ici).
+- Le contour libre ne propose ni cotation ni contraintes géométriques (parallélisme,
+  perpendicularité, symétrie...) — un point se place où l'utilisateur clique, sans assistance de
+  précision au-delà de l'arrondi au dixième de mm déjà appliqué.

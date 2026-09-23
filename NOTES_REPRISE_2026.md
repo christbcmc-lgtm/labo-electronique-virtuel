@@ -256,13 +256,16 @@ révolution, bibliothèque de pièces standard (vis/écrou/rondelle/profilé/eng
 approximatif), assemblage par positionnement (pas de fusion booléenne), matériaux/masse,
 coupe, export STL. Nouvel onglet "CAO 3D" (6e onglet). Détail complet dans l'addendum 13.
 
-Reste explicitement non couvert (choix de périmètre assumé, pas un oubli) :
+Reste explicitement non couvert (choix de périmètre assumé, pas un oubli) — liste mise à jour,
+voir point 15 ci-dessous pour le détail de ce qui a été fermé depuis :
 - Opérations booléennes 3D générales (union/soustraction/intersection entre solides
-  quelconques) — nécessiterait une bibliothèque CSG dédiée non incluse.
-- Éditeur d'esquisse 2D visuel (à la souris, avec contraintes/cotes) — les profils se saisissent
-  aujourd'hui sous forme de listes de coordonnées numériques.
-- Denture réelle des engrenages (représentés en disque avec alésage).
-- Congés/chanfreins, coupes/vues de mise en plan, export DXF.
+  quelconques) — nécessiterait une bibliothèque CSG dédiée non incluse, seule limite de
+  périmètre encore ouverte pour ce module.
+- ~~Denture réelle des engrenages~~, ~~congés/chanfreins~~, ~~export DXF~~ — fermés (addendum 14
+  de RAPPORT-FINAL.md).
+- ~~Éditeur d'esquisse 2D visuel (à la souris)~~ — fermé (addendum 17, voir point 15).
+- Coupes/vues de mise en plan (export DXF limité au profil 2D d'un corps, pas une mise en plan
+  complète avec cotes) — toujours non fait.
 - Vérification visuelle réelle du rendu — bloquée par le point 4 comme tout le reste.
 
 ## 13. Plan bâtiment — verrouillage lecture seule et logo PDF — fait cette session (addendum 15)
@@ -293,3 +296,23 @@ Reste explicitement non couvert (choix de périmètre assumé) :
   régression introduite ici.
 - Modèle électrique/simulation pour un composant importé — même limite que pour un composant
   créé via formulaire (voir point 11).
+
+## 15. CAO 3D — éditeur d'esquisse 2D à la souris — fait cette session (addendum 17)
+
+Dernière limite significative du point 12 fermée : un contour libre (esquisse extrudée) et le
+profil rayon/hauteur d'une révolution peuvent désormais se dessiner à la souris/au doigt
+(cliquer pour ajouter un point à la suite du contour, glisser pour le déplacer, ✕ pour le
+supprimer), en plus de la saisie numérique existante qui reste disponible (jamais retirée).
+Détail complet dans l'addendum 17 de RAPPORT-FINAL.md, avec la limitation structurelle honnête
+de ce qui n'a pas pu être vérifié : le harnais de test ne charge jamais Three.js (retiré
+volontairement, voir point 4), donc `afterCad3DView()` s'arrête systématiquement au message de
+repli avant d'atteindre le montage des écouteurs souris — seule la logique indépendante de ce
+montage (transform, génération HTML, conversion de profil) a pu être vérifiée par appel direct.
+
+Reste explicitement non couvert pour ce module (choix de périmètre assumé, la seule limite de
+fond encore ouverte) :
+- Opérations booléennes 3D générales entre solides quelconques — nécessiterait une bibliothèque
+  CSG dédiée, contraire au principe "aucune nouvelle dépendance" suivi jusqu'ici. Décision à
+  prendre avec le client si le besoin devient concret (voir RAPPORT-FINAL.md addendum 17).
+- Pas de cotation ni de contraintes géométriques dans l'éditeur d'esquisse (parallélisme,
+  perpendicularité, symétrie...) — un point se place où l'utilisateur clique.

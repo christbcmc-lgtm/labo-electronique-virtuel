@@ -525,10 +525,12 @@ function cao_fieldsHTML(feature){
   if (feature.type === 'extrude'){
     const p = feature.profile;
     return `
-    <label>Forme du profil</label><select data-f="__shape"><option value="rect"${p.shape==='rect'?' selected':''}>Rectangle</option><option value="circle"${p.shape==='circle'?' selected':''}>Cercle</option></select>
+    <label>Forme du profil</label><select data-f="__shape"><option value="rect"${p.shape==='rect'?' selected':''}>Rectangle</option><option value="circle"${p.shape==='circle'?' selected':''}>Cercle</option><option value="polygon"${p.shape==='polygon'?' selected':''}>Contour libre (esquisse)</option></select>
     ${p.shape==='circle'
       ? `<label>Diamètre (mm)</label><input data-f="__pd" type="number" value="${p.d||20}">`
-      : `<label>Largeur (mm)</label><input data-f="__pw" type="number" value="${p.w||40}"><label>Hauteur (mm)</label><input data-f="__ph" type="number" value="${p.h||20}">`}
+      : p.shape==='polygon'
+        ? `<label>Contour libre</label><button type="button" class="c3d-btn" data-sketch-open="1">✏️ Dessiner (${(p.pts||[]).length} pt)</button>`
+        : `<label>Largeur (mm)</label><input data-f="__pw" type="number" value="${p.w||40}"><label>Hauteur (mm)</label><input data-f="__ph" type="number" value="${p.h||20}">`}
     <label>Profondeur d'extrusion (mm)</label><input data-f="depth" type="number" value="${feature.depth}">
     <label>Symétrique / axe</label><input data-f="symmetric" type="checkbox" style="width:auto;justify-self:start"${feature.symmetric?' checked':''}>
     <label>Chanfrein (mm, 0=aucun)</label><input data-f="chamfer" type="number" step="any" min="0" value="${feature.chamfer||0}">
@@ -538,6 +540,7 @@ function cao_fieldsHTML(feature){
     const ptsTxt = (feature.profile.pts||[]).map(p=>`${p[0]},${p[1]}`).join(' ; ');
     return `
     <label>Profil "rayon,hauteur ; ..."</label><input data-f="__pts" value="${esc(ptsTxt)}" placeholder="ex. 0,-20 ; 10,-20 ; 10,20 ; 0,20">
+    <label>Éditeur graphique</label><button type="button" class="c3d-btn" data-sketch-open="1">✏️ Dessiner à la souris</button>
     <label>Angle (°, 360=plein tour)</label><input data-f="angle" type="number" value="${feature.angle===undefined?360:feature.angle}">`;
   }
   return '';
@@ -546,7 +549,12 @@ function cao_applyFieldChange(body, key, rawValue){
   const f = body.feature;
   if (key === '__holes'){ f.holes = cao_parseHolesText(rawValue); return; }
   if (f.type === 'extrude'){
-    if (key === '__shape'){ f.profile = f.profile.shape==='circle' && rawValue==='rect' ? { shape:'rect', w:40, h:20 } : rawValue==='circle' ? { shape:'circle', d:20 } : f.profile; f.profile.shape = rawValue; if (rawValue==='rect' && f.profile.w===undefined){ f.profile.w=40; f.profile.h=20; } if (rawValue==='circle' && f.profile.d===undefined) f.profile.d=20; return; }
+    if (key === '__shape'){
+      if (rawValue === 'polygon'){ cao_ensurePolygonProfile(f); return; }
+      f.profile = rawValue === 'circle' ? { shape:'circle', d: f.profile.d || 20 } : { shape:'rect', w: f.profile.w || 40, h: f.profile.h || 20 };
+      if (c3dSketchOpenFor === body.id) cao_sketchClose();
+      return;
+    }
     if (key === '__pw'){ f.profile.w = Number(rawValue)||1; return; }
     if (key === '__ph'){ f.profile.h = Number(rawValue)||1; return; }
     if (key === '__pd'){ f.profile.d = Number(rawValue)||1; return; }
@@ -623,6 +631,7 @@ function cao_propsHTML(body){
     <div class="c3d-frm3">${['x','y','z'].map((a,i)=>`<input data-rot="${i}" type="number" step="any" value="${body.transform.rot[i]}" title="${a}">`).join('')}</div>
     <div class="c3d-h4">${esc(CAO_FEATURE_LABELS[body.feature.type])}</div>
     <div class="c3d-frm" id="c3d-feature-fields">${cao_fieldsHTML(body.feature)}</div>
+    ${c3dSketchOpenFor === body.id ? cao_sketchEditorHTML(body) : ''}
     <div class="c3d-h4">Volume / masse</div>
     <div class="muted" style="font-size:.8em">${(vol/1000).toFixed(2)} cm³ · ${mass.toFixed(3)} kg</div>
     <div class="row" style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
@@ -639,6 +648,116 @@ function cao_summaryHTML(project){
     <table class="c3d-rep">${bodies.map(b=>`<tr><td>${esc(b.name)}</td><td class="n">${cao_bodyMassKg(b).toFixed(3)} kg</td></tr>`).join('') || '<tr><td class="muted">Aucun corps</td></tr>'}</table>
     <div style="margin-top:6px;font-weight:600">Masse totale : ${total.toFixed(3)} kg</div>
   </div>`;
+}
+
+/* =====================================================================
+   5bis. ÉDITEUR D'ESQUISSE 2D À LA SOURIS (profils extrude/revolve)
+   --------------------------------------------------------------------
+   Complète la saisie numérique déjà en place (conservée telle quelle —
+   c'est la voie la plus précise, et la seule directement testable sans
+   souris) par une voie graphique : cliquer le fond ajoute un point à la
+   suite du contour, glisser un point le déplace, cliquer son "✕" le
+   supprime. Aucune nouvelle dépendance : même principe de transform que
+   js/plan.js (décalage écran via getBoundingClientRect(), mise à
+   l'échelle via une constante locale fixe plutôt que la géométrie SVG
+   réelle getScreenCTM/createSVGPoint — non fournie par le harnais de
+   test, voir tests/test_app.js) — donc testable de bout en bout.
+   ===================================================================== */
+const C3D_SKETCH_W = 400, C3D_SKETCH_H = 260, C3D_SKETCH_SCALE = 3;
+const C3D_SKETCH_OX = C3D_SKETCH_W / 2, C3D_SKETCH_OY = C3D_SKETCH_H / 2;
+function cao_sketchToScreen(x, y){ return [x * C3D_SKETCH_SCALE + C3D_SKETCH_OX, C3D_SKETCH_OY - y * C3D_SKETCH_SCALE]; }
+function cao_sketchToWorld(px, py){ return [(px - C3D_SKETCH_OX) / C3D_SKETCH_SCALE, (C3D_SKETCH_OY - py) / C3D_SKETCH_SCALE]; }
+
+let c3dSketchOpenFor = null; // id du corps dont l'esquisse graphique est affichée, ou null
+let c3dSketchDragIdx = -1;
+
+// Bascule le profil d'une esquisse extrudée en contour libre (liste de points explicite), en
+// partant du rectangle/cercle actuel pour ne pas repartir de rien.
+function cao_ensurePolygonProfile(f){
+  if (f.profile.shape !== 'polygon'){
+    const base = cao_profilePoints(f.profile);
+    f.profile = { shape:'polygon', pts: base.map(p => [Math.round(p[0]*10)/10, Math.round(p[1]*10)/10]) };
+  } else if (!f.profile.pts || !f.profile.pts.length){
+    f.profile.pts = [[-20,-10],[20,-10],[20,10],[-20,10]];
+  }
+}
+// Retourne (en le créant/complétant si besoin) le tableau de points édité par l'esquisse
+// graphique — toujours feature.profile.pts, que le corps soit une esquisse extrudée (contour
+// libre) ou une révolution (profil rayon/hauteur).
+function cao_sketchProfilePts(body){
+  const f = body.feature;
+  if (f.type === 'extrude'){ cao_ensurePolygonProfile(f); return f.profile.pts; }
+  if (!f.profile.pts || !f.profile.pts.length) f.profile.pts = [[0,-20],[10,-20],[10,20],[0,20]];
+  return f.profile.pts;
+}
+function cao_sketchOpen(body){
+  if (body.feature.type !== 'extrude' && body.feature.type !== 'revolve') return;
+  cao_sketchProfilePts(body);
+  c3dSketchOpenFor = body.id;
+}
+function cao_sketchClose(){ c3dSketchOpenFor = null; c3dSketchDragIdx = -1; }
+
+function cao_sketchEditorHTML(body){
+  const kind = body.feature.type;
+  const pts = cao_sketchProfilePts(body);
+  const screenPts = pts.map(p => cao_sketchToScreen(p[0], p[1]));
+  const axis = cao_sketchToScreen(0, 0);
+  const markers = screenPts.map((p, i) => `<circle class="c3d-sk-pt" data-pt="${i}" cx="${p[0]}" cy="${p[1]}" r="5"></circle><text class="c3d-sk-del" data-del="${i}" x="${p[0]+8}" y="${p[1]-8}">✕</text>`).join('');
+  return `<div class="c3d-h4">Esquisse — ${kind==='revolve' ? 'profil rayon / hauteur' : 'contour libre'}</div>
+    <div class="c3d-sk-hint">Cliquez le fond pour ajouter un point à la suite du contour, glissez un point pour le déplacer, cliquez son ✕ pour le supprimer.</div>
+    <svg id="c3d-sketch-svg" class="c3d-sk-svg" viewBox="0 0 ${C3D_SKETCH_W} ${C3D_SKETCH_H}">
+      <line x1="${axis[0]}" y1="0" x2="${axis[0]}" y2="${C3D_SKETCH_H}" class="c3d-sk-axis"></line>
+      <line x1="0" y1="${axis[1]}" x2="${C3D_SKETCH_W}" y2="${axis[1]}" class="c3d-sk-axis"></line>
+      ${pts.length > 1 ? `<polygon points="${screenPts.map(p=>p.join(',')).join(' ')}" class="c3d-sk-poly"></polygon>` : ''}
+      ${markers}
+    </svg>
+    <div class="row" style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 8px">
+      <button type="button" class="c3d-btn" id="c3d-sketch-clear">Vider le contour</button>
+      <button type="button" class="c3d-btn" id="c3d-sketch-close">Fermer l'éditeur graphique</button>
+      <span class="muted" style="font-size:.75em;align-self:center">${pts.length} point(s)</span>
+    </div>`;
+}
+function cao_sketchEvWorld(e, svg){
+  const p = eventPoint(e);
+  const r = svg.getBoundingClientRect();
+  return cao_sketchToWorld(p.clientX - r.left, p.clientY - r.top);
+}
+function c3dSketchDown(e){
+  const svg = e.target.closest && e.target.closest('#c3d-sketch-svg'); if (!svg || !c3dSketchOpenFor) return;
+  const body = C3D.bodies.find(b => b.id === c3dSketchOpenFor); if (!body) return;
+  const pts = cao_sketchProfilePts(body);
+  const del = e.target.closest('[data-del]');
+  if (del){ pts.splice(+del.dataset.del, 1); c3dChanged(); return; }
+  const ptEl = e.target.closest('[data-pt]');
+  if (ptEl){ c3dSketchDragIdx = +ptEl.dataset.pt; if (e.cancelable) e.preventDefault(); return; }
+  const [wx, wy] = cao_sketchEvWorld(e, svg);
+  pts.push([Math.round(wx*10)/10, Math.round(wy*10)/10]);
+  c3dChanged();
+}
+function c3dSketchMove(e){
+  if (c3dSketchDragIdx < 0 || !c3dSketchOpenFor) return;
+  const svg = document.getElementById('c3d-sketch-svg'); if (!svg) return;
+  const body = C3D.bodies.find(b => b.id === c3dSketchOpenFor); if (!body) return;
+  const pts = cao_sketchProfilePts(body);
+  if (!pts[c3dSketchDragIdx]) { c3dSketchDragIdx = -1; return; }
+  if (e.cancelable) e.preventDefault();
+  const [wx, wy] = cao_sketchEvWorld(e, svg);
+  pts[c3dSketchDragIdx] = [Math.round(wx*10)/10, Math.round(wy*10)/10];
+  // Retour visuel immédiat sans reconstruire tout le panneau (même principe que le déplacement
+  // des panneaux flottants dans js/editor.js) : seul le relâchement déclenche c3dChanged()
+  // (recalcul volume/masse/scène 3D + sauvegarde), pas chaque pixel de la glisse.
+  const [sx, sy] = cao_sketchToScreen(pts[c3dSketchDragIdx][0], pts[c3dSketchDragIdx][1]);
+  const circle = svg.querySelector(`[data-pt="${c3dSketchDragIdx}"]`);
+  const delEl = svg.querySelector(`[data-del="${c3dSketchDragIdx}"]`);
+  if (circle){ circle.setAttribute('cx', sx); circle.setAttribute('cy', sy); }
+  if (delEl){ delEl.setAttribute('x', sx+8); delEl.setAttribute('y', sy-8); }
+  const poly = svg.querySelector('.c3d-sk-poly');
+  if (poly) poly.setAttribute('points', pts.map(p => cao_sketchToScreen(p[0],p[1]).join(',')).join(' '));
+}
+function c3dSketchUp(){
+  if (c3dSketchDragIdx < 0) return;
+  c3dSketchDragIdx = -1;
+  c3dChanged();
 }
 
 /* =====================================================================
@@ -701,6 +820,7 @@ async function afterCad3DView(){
   const raw = await c3dStorage.load();
   try { C3D = raw ? cao_validateProject(JSON.parse(raw)) : cao_newProject(); } catch (e) { C3D = cao_newProject(); }
   c3dSelected = null;
+  cao_sketchClose();
 
   const viewport = document.getElementById('c3d-viewport');
   let viewer;
@@ -737,14 +857,14 @@ async function afterCad3DView(){
     download3d('nomenclature_' + (C3D.meta.name||'piece').replace(/[^\w-]+/g,'_') + '.csv', new Blob([csv], { type:'text/csv;charset=utf-8' }));
   });
   document.getElementById('c3d-help')?.addEventListener('click', () => {
-    alert("Atelier CAO mécanique 3D :\n\n- Primitives (boîte, cylindre, sphère, cône, tube, tore) et bibliothèque (vis, écrou, rondelle, profilé, engrenage) paramétriques.\n- Esquisse extrudée : profil rectangle/cercle avec trous traversants optionnels (perçage), révolution : profil rayon/hauteur tourné autour de l'axe vertical.\n- L'assemblage se fait en positionnant plusieurs corps (pas de fusion booléenne 3D entre solides quelconques dans cette version — voir la documentation du projet).\n- La coupe horizontale masque progressivement le haut de l'assemblage pour voir l'intérieur.\n- Export STL (impression 3D) et nomenclature CSV (masse par corps, matériau).");
+    alert("Atelier CAO mécanique 3D :\n\n- Primitives (boîte, cylindre, sphère, cône, tube, tore) et bibliothèque (vis, écrou, rondelle, profilé, engrenage) paramétriques.\n- Esquisse extrudée : profil rectangle/cercle/contour libre avec trous traversants optionnels (perçage), révolution : profil rayon/hauteur tourné autour de l'axe vertical. Un contour libre ou un profil de révolution peut se dessiner à la souris (cliquer pour ajouter un point, glisser pour le déplacer, ✕ pour le supprimer) ou se saisir en coordonnées numériques.\n- L'assemblage se fait en positionnant plusieurs corps (pas de fusion booléenne 3D entre solides quelconques dans cette version — voir la documentation du projet).\n- La coupe horizontale masque progressivement le haut de l'assemblage pour voir l'intérieur.\n- Export STL (impression 3D) et nomenclature CSV (masse par corps, matériau).");
   });
 
   document.getElementById('c3d-tree')?.addEventListener('click', (e) => {
     const vis = e.target.closest('[data-toggle-vis]');
     if (vis){ const b = C3D.bodies.find(x=>x.id===vis.dataset.toggleVis); if (b){ b.visible = !b.visible; c3dChanged(); } return; }
     const row = e.target.closest('[data-body]');
-    if (row){ c3dSelected = row.dataset.body; c3dRefreshScene(); c3dRefreshSide(); }
+    if (row){ if (row.dataset.body !== c3dSketchOpenFor) cao_sketchClose(); c3dSelected = row.dataset.body; c3dRefreshScene(); c3dRefreshSide(); }
   });
 
   document.getElementById('c3d-props')?.addEventListener('change', (e) => {
@@ -761,9 +881,23 @@ async function afterCad3DView(){
     }
   });
   document.getElementById('c3d-props')?.addEventListener('click', (e) => {
+    if (e.target.closest('[data-sketch-open]')){
+      const body = C3D.bodies.find(b=>b.id===c3dSelected); if (!body) return;
+      cao_sketchOpen(body);
+      c3dRefreshSide();
+      return;
+    }
+    if (e.target.id === 'c3d-sketch-clear'){
+      const body = C3D.bodies.find(b=>b.id===c3dSketchOpenFor); if (!body) return;
+      cao_sketchProfilePts(body).length = 0;
+      c3dChanged();
+      return;
+    }
+    if (e.target.id === 'c3d-sketch-close'){ cao_sketchClose(); c3dRefreshSide(); return; }
     if (e.target.id === 'c3d-p-delete'){
       const body = C3D.bodies.find(b=>b.id===c3dSelected); if (!body) return;
       if (!confirm(`Supprimer "${body.name}" ?`)) return;
+      if (c3dSketchOpenFor === body.id) cao_sketchClose();
       C3D.bodies = C3D.bodies.filter(b=>b.id!==c3dSelected);
       c3dSelected = null;
       c3dChanged();
@@ -775,6 +909,16 @@ async function afterCad3DView(){
       download3d((body.name||'profil').replace(/[^\w-]+/g,'_') + '.dxf', new Blob([cao_profileToDXF(pts)], { type:'application/dxf' }));
     }
   });
+  // Éditeur d'esquisse : souris + tactile, délégués sur #c3d-props (élément stable entre deux
+  // rendus — seul son innerHTML est remplacé — donc pas de fuite de listener à nettoyer,
+  // même principe que le reste de ce module).
+  document.getElementById('c3d-props')?.addEventListener('mousedown', c3dSketchDown);
+  document.getElementById('c3d-props')?.addEventListener('touchstart', c3dSketchDown, { passive:false });
+  document.getElementById('c3d-props')?.addEventListener('mousemove', c3dSketchMove);
+  document.getElementById('c3d-props')?.addEventListener('touchmove', c3dSketchMove, { passive:false });
+  document.getElementById('c3d-props')?.addEventListener('mouseup', c3dSketchUp);
+  document.getElementById('c3d-props')?.addEventListener('touchend', c3dSketchUp);
+  document.getElementById('c3d-props')?.addEventListener('mouseleave', c3dSketchUp);
 
   if (typeof ResizeObserver !== 'undefined'){ _c3dRO = new ResizeObserver(() => viewer.resize()); _c3dRO.observe(viewport); }
 }
