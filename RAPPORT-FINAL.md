@@ -1665,3 +1665,50 @@ section + 18 nouvelles)
   assemblage, explicitement pas un profil d'engrenage usinable.
 - **Export STL non vérifié dans un logiciel tiers** (pas d'environnement pour le faire ici) —
   seule la présence de la fonction et son exécution sans exception ont pu être confirmées.
+
+## ADDENDUM 14 — Réduction des limites de la CAO 3D (denture réelle, perçage étendu, chanfrein, DXF)
+
+Suite à « finis les limites de ce que tu as livré, moi je contrôle depuis le navigateur » : le
+client prend en charge la vérification visuelle lui-même, ce qui lève le principal frein à
+l'avancement des limites listées dans l'addendum 13. Quatre limites concrètes ont été fermées
+dans `js/cao3d.js` :
+
+- **Denture réelle des engrenages** : `cao_gearProfile(module, teeth)` génère un vrai profil
+  denté (trapézoïdal, diamètres de tête/pied calculés selon les définitions normalisées
+  addendum = module, dedendum = 1,25×module), remplaçant l'ancien disque plein au diamètre
+  primitif. La même géométrie sert au calcul de volume/masse **et** au maillage 3D — garantit
+  que la masse affichée correspond exactement à ce qui est dessiné (même principe déjà appliqué
+  partout ailleurs dans ce projet).
+- **Perçage étendu aux primitives de base** : les corps `box` et `cylinder` acceptent désormais
+  un tableau de trous traversants optionnel (même mécanisme "cx,cy,d" que l'esquisse extrudée,
+  `Shape.holes` de Three.js — une vraie ouverture, pas un artifice), sans rien changer au cas
+  courant sans trou (toujours une géométrie simple `BoxGeometry`/`CylinderGeometry`).
+- **Chanfrein** : les esquisses extrudées acceptent un chanfrein (mm) aux deux extrémités, via
+  l'option native `bevelEnabled` de `THREE.ExtrudeGeometry` (pas un effet approximatif reconstruit
+  à la main). Le calcul de masse ne retranche pas le petit volume du chanfrein lui-même
+  (approximation assumée et documentée en commentaire — un chanfrein est une opération de bord
+  mineure au regard du volume total d'une pièce réelle).
+- **Export DXF** : `cao_profileToDXF()` génère un fichier DXF ASCII minimal (une `LWPOLYLINE`
+  fermée) à partir du profil d'une esquisse extrudée ou d'une révolution — exploitable dans un
+  autre logiciel de CAO/DAO ou pour une découpe laser/plasma. Bouton "Exporter le profil (DXF)"
+  dans le panneau de propriétés, visible uniquement pour les corps qui ont réellement un profil
+  2D exportable.
+
+### Vérifié par exécution réelle (`npm test`, **275 vérifications, 0 échec**, 265 avant + 10
+nouvelles)
+
+Volume d'une boîte/d'un cylindre percés comparé au calcul analytique (avec et sans trou — le cas
+sans trou reste inchangé, non-régression vérifiée explicitement), nombre de points et bornes de
+rayon du profil d'engrenage (module 2, 20 dents), écart significatif entre l'ancien calcul
+disque et le nouveau calcul par profil denté réel (preuve que le changement a bien un effet),
+volume positif des pièces composites, validité structurelle du DXF généré (section ENTITIES/
+LWPOLYLINE, terminé par EOF, bon nombre de coordonnées), disponibilité du profil exportable pour
+une esquisse extrudée et son absence pour une primitive sans esquisse (boîte).
+
+### Ce qui reste (choix de périmètre toujours assumé, pas des oublis)
+
+- Toujours aucune opération booléenne 3D générale entre solides quelconques (le perçage étendu
+  aux primitives de base couvre une bonne partie des besoins réels sans cette dépendance).
+- Toujours pas d'éditeur d'esquisse à la souris (saisie numérique des profils) — le point
+  suivant le plus significatif si le client souhaite continuer sur ce module.
+- L'export DXF ne couvre que le profil 2D d'un corps (pas une mise en plan complète avec cotes).

@@ -651,8 +651,32 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(Math.abs(revolveVol - expectedRevolve) < 1, 'révolution d\'un rectangle (rayon 10→20, hauteur 20) sur 360° = volume d\'un tube plein (Pappus-Guldin), attendu ' + expectedRevolve.toFixed(0) + ' mm³ (résultat: ' + revolveVol.toFixed(0) + ')');
   const steelCubeMass = win.cao_bodyMassKg({ feature:{ type:'box', w:100, h:100, d:100 }, material:'acier' });
   assert(Math.abs(steelCubeMass - 7.85) < 0.001, 'un cube d\'acier de 100 mm de côté pèse 7,85 kg (masse volumique 7850 kg/m³) — résultat: ' + steelCubeMass.toFixed(3) + ' kg');
+  const boxHoleVol = win.cao_primitiveVolume({ type:'box', w:20, h:5, d:10, holes:[{cx:0,cy:0,d:4}] });
+  assert(Math.abs(boxHoleVol - (200-Math.PI*4)*5) < 1, 'une boîte 20×10×5 avec un trou traversant Ø4 perd le volume du trou (résultat: ' + boxHoleVol.toFixed(1) + ')');
+  assert(win.cao_primitiveVolume({ type:'box', w:20, h:5, d:10 }) === 1000, 'sans trou, une boîte 20×10×5 garde son volume plein (1000 mm³, pas de régression pour le cas courant)');
+  const cylHoleVol = win.cao_primitiveVolume({ type:'cylinder', d:20, h:10, holes:[{cx:0,cy:0,d:6}] });
+  // Le diamètre extérieur reste calculé analytiquement (πr²) ; seul le trou passe par
+  // l'approximation polygonale (24 côtés, cf. cao_circlePoints) — d'où une tolérance un peu plus
+  // large que le calcul purement analytique, pour la même raison que le test d'esquisse ci-dessus.
+  assert(Math.abs(cylHoleVol - (Math.PI*100-Math.PI*9)*10) < 5, 'un cylindre Ø20×10 avec un alésage Ø6 perd le volume de l\'alésage (résultat: ' + cylHoleVol.toFixed(1) + ')');
+  const gearPts = win.cao_gearProfile(2, 20);
+  assert(gearPts.length === 80, 'le profil d\'un pignon à 20 dents a 4 points par dent (80 points) — résultat: ' + gearPts.length);
+  const gearRadii = gearPts.map(p => Math.hypot(p[0], p[1]));
+  assert(Math.min(...gearRadii) > 17 && Math.max(...gearRadii) < 23, 'les points du profil d\'engrenage restent entre le diamètre de pied et de tête attendus (module 2, 20 dents) — bornes observées: ' + Math.min(...gearRadii).toFixed(1) + '..' + Math.max(...gearRadii).toFixed(1));
+  const gearVol = win.cao_primitiveVolume({ type:'gear', module:2, teeth:20, thickness:5, bore:6 });
+  const discVol = Math.PI*400*5; // ancienne approximation (disque au diamètre primitif) : le nouveau calcul doit s'en écarter (denture réelle prise en compte)
+  assert(gearVol > 0 && Math.abs(gearVol - discVol) > 50, 'le volume de l\'engrenage reflète désormais le profil denté réel, pas un simple disque plein (résultat: ' + gearVol.toFixed(0) + ' mm³, ancien calcul disque: ' + discVol.toFixed(0) + ')');
   assert(win.cao_bodyVolume({ feature: win.cao_defaultFeature('screw') }) > 0, 'le volume d\'une vis générée par défaut est positif (tête + tige)');
   assert(win.cao_bodyVolume({ feature: win.cao_defaultFeature('nut') }) > 0, 'le volume d\'un écrou généré par défaut est positif');
+  // Coordonnées volontairement différentes de "10" (le code de groupe DXF pour X) pour ne pas
+  // fausser le comptage ci-dessous : une valeur de coordonnée qui vaudrait littéralement 10
+  // apparaîtrait aussi comme la chaîne "10" et serait comptée à tort comme un code de groupe.
+  const dxfSample = win.cao_profileToDXF([[0,0],[5,0],[5,5],[0,5]]);
+  assert(dxfSample.includes('LWPOLYLINE') && dxfSample.includes('ENDSEC') && dxfSample.trim().endsWith('EOF'), 'l\'export DXF d\'un profil produit un fichier structurellement valide (section ENTITIES/LWPOLYLINE, terminé par EOF)');
+  assert((dxfSample.match(/\n10\n/g)||[]).length === 4, 'le DXF contient bien les 4 coordonnées X du profil carré (résultat: ' + (dxfSample.match(/\n10\n/g)||[]).length + ')');
+  const extrudeBodyForDxf = { feature: win.cao_defaultFeature('extrude') };
+  assert(Array.isArray(win.cao_bodyProfilePoints(extrudeBodyForDxf)) && win.cao_bodyProfilePoints(extrudeBodyForDxf).length >= 3, 'le profil d\'une esquisse extrudée est exploitable pour un export DXF');
+  assert(win.cao_bodyProfilePoints({ feature: win.cao_defaultFeature('box') }) === null, 'une primitive sans esquisse 2D (boîte) n\'expose pas de profil exportable en DXF');
   const freshCad = win.cao_newProject();
   assert(freshCad.version === 1 && Array.isArray(freshCad.bodies) && freshCad.bodies.length === 0, 'un projet CAO 3D vide est correctement initialisé');
   let cadValidateError = null;

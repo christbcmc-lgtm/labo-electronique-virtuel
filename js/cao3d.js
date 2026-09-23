@@ -74,6 +74,25 @@ function cao_circlePoints(cx, cy, d, n){
   for (let i = 0; i < n; i++){ const a = i/n*Math.PI*2; pts.push([cx + r*Math.cos(a), cy + r*Math.sin(a)]); }
   return pts;
 }
+// Profil (polygone fermé) d'un pignon droit à denture simplifiée (trapézoïdale, pas une
+// développante de cercle réelle — suffisant pour l'encombrement/la masse/l'aspect visuel d'un
+// engrenage dans un assemblage, pas pour tailler un outillage) : chaque dent occupe la moitié de
+// son pas angulaire au sommet (diamètre de tête, dp + 2m) et retombe au diamètre de pied
+// (dp − 2,5m) dans l'autre moitié — dimensions issues des définitions normalisées "module,
+// addendum = m, dedendum = 1,25 m" d'un engrenage à denture droite standard.
+function cao_gearProfile(module, teeth){
+  const z = Math.max(4, Math.round(teeth || 20)), m = module || 2;
+  const dp = m*z, rTip = dp/2 + m, rRoot = dp/2 - 1.25*m;
+  const pts = [], step = Math.PI*2/z;
+  for (let i = 0; i < z; i++){
+    const a0 = i*step, a1 = a0 + step*0.28, a2 = a0 + step*0.5, a3 = a0 + step*0.78;
+    pts.push([rRoot*Math.cos(a0), rRoot*Math.sin(a0)]);
+    pts.push([rTip*Math.cos(a1), rTip*Math.sin(a1)]);
+    pts.push([rTip*Math.cos(a2), rTip*Math.sin(a2)]);
+    pts.push([rRoot*Math.cos(a3), rRoot*Math.sin(a3)]);
+  }
+  return pts;
+}
 function cao_polygonArea(pts){
   let a = 0;
   for (let i = 0; i < pts.length; i++){ const p = pts[i], q = pts[(i+1)%pts.length]; a += p[0]*q[1] - q[0]*p[1]; }
@@ -101,10 +120,17 @@ function cao_revolveVolume(feature){
   const angle = (feature.angle === undefined ? 360 : feature.angle) * Math.PI/180;
   return Math.abs(2 * Math.PI * cx * Math.abs(area) * (angle/(2*Math.PI)));
 }
+// Aire (mm²) d'un rectangle w×d moins ses trous circulaires "cx,cy,d" — perçage vertical
+// (traversant la hauteur h) réutilisable par n'importe quelle primitive prismatique/cylindrique
+// (voir cao_primitiveVolume 'box'/'cylinder' et cao_buildGeometry) : même mécanisme de trou par
+// esquisse (Shape.holes) que le type 'extrude', étendu aux primitives de base plutôt que
+// réservé à une esquisse dédiée — c'est la façon dont ce module couvre le perçage sans booléen
+// 3D général (voir RAPPORT-FINAL.md addendum 13).
+function cao_holesArea(holes){ return (holes||[]).reduce((s,h) => s + cao_polygonArea(cao_circlePoints(0,0,h.d)), 0); }
 function cao_primitiveVolume(feature){
   switch (feature.type){
-    case 'box': return (feature.w||0) * (feature.h||0) * (feature.d||0);
-    case 'cylinder': return Math.PI * Math.pow((feature.d||0)/2, 2) * (feature.h||0);
+    case 'box': return Math.max(0, (feature.w||0)*(feature.d||0) - cao_holesArea(feature.holes)) * (feature.h||0);
+    case 'cylinder': return Math.max(0, Math.PI*Math.pow((feature.d||0)/2,2) - cao_holesArea(feature.holes)) * (feature.h||0);
     case 'sphere': return (4/3) * Math.PI * Math.pow((feature.d||0)/2, 3);
     case 'cone': {
       const r1 = (feature.d1||0)/2, r2 = (feature.d2||0)/2, h = feature.h||0;
@@ -140,10 +166,12 @@ function cao_primitiveVolume(feature){
       return (wOut*wOut - wIn*wIn) * len;
     }
     case 'gear': {
-      // Approximation : disque plein au diamètre primitif (m × Z), suffisant pour une masse indicative.
-      const m = feature.module || 2, z = feature.teeth || 20, dp = m*z;
-      const bore = feature.bore || 0;
-      return Math.max(0, Math.PI*Math.pow(dp/2,2) - Math.PI*Math.pow(bore/2,2)) * (feature.thickness||5);
+      // Aire réelle du profil denté (cao_gearProfile), pas un disque au diamètre primitif : la
+      // même géométrie sert au calcul de volume ET au maillage 3D (cao_buildGeometry) — garantit
+      // que la masse affichée correspond exactement à ce qui est dessiné.
+      const outer = cao_polygonArea(cao_gearProfile(feature.module, feature.teeth));
+      const bore = feature.bore ? Math.PI*Math.pow(feature.bore/2, 2) : 0;
+      return Math.max(0, outer - bore) * (feature.thickness||5);
     }
   }
   return 0;
@@ -197,6 +225,22 @@ function cao_hexPoints(af){
   for (let i = 0; i < 6; i++){ const a = Math.PI/6 + i/6*Math.PI*2; pts.push([R*Math.cos(a), R*Math.sin(a)]); }
   return pts;
 }
+// Export DXF minimal (une seule LWPOLYLINE fermée, format ASCII R12 — lisible par tout logiciel
+// de CAO/DAO) d'un profil 2D. Sert le profil d'une esquisse extrudée ou d'une révolution : c'est
+// la pièce qui manquait pour faire le lien entre l'atelier CAO 3D et un plan de coupe 2D
+// exploitable ailleurs (découpe laser, plasma, mise en plan dans un autre logiciel).
+function cao_profileToDXF(points){
+  const lines = ['0','SECTION','2','ENTITIES','0','LWPOLYLINE','8','0','90',String(points.length),'70','1'];
+  for (const p of points){ lines.push('10', String(p[0]), '20', String(p[1])); }
+  lines.push('0','ENDSEC','0','EOF');
+  return lines.join('\n') + '\n';
+}
+function cao_bodyProfilePoints(body){
+  const f = body.feature;
+  if (f.type === 'extrude') return cao_profilePoints(f.profile);
+  if (f.type === 'revolve') return (f.profile.pts||[]).slice();
+  return null;
+}
 function cao_validateProject(o){
   if (!o || typeof o !== 'object' || o.version !== 1 || !Array.isArray(o.bodies)) throw new Error('Fichier CAO 3D non reconnu (version 1 attendue).');
   const P = cao_newProject();
@@ -233,17 +277,33 @@ function cao_shapeFromProfile(points, holes, THREE){
 }
 // Extrusion selon Y (convention commune à toutes les primitives de ce module, pour que la
 // hauteur "h"/"depth" saisie par l'utilisateur pointe toujours vers le haut à l'écran).
-function cao_extrudeAlongY(shape, depth, THREE, curveSegments){
-  const g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled:false, curveSegments: curveSegments||24 });
+// `chamfer` (mm, optionnel) : chanfrein aux deux extrémités de l'extrusion via le bevel intégré
+// de THREE.ExtrudeGeometry (option native, pas un artifice) — augmente la hauteur totale de
+// 2×chamfer (un chanfrein de chaque côté), comme le ferait un vrai chanfrein usiné. Le calcul de
+// masse (cao_extrudeVolume) ne soustrait pas le petit volume retiré par le chanfrein lui-même :
+// approximation assumée, un chanfrein reste une opération de bord mineure au regard du volume
+// total d'une pièce réelle.
+function cao_extrudeAlongY(shape, depth, THREE, curveSegments, chamfer){
+  const opts = { depth, bevelEnabled:false, curveSegments: curveSegments||24 };
+  if (chamfer > 0){ opts.bevelEnabled = true; opts.bevelThickness = chamfer; opts.bevelSize = chamfer; opts.bevelSegments = 2; opts.bevelOffset = 0; }
+  const g = new THREE.ExtrudeGeometry(shape, opts);
   g.rotateX(-Math.PI/2);
-  g.translate(0, depth/2, 0);
+  g.translate(0, (chamfer>0 ? depth/2 + chamfer : depth/2), 0);
   return g;
 }
 function cao_buildGeometry(feature, THREE){
   const f = feature;
   switch (f.type){
-    case 'box': return new THREE.BoxGeometry(f.w, f.h, f.d);
-    case 'cylinder': return new THREE.CylinderGeometry(f.d/2, f.d/2, f.h, 32);
+    case 'box': {
+      if (!f.holes || !f.holes.length) return new THREE.BoxGeometry(f.w, f.h, f.d);
+      const shape = cao_shapeFromProfile([[-f.w/2,-f.d/2],[f.w/2,-f.d/2],[f.w/2,f.d/2],[-f.w/2,f.d/2]], f.holes, THREE);
+      return cao_extrudeAlongY(shape, f.h, THREE);
+    }
+    case 'cylinder': {
+      if (!f.holes || !f.holes.length) return new THREE.CylinderGeometry(f.d/2, f.d/2, f.h, 32);
+      const shape = cao_shapeFromProfile(cao_circlePoints(0,0,f.d), f.holes, THREE);
+      return cao_extrudeAlongY(shape, f.h, THREE, 32);
+    }
     case 'sphere': return new THREE.SphereGeometry(f.d/2, 24, 16);
     case 'cone': return new THREE.CylinderGeometry(f.d2/2, f.d1/2, f.h, 32);
     case 'torus': return new THREE.TorusGeometry(f.dMajor/2, f.dTube/2, 16, 48);
@@ -253,7 +313,7 @@ function cao_buildGeometry(feature, THREE){
     }
     case 'extrude': {
       const shape = cao_shapeFromProfile(cao_profilePoints(f.profile), f.holes, THREE);
-      const g = cao_extrudeAlongY(shape, f.depth, THREE);
+      const g = cao_extrudeAlongY(shape, f.depth, THREE, 24, f.chamfer);
       if (!f.symmetric) g.translate(0, f.depth/2, 0); // par défaut : le plan d'esquisse est la base, pas le centre
       if (f.plane === 'XZ') g.rotateY(0);       // profil déjà dans le plan horizontal par construction (voir rotateX ci-dessus)
       else if (f.plane === 'YZ') g.rotateZ(Math.PI/2);
@@ -286,9 +346,8 @@ function cao_buildGeometry(feature, THREE){
       return cao_extrudeAlongY(shape, f.length||100, THREE);
     }
     case 'gear': {
-      const dp = (f.module||2) * (f.teeth||20);
-      const shape = cao_shapeFromProfile(cao_circlePoints(0,0,dp), f.bore ? [{cx:0,cy:0,d:f.bore}] : [], THREE);
-      return cao_extrudeAlongY(shape, f.thickness||5, THREE, 48);
+      const shape = cao_shapeFromProfile(cao_gearProfile(f.module, f.teeth), f.bore ? [{cx:0,cy:0,d:f.bore}] : [], THREE);
+      return cao_extrudeAlongY(shape, f.thickness||5, THREE, 4); // profil déjà polygonal (dents) : pas de subdivision de courbe supplémentaire nécessaire
     }
   }
   return new THREE.BoxGeometry(10,10,10);
@@ -435,9 +494,24 @@ const CAO_SIMPLE_FIELDS = {
   torus: [['dMajor','Diamètre majeur (mm)'],['dTube','Diamètre du tube (mm)']],
   gear: [['module','Module (mm)'],['teeth','Nombre de dents'],['thickness','Épaisseur (mm)'],['bore','Alésage (mm)']],
 };
+function cao_holesFieldHTML(holes){
+  const holesTxt = (holes||[]).map(h=>`${h.cx},${h.cy},${h.d}`).join(' ; ');
+  return `<label>Trous "cx,cy,d ; ..." (perçage vertical traversant)</label><input data-f="__holes" value="${esc(holesTxt)}" placeholder="ex. -15,0,6 ; 15,0,6">`;
+}
+function cao_parseHolesText(rawValue){
+  return rawValue.split(';').map(s=>s.trim()).filter(Boolean).map(s => {
+    const [cx,cy,d] = s.split(',').map(x=>Number(String(x).trim()));
+    return Number.isFinite(cx)&&Number.isFinite(cy)&&Number.isFinite(d) ? { cx, cy, d } : null;
+  }).filter(Boolean);
+}
+// box/cylinder acceptent un perçage vertical optionnel (mêmes trous "cx,cy,d" qu'une esquisse
+// extrudée) : c'est la manière dont ce module couvre le perçage sur une primitive de base sans
+// booléen 3D général — voir RAPPORT-FINAL.md addendum 13.
+const CAO_HOLE_CAPABLE = { box:1, cylinder:1 };
 function cao_fieldsHTML(feature){
   const simple = CAO_SIMPLE_FIELDS[feature.type];
-  if (simple) return simple.map(([k,label]) => `<label>${esc(label)}</label><input data-f="${k}" type="number" step="any" value="${feature[k]}">`).join('');
+  if (simple) return simple.map(([k,label]) => `<label>${esc(label)}</label><input data-f="${k}" type="number" step="any" value="${feature[k]}">`).join('')
+    + (CAO_HOLE_CAPABLE[feature.type] ? cao_holesFieldHTML(feature.holes) : '');
   if (feature.type === 'screw' || feature.type === 'nut' || feature.type === 'washer'){
     let h = `<label>Taille</label><select data-f="size">${CAO_SIZE_OPTS.map(s=>`<option${s===feature.size?' selected':''}>${s}</option>`).join('')}</select>`;
     if (feature.type === 'screw') h += `<label>Longueur (mm)</label><input data-f="length" type="number" value="${feature.length}">`;
@@ -450,7 +524,6 @@ function cao_fieldsHTML(feature){
     <label>Longueur (mm)</label><input data-f="length" type="number" value="${feature.length}">`;
   if (feature.type === 'extrude'){
     const p = feature.profile;
-    const holesTxt = (feature.holes||[]).map(h=>`${h.cx},${h.cy},${h.d}`).join(' ; ');
     return `
     <label>Forme du profil</label><select data-f="__shape"><option value="rect"${p.shape==='rect'?' selected':''}>Rectangle</option><option value="circle"${p.shape==='circle'?' selected':''}>Cercle</option></select>
     ${p.shape==='circle'
@@ -458,7 +531,8 @@ function cao_fieldsHTML(feature){
       : `<label>Largeur (mm)</label><input data-f="__pw" type="number" value="${p.w||40}"><label>Hauteur (mm)</label><input data-f="__ph" type="number" value="${p.h||20}">`}
     <label>Profondeur d'extrusion (mm)</label><input data-f="depth" type="number" value="${feature.depth}">
     <label>Symétrique / axe</label><input data-f="symmetric" type="checkbox" style="width:auto;justify-self:start"${feature.symmetric?' checked':''}>
-    <label>Trous "cx,cy,d ; ..."</label><input data-f="__holes" value="${esc(holesTxt)}" placeholder="ex. -15,0,6 ; 15,0,6">`;
+    <label>Chanfrein (mm, 0=aucun)</label><input data-f="chamfer" type="number" step="any" min="0" value="${feature.chamfer||0}">
+    ${cao_holesFieldHTML(feature.holes)}`;
   }
   if (feature.type === 'revolve'){
     const ptsTxt = (feature.profile.pts||[]).map(p=>`${p[0]},${p[1]}`).join(' ; ');
@@ -470,18 +544,12 @@ function cao_fieldsHTML(feature){
 }
 function cao_applyFieldChange(body, key, rawValue){
   const f = body.feature;
+  if (key === '__holes'){ f.holes = cao_parseHolesText(rawValue); return; }
   if (f.type === 'extrude'){
     if (key === '__shape'){ f.profile = f.profile.shape==='circle' && rawValue==='rect' ? { shape:'rect', w:40, h:20 } : rawValue==='circle' ? { shape:'circle', d:20 } : f.profile; f.profile.shape = rawValue; if (rawValue==='rect' && f.profile.w===undefined){ f.profile.w=40; f.profile.h=20; } if (rawValue==='circle' && f.profile.d===undefined) f.profile.d=20; return; }
     if (key === '__pw'){ f.profile.w = Number(rawValue)||1; return; }
     if (key === '__ph'){ f.profile.h = Number(rawValue)||1; return; }
     if (key === '__pd'){ f.profile.d = Number(rawValue)||1; return; }
-    if (key === '__holes'){
-      f.holes = rawValue.split(';').map(s=>s.trim()).filter(Boolean).map(s => {
-        const [cx,cy,d] = s.split(',').map(x=>Number(String(x).trim()));
-        return Number.isFinite(cx)&&Number.isFinite(cy)&&Number.isFinite(d) ? { cx, cy, d } : null;
-      }).filter(Boolean);
-      return;
-    }
     if (key === 'symmetric'){ f.symmetric = !!rawValue; return; }
   }
   if (f.type === 'revolve' && key === '__pts'){
@@ -557,7 +625,10 @@ function cao_propsHTML(body){
     <div class="c3d-frm" id="c3d-feature-fields">${cao_fieldsHTML(body.feature)}</div>
     <div class="c3d-h4">Volume / masse</div>
     <div class="muted" style="font-size:.8em">${(vol/1000).toFixed(2)} cm³ · ${mass.toFixed(3)} kg</div>
-    <button class="c3d-btn c3d-bad" id="c3d-p-delete" style="margin-top:10px">Supprimer ce corps</button>
+    <div class="row" style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+      ${cao_bodyProfilePoints(body) ? '<button class="c3d-btn" id="c3d-p-dxf">Exporter le profil (DXF)</button>' : ''}
+      <button class="c3d-btn c3d-bad" id="c3d-p-delete">Supprimer ce corps</button>
+    </div>
   </div>`;
 }
 function cao_summaryHTML(project){
@@ -696,6 +767,12 @@ async function afterCad3DView(){
       C3D.bodies = C3D.bodies.filter(b=>b.id!==c3dSelected);
       c3dSelected = null;
       c3dChanged();
+      return;
+    }
+    if (e.target.id === 'c3d-p-dxf'){
+      const body = C3D.bodies.find(b=>b.id===c3dSelected); if (!body) return;
+      const pts = cao_bodyProfilePoints(body); if (!pts || pts.length < 3) { toast('Profil insuffisant pour un export DXF.'); return; }
+      download3d((body.name||'profil').replace(/[^\w-]+/g,'_') + '.dxf', new Blob([cao_profileToDXF(pts)], { type:'application/dxf' }));
     }
   });
 
