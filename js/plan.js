@@ -2145,9 +2145,13 @@ function buildSheetSVG(opt) {
   for (let i = 0; i < 5; i++) s += `<rect x="${bx + i * seg}" y="${by}" width="${seg}" height="1.5" fill="${i % 2 ? '#fff' : '#000'}" stroke="#000" stroke-width="0.25"/>`;
   s += `<text x="${bx}" y="${by - 1.2}" font-size="2.4" text-anchor="middle">0</text><text x="${bx + barL}" y="${by - 1.2}" font-size="2.4" text-anchor="middle">${barM} m</text>`;
 
-  const cell = (x, y, w, h, label, val, big) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fff" stroke="#000" stroke-width="0.3"/><text x="${x + 1.5}" y="${y + 3.1}" font-size="1.9" fill="#555">${esc(label)}</text><text x="${x + 1.5}" y="${y + h - 2.3}" font-size="${big ? 4.2 : 3.4}" font-weight="${big ? 700 : 400}">${esc(String(val || '').slice(0, 44))}</text>`;
+  const cell = (x, y, w, h, label, val, big, indent) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fff" stroke="#000" stroke-width="0.3"/><text x="${x + (indent||1.5)}" y="${y + 3.1}" font-size="1.9" fill="#555">${esc(label)}</text><text x="${x + (indent||1.5)}" y="${y + h - 2.3}" font-size="${big ? 4.2 : 3.4}" font-weight="${big ? 700 : 400}">${esc(String(val || '').slice(0, 44))}</text>`;
   s += `<rect x="${cx}" y="${cy}" width="${cw}" height="${ch}" fill="#fff" stroke="#000" stroke-width="0.6"/>`;
-  s += cell(cx, cy, 120, 14, 'Projet', m.projet || m.name, true) + cell(cx + 120, cy, 60, 14, 'N° de planche', m.planche);
+  // Logo partagé de l'application (même symbole que la barre supérieure et les 4 PDF de js/pdf.js,
+  // §17 des mises à jour reçues : cohérence visuelle interface/PDF) — ajouté au coin du cartouche
+  // sans toucher au reste de la planche technique déjà en place.
+  s += `<g transform="translate(${cx + 2} ${cy + 3}) scale(0.24)" color="#000">${LAB_LOGO_SVG}</g>`;
+  s += cell(cx, cy, 120, 14, 'Projet', m.projet || m.name, true, 12) + cell(cx + 120, cy, 60, 14, 'N° de planche', m.planche);
   s += cell(cx, cy + 14, 120, 14, 'Titre du plan', m.titre) + cell(cx + 120, cy + 14, 60, 14, 'Niveau', curLevel().name);
   s += cell(cx, cy + 28, 40, 12, 'Échelle', '1:' + sc) + cell(cx + 40, cy + 28, 40, 12, 'Date', m.date) + cell(cx + 80, cy + 28, 60, 12, 'Dessiné par', m.auteur) + cell(cx + 140, cy + 28, 40, 12, 'Indice', m.indice);
   return s + '</svg>';
@@ -2321,6 +2325,7 @@ async function viewPlan(projectId) {
         <a href="#/dimensionnement/${projectId}">Dimensionnement</a>
         <a href="#/plan/${projectId}" class="active">Plan</a>
         <a href="#/plan3d/${projectId}">3D</a>
+        <a href="#/cad3d/${projectId}">CAO 3D</a>
       </div>
     </div>
     <div style="flex:1;min-height:0;position:relative">${planShellHTML()}</div>

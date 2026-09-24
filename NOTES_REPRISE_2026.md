@@ -35,22 +35,43 @@ bâclée. » Cette session a corrigé :
   (`icTemplate()`/`viewH`, addendum 6) : ce point précis est réglé, ne pas le re-signaler dans
   un audit futur.
 
+**Mise à jour (session suivante, voir RAPPORT-FINAL.md addendum 11)** : la liste "composants de
+contrôle/puissance en gabarit rectangle + sigle" ci-dessous a été revue un par un contre les
+conventions réelles de schématique électrique (pas juste relue en diagonale) :
+
+- `variateur_vitesse` (VFD), `gradateur_puissance`, `hacheur`, `analyseur_reseau`,
+  `relais_protection` : **confirmés corrects tels quels**. Aucun symbole IEC 60617 distinctif
+  n'existe pour ces appareils de conversion/mesure à ce niveau d'abstraction (dispositif complet,
+  pas son schéma interne) — le bloc fonctionnel étiqueté est la convention réellement utilisée
+  dans les schémas unifilaires et fonctionnels professionnels. Ne pas rouvrir sans nouvelle
+  information contraire.
+- `relais_auxiliaire` : déjà un symbole distinct (contacts courbes dessinés à la main, pas un
+  simple rectangle) — vérifié correct, rien à faire.
+- `permutateur`, `telerupteur` : déjà corrigés lors d'une session précédente (brochage IEC
+  documenté via `pinNames`, voir plus haut) — confirmés à jour, pas de nouveau problème trouvé.
+- `interphone` : **corrigé** — remplacé le rectangle générique portant le texte "INT" par un
+  boîtier avec un pictogramme reconnaissable (silhouette de haut-parleur, réutilisant la forme
+  déjà employée pour `haut_parleur`, + bouton d'appel), sur le même principe que le multimètre
+  (addendum 5). Aucun autre composant de cette liste ne présentait un vrai déficit de ce type
+  après vérification individuelle.
+
 Restent à auditer, par ordre de valeur probable :
 
-- Les composants de contrôle/puissance encore en gabarit "rectangle + sigle" (`variateur_vitesse`,
-  `gradateur_puissance`, `hacheur`, `relais_auxiliaire`, `analyseur_reseau`,
-  `relais_protection`, `interphone`, `permutateur`, `telerupteur`...) : à vérifier composant
-  par composant si un symbole IEC 60617 distinctif existe et vaut la peine d'être dessiné à la
-  main, ou si le bloc fonctionnel étiqueté reste la convention correcte (c'est déjà le cas
-  pour beaucoup d'appareils de commande/contrôle dans les schémas fonctionnels réels — à ne
-  pas changer par principe).
 - Les ~130-150 composants basés sur `icTemplate()` (circuits intégrés génériques) : le
-  rectangle à broches numérotées **est** la convention IEC/pratique standard pour un CI, ce
-  n'est probablement pas à corriger — mais mérite une vérification explicite plutôt qu'une
-  supposition.
+  rectangle à broches numérotées **est** la convention IEC/pratique standard pour un CI —
+  **confirmé** (vérification explicite faite cette session, pas une simple supposition reportée) :
+  c'est la convention universellement utilisée par les fabricants et les logiciels de CAO
+  électronique pour représenter un circuit intégré. Rien à corriger sur ce point.
 - Les composants "vedettes" dessinés à la main (résistance, diodes, transistors, portes
   logiques, AOP, transformateurs...) sont déjà vérifiés (RAPPORT-FINAL section D/O3) — ne pas
   les rouvrir sans raison précise.
+- **Ce qui reste réellement ouvert** : un audit visuel pixel par pixel (proportions, épaisseur
+  de trait, lisibilité à petite échelle) de l'ensemble des ~522 symboles n'a toujours pas pu
+  être fait, faute d'accès à un vrai navigateur (voir point 4) — seule la géométrie
+  bornes↔tracé est vérifiée automatiquement (`tests/verify_catalog.js`), pas le rendu visuel
+  réel. La question « la convention utilisée est-elle la bonne » (posée composant par
+  composant, sans navigateur) est en revanche désormais traitée pour toutes les familles
+  identifiées comme douteuses.
 
 Une méthode possible pour la suite : lister les symboles par famille avec une capture/aperçu
 (la fiche détail de la bibliothèque 3 colonnes, ajoutée cette session, permet justement de
@@ -141,7 +162,13 @@ notamment ce qui a pu être vérifié (géométrie pure, repli gracieux sans Thr
 ce qui ne l'a pas pu (rendu WebGL réel, chargement réel du CDN — même limitation d'environnement
 que pour tout le reste de ce projet, voir point 4).
 
-## 8. CAO mécanique 3D — PROCHAINE ÉTAPE SUGGÉRÉE, NON COMMENCÉE
+## 8. CAO mécanique 3D — FAIT (session suivante), voir point 12 et RAPPORT-FINAL.md addendum 13
+
+**Mise à jour** : ce chantier, décrit ci-dessous comme différé, a finalement été traité dans une
+session suivante sur demande explicite du client — voir le point 12 plus bas pour ce qui a été
+livré et le périmètre assumé (pas d'opérations booléennes 3D générales). Le texte original de ce
+point est conservé tel quel ci-dessous à titre d'historique (c'est la description du besoin telle
+que comprise avant réalisation, utile pour comparer à ce qui a été effectivement livré) :
 
 C'est la Phase 3 du cahier reçu, volontairement laissée de côté cette session (chantier d'une
 tout autre ampleur que la vue 3D du bâtiment ci-dessus — voir la justification dans l'addendum
@@ -178,5 +205,114 @@ mais les opérations booléennes fiables nécessitent une bibliothèque CSG déd
 - [ ] Faire vérifier le rendu 3D réel (point 7) dans un vrai navigateur dès que possible —
       c'est la partie la plus visuelle de tout ce qui a été livré jusqu'ici, et la seule à
       n'avoir reçu aucune vérification pixel, même approximative.
-- [ ] Décider si la CAO mécanique 3D (point 8) est réellement souhaitée avant d'y investir une
-      session complète — c'est de loin le chantier le plus lourd de tout ce qui reste.
+- [x] CAO mécanique 3D (point 8) — faite, périmètre délimité (voir point 12).
+- [ ] Décider si les opérations booléennes 3D générales (union/soustraction entre solides
+      quelconques, hors périmètre du point 12) valent l'ajout d'une dépendance CSG dédiée.
+
+## 9. Énergies renouvelables — 17 composants manquants ajoutés cette session (voir RAPPORT-FINAL.md, addendum 9)
+
+Protection DC/batterie (fusible gPV, sectionneur DC, fusible/sectionneur batterie), optimiseur
+PV, BMS, éolien (génératrice, redresseur, contrôleur, frein), hydraulique (contrôleur, vanne),
+et une nouvelle famille "Solaire thermique" complète (capteur, ballon, circulateur, régulateur
+différentiel, sonde). Catalogue : 505 → 522 composants. Détail complet dans l'addendum 9.
+
+Reste explicitement non couvert de la section énergies renouvelables du cahier reçu (non
+vérifié comme manquant avec la même rigueur — à revérifier avant d'ajouter) : micro-réseaux
+hybrides détaillés (flux réseau ↔ stockage ↔ production), dimensionnement dédié à ces nouveaux
+composants (le module Dimensionnement §24 calcule déjà PV/batterie/onduleur mais n'a pas été
+étendu pour l'éolien/hydraulique/solaire thermique).
+
+## À faire avant de fusionner ce document dans le CDC définitif (suite)
+
+
+## 10. Dimensionnement éolien/hydraulique/solaire thermique — fait cette session (voir RAPPORT-FINAL.md, addendum 10)
+
+Le point ci-dessus (dimensionner ce qui a été ajouté au point 9) est traité : nouvel onglet
+« Éolien / Hydraulique / Solaire thermique » dans le module Dimensionnement, formules physiques
+standard (puissance du vent, puissance hydraulique, production solaire thermique), export PDF
+individuel comme les onglets existants. Détail complet dans l'addendum 10.
+
+## 11. Constructeur de composant personnalisé — fait cette session (voir RAPPORT-FINAL.md, addendum 12)
+
+Nouvelle page "Créer un composant" (3e onglet de la page Composants) : génère automatiquement
+le symbole via icTemplate() (même gabarit que les CI génériques, donc géométriquement correct
+par construction), stocké par utilisateur (nouvelle table Supabase `custom_components` + RLS),
+immédiatement utilisable dans tous ses projets (recherche, éditeur de schéma) sans avoir touché
+au reste du moteur. Détail complet dans l'addendum 12.
+
+Reste explicitement non couvert :
+- Choix de forme de boîtier — **fait, voir point 14** (second gabarit circulaire ajouté).
+- Modèle électrique/simulation pour un composant personnalisé (le cahier distingue
+  explicitement symbole graphique et modèle électrique, §24 — seul le symbole est couvert ici,
+  ces composants ne sont jamais `simulable`). Choix de périmètre assumé, pas traité au point 14.
+- Import depuis un fichier externe — **fait, voir point 14** (import JSON ajouté ; pas de SVG
+  externe autonome, un import reste un JSON structuré contenant `sym` en tant que chaîne SVG).
+
+## 12. CAO mécanique 3D — fait cette session (voir RAPPORT-FINAL.md, addendum 13)
+
+Le point 8 ci-dessus (Phase 3, "prochaine étape suggérée, non commencée") est traité, avec un
+périmètre délibérément réduit et documenté : primitives, esquisse extrudée avec perçage,
+révolution, bibliothèque de pièces standard (vis/écrou/rondelle/profilé/engrenage
+approximatif), assemblage par positionnement (pas de fusion booléenne), matériaux/masse,
+coupe, export STL. Nouvel onglet "CAO 3D" (6e onglet). Détail complet dans l'addendum 13.
+
+Reste explicitement non couvert (choix de périmètre assumé, pas un oubli) — liste mise à jour,
+voir point 15 ci-dessous pour le détail de ce qui a été fermé depuis :
+- Opérations booléennes 3D générales (union/soustraction/intersection entre solides
+  quelconques) — nécessiterait une bibliothèque CSG dédiée non incluse, seule limite de
+  périmètre encore ouverte pour ce module.
+- ~~Denture réelle des engrenages~~, ~~congés/chanfreins~~, ~~export DXF~~ — fermés (addendum 14
+  de RAPPORT-FINAL.md).
+- ~~Éditeur d'esquisse 2D visuel (à la souris)~~ — fermé (addendum 17, voir point 15).
+- Coupes/vues de mise en plan (export DXF limité au profil 2D d'un corps, pas une mise en plan
+  complète avec cotes) — toujours non fait.
+- Vérification visuelle réelle du rendu — bloquée par le point 4 comme tout le reste.
+
+## 13. Plan bâtiment — verrouillage lecture seule et logo PDF — fait cette session (addendum 15)
+
+Le point 6 mentionnait deux limites : verrouillage lecture seule incomplet (en réalité déjà
+correct, l'affirmation était inexacte — corrigé dans la documentation, testé de bout en bout) et
+PDF du plan sans le logo partagé (ajouté au cartouche, sans toucher à la planche technique).
+Détail dans l'addendum 15 de RAPPORT-FINAL.md.
+
+Reste du point 6 toujours non fait : fusion complète de l'export PDF du plan avec la famille de
+PDF partagée (`openPdfWindow`) — décision volontairement non prise, le plan produit un type de
+document (planche technique dimensionnée A5-A0) que le système actuel ne sait pas produire.
+
+## 14. Constructeur de composant — second gabarit de boîtier + import JSON — fait cette session (addendum 16)
+
+Les deux limites du point 11 sont fermées : un second gabarit `circularTemplate()` (broches à
+360° autour d'un cercle, même garantie géométrique par construction que `icTemplate()`) est
+sélectionnable dans le formulaire, et une carte "Importer un composant (JSON)" permet
+d'enregistrer un composant depuis un fichier `.json` structuré (`nom`/`sym`/`terminals`
+obligatoires), validé et signalé honnêtement comme non garanti géométriquement (contrairement
+aux gabarits générés). Détail complet dans l'addendum 16 de RAPPORT-FINAL.md.
+
+Reste explicitement non couvert (choix de périmètre assumé) :
+- Bibliothèque de boîtiers réalistes (TO-220, potentiomètre à l'apparence réelle, triangle...)
+  — le gabarit circulaire reste générique (cercle + broches radiales régulières).
+- Validation du contenu du SVG importé (aucun sandboxing/liste blanche de balises) — cohérent
+  avec le reste du catalogue qui injecte déjà tous les symboles sans sandboxing, pas une
+  régression introduite ici.
+- Modèle électrique/simulation pour un composant importé — même limite que pour un composant
+  créé via formulaire (voir point 11).
+
+## 15. CAO 3D — éditeur d'esquisse 2D à la souris — fait cette session (addendum 17)
+
+Dernière limite significative du point 12 fermée : un contour libre (esquisse extrudée) et le
+profil rayon/hauteur d'une révolution peuvent désormais se dessiner à la souris/au doigt
+(cliquer pour ajouter un point à la suite du contour, glisser pour le déplacer, ✕ pour le
+supprimer), en plus de la saisie numérique existante qui reste disponible (jamais retirée).
+Détail complet dans l'addendum 17 de RAPPORT-FINAL.md, avec la limitation structurelle honnête
+de ce qui n'a pas pu être vérifié : le harnais de test ne charge jamais Three.js (retiré
+volontairement, voir point 4), donc `afterCad3DView()` s'arrête systématiquement au message de
+repli avant d'atteindre le montage des écouteurs souris — seule la logique indépendante de ce
+montage (transform, génération HTML, conversion de profil) a pu être vérifiée par appel direct.
+
+Reste explicitement non couvert pour ce module (choix de périmètre assumé, la seule limite de
+fond encore ouverte) :
+- Opérations booléennes 3D générales entre solides quelconques — nécessiterait une bibliothèque
+  CSG dédiée, contraire au principe "aucune nouvelle dépendance" suivi jusqu'ici. Décision à
+  prendre avec le client si le besoin devient concret (voir RAPPORT-FINAL.md addendum 17).
+- Pas de cotation ni de contraintes géométriques dans l'éditeur d'esquisse (parallélisme,
+  perpendicularité, symétrie...) — un point se place où l'utilisateur clique.

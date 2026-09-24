@@ -1072,7 +1072,11 @@ const BATIMENT = [
     { unit:'s', defaultValue:120, valueOptions:[60,120,300], famille:'Commande éclairage', def:"Coupe automatiquement l'éclairage des parties communes après une durée réglable.", wiki:'Minuterie', alias:'minuterie temporisee escalier' }),
   defRow('detecteur_fumee','Détecteur de fumée (DAAF)', T2, `${leadLine(0,15,10,15)}${leadLine(50,15,60,15)}<circle cx="30" cy="15" r="10" fill="none" stroke="currentColor" stroke-width="2"/>${ctext(30,19,'DAAF',5)}`,
     { famille:'Bâtiment', def:"Détecte les fumées d'incendie et déclenche une alarme sonore, obligatoire dans l'habitat.", wiki:'Détecteur_de_fumée', alias:'daaf alarme incendie' }),
-  defRow('interphone','Interphone / visiophone', T4, `${leadLine(0,8,16,8)}${leadLine(0,22,16,22)}${leadLine(44,8,60,8)}${leadLine(44,22,60,22)}<rect x="16" y="3" width="28" height="24" fill="none" stroke="currentColor" stroke-width="1.8"/>${ctext(30,17,'INT',7)}`,
+  // Boîtier + pictogramme haut-parleur (même trapèze que `haut_parleur` ci-dessus, pour rester
+  // cohérent) + bouton d'appel : remplace le texte générique "INT" par une silhouette reconnaissable
+  // d'appareil de communication, sur le principe déjà appliqué au multimètre (voir RAPPORT-FINAL,
+  // addendum 5) plutôt qu'un simple rectangle étiqueté (audit des symboles, §1 des notes de reprise).
+  defRow('interphone','Interphone / visiophone', T4, `${leadLine(0,8,16,8)}${leadLine(0,22,16,22)}${leadLine(44,8,60,8)}${leadLine(44,22,60,22)}<rect x="16" y="3" width="28" height="24" fill="none" stroke="currentColor" stroke-width="1.8"/><polygon points="21,11 27,11 33,7 33,21 27,17 21,17" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="38" cy="20" r="2" fill="none" stroke="currentColor" stroke-width="1.3"/>`,
     { famille:'Bâtiment', def:"Permet la communication (audio ou vidéo) entre l'entrée d'un logement et l'intérieur.", wiki:'Portier_(sécurité)', alias:'visiophone portier' }),
   defRow('prise_usb_murale','Prise murale avec USB', T2, `${leadLine(0,15,20,15)}${leadLine(40,15,60,15)}<circle cx="30" cy="15" r="10" fill="none" stroke="currentColor" stroke-width="1.8"/>${ctext(30,19,'USB',5)}`,
     { unit:'A', defaultValue:16, valueOptions:[16,20], famille:'Bâtiment', def:"Prise de courant intégrant un ou deux ports de charge USB.", wiki:'Prise_de_courant', alias:'prise usb chargeur mural' }),
@@ -1175,6 +1179,44 @@ const RENOUVELABLES = [
     { famille:'Mesure', def:"Enregistre en continu les grandeurs de production/consommation pour analyse et supervision.", wiki:'Enregistreur_de_données', alias:'monitoring supervision pv' }),
   defRow('compteur_bidirectionnel','Compteur bidirectionnel (net metering)', T2, `${TPL.circleLetter('kWh')}`,
     { famille:'Mesure', def:"Mesure séparément l'énergie injectée sur le réseau et l'énergie soutirée.", wiki:'Compteur_communicant', alias:'net metering injection soutirage' }),
+
+  // ---- Protection DC/batterie, éolien, hydraulique, solaire thermique (mises à jour reçues du
+  // client : composants cités explicitement mais absents du catalogue avant cette session —
+  // vérifié par recherche dans ce fichier avant ajout, pas ajoutés par supposition). ----
+  defRow('fusible_gpv','Fusible gPV', T2, `${leadLine(0,15,14,15)}${leadLine(46,15,60,15)}<rect x="14" y="10" width="32" height="10" fill="none" stroke="currentColor" stroke-width="2"/><line x1="14" y1="15" x2="46" y2="15" stroke="currentColor" stroke-width="1.2"/>${ctext(30,27,'gPV',6)}`,
+    { unit:'A', defaultValue:15, valueOptions:[10,15,20,25,30], famille:'Protections', def:"Fusible à courbe gPV, calibré pour la protection des chaînes photovoltaïques en courant continu.", wiki:'Fusible_électrique', alias:'fusible pv string dc gpv' }),
+  defRow('sectionneur_dc','Sectionneur DC', T2, `${leadLine(0,15,18,15)}${leadLine(42,15,60,15)}<circle cx="18" cy="15" r="2.2" fill="currentColor"/><circle cx="42" cy="15" r="2.2" fill="currentColor"/><line x1="18" y1="15" x2="38" y2="4" stroke="currentColor" stroke-width="2"/>${ctext(30,27,'DC',6)}`,
+    { unit:'A', defaultValue:32, valueOptions:[16,25,32,63], famille:'Protections', def:"Sectionneur conçu pour couper en charge un circuit continu (panneaux ou batteries) : technologie d'arc différente d'un sectionneur AC.", wiki:'Sectionneur', alias:'sectionneur continu dc pv batterie' }),
+  defRow('fusible_batterie','Fusible de batterie', T2, `${leadLine(0,15,14,15)}${leadLine(46,15,60,15)}<rect x="14" y="10" width="32" height="10" fill="none" stroke="currentColor" stroke-width="2"/><line x1="14" y1="15" x2="46" y2="15" stroke="currentColor" stroke-width="1.2"/>${ctext(30,27,'BAT',5.5)}`,
+    { unit:'A', defaultValue:100, valueOptions:[60,100,150,200,300], famille:'Protections', def:"Fusible de forte intensité placé au plus près de la batterie pour protéger le câblage en cas de court-circuit.", wiki:'Fusible_électrique', alias:'fusible anl maxi batterie' }),
+  defRow('sectionneur_batterie','Sectionneur / coupe-batterie', T2, `${leadLine(0,15,18,15)}${leadLine(42,15,60,15)}<circle cx="18" cy="15" r="2.2" fill="currentColor"/><circle cx="42" cy="15" r="2.2" fill="currentColor"/><line x1="18" y1="15" x2="38" y2="4" stroke="currentColor" stroke-width="2"/>${ctext(30,27,'BAT',5.5)}`,
+    { unit:'A', defaultValue:150, valueOptions:[100,150,275,350], famille:'Protections', def:"Interrupteur-sectionneur manuel permettant d'isoler complètement une batterie du reste de l'installation.", wiki:'Sectionneur', alias:'coupe batterie disjoncteur principal' }),
+  defRow('optimiseur_pv','Optimiseur de puissance PV', T4, `${leadLine(0,8,12,8)}${leadLine(0,22,12,22)}${leadLine(48,8,60,8)}${leadLine(48,22,60,22)}<rect x="12" y="3" width="36" height="24" fill="none" stroke="currentColor" stroke-width="2"/>${ctext(30,17,'OPT',7)}`,
+    { unit:'W', defaultValue:400, valueOptions:[300,400,500,600], famille:'Conversion', def:"Installé derrière chaque panneau, optimise sa production individuellement et permet la coupure de sécurité au niveau module.", wiki:'Optimiseur_de_puissance', alias:'power optimizer mlpe tigo solaredge' }),
+  defRow('bms','BMS (gestion de batterie)', T2, TPL.boxLabel('BMS'),
+    { famille:'Stockage', def:"Circuit électronique qui surveille et protège une batterie (équilibrage des cellules, coupure sur défaut de tension/température) — représentation simplifiée à 2 bornes (pack +/-).", wiki:'Battery_management_system', alias:'battery management system protection cellules' }),
+  defRow('generatrice_eolienne','Génératrice éolienne', T2, TPL.circleLetter('G'),
+    { unit:'W', defaultValue:1000, valueOptions:[300,600,1000,3000,5000], famille:'Sources', def:"Alternateur entraîné par les pales de l'éolienne, convertit l'énergie mécanique de rotation en électricité.", wiki:'Éolienne', alias:'alternateur eolien generateur' }),
+  defRow('redresseur_eolien','Redresseur éolien (AC/DC)', T4, `${leadLine(0,8,12,8)}${leadLine(0,22,12,22)}${leadLine(48,8,60,8)}${leadLine(48,22,60,22)}<rect x="12" y="3" width="36" height="24" fill="none" stroke="currentColor" stroke-width="2"/>${ctext(30,17,'AC/DC',5)}`,
+    { famille:'Conversion', def:"Convertit la tension alternative variable produite par la génératrice éolienne en courant continu utilisable par le régulateur.", wiki:'Redresseur_(électronique)', alias:'redresseur triphase eolien' }),
+  defRow('controleur_eolien','Contrôleur de charge éolien', T4, `${leadLine(0,8,12,8)}${leadLine(0,22,12,22)}${leadLine(48,8,60,8)}${leadLine(48,22,60,22)}<rect x="12" y="3" width="36" height="24" fill="none" stroke="currentColor" stroke-width="2"/>${ctext(30,17,'CTRL',6)}`,
+    { unit:'A', defaultValue:30, valueOptions:[20,30,40,60], famille:'Régulation', def:"Régule la charge de la batterie à partir du redresseur et protège l'éolienne des survitesses (frein électrique/délestage).", wiki:'Éolienne', alias:'regulateur charge eolien controleur' }),
+  defRow('frein_eolien','Frein / parachute éolien', T2, TPL.boxLabel('BRK'),
+    { famille:'Sources', def:"Dispositif électromécanique qui ralentit ou immobilise le rotor de l'éolienne en cas de survitesse ou de maintenance.", wiki:'Éolienne', alias:'frein parachute securite eolienne' }),
+  defRow('controleur_hydraulique','Contrôleur de charge hydraulique', T4, `${leadLine(0,8,12,8)}${leadLine(0,22,12,22)}${leadLine(48,8,60,8)}${leadLine(48,22,60,22)}<rect x="12" y="3" width="36" height="24" fill="none" stroke="currentColor" stroke-width="2"/>${ctext(30,17,'CTRL',6)}`,
+    { unit:'A', defaultValue:20, valueOptions:[10,20,30,50], famille:'Régulation', def:"Régule la charge de la batterie à partir de la micro-turbine hydraulique et déleste l'excédent de production.", wiki:'Centrale_hydroélectrique', alias:'regulateur charge hydraulique' }),
+  defRow('vanne_hydraulique','Vanne de régulation de débit', T2, `${leadLine(0,15,20,15)}${leadLine(40,15,60,15)}<polygon points="20,5 20,25 40,15" fill="none" stroke="currentColor" stroke-width="2"/><polygon points="40,25 40,5 20,15" fill="none" stroke="currentColor" stroke-width="2"/>`,
+    { famille:'Sources', def:"Vanne motorisée qui règle le débit d'eau admis dans la turbine hydraulique.", wiki:'Électrovanne', alias:'vanne debit turbine hydraulique' }),
+  defRow('capteur_solaire_thermique','Capteur solaire thermique', T2, `${leadLine(0,15,10,15)}${leadLine(50,15,60,15)}<rect x="10" y="5" width="40" height="20" fill="none" stroke="currentColor" stroke-width="2"/>${[20,30,40].map(x=>leadLine(x,5,x,25)).join('')}${ctext(30,29,'CST',4.5)}`,
+    { unit:'m²', defaultValue:4, valueOptions:[2,4,6,8], famille:'Solaire thermique', def:"Capte le rayonnement solaire pour chauffer un fluide caloporteur (eau chaude sanitaire, chauffage).", wiki:'Capteur_solaire_thermique', alias:'panneau solaire thermique cst' }),
+  defRow('ballon_solaire','Ballon de stockage solaire', T2, TPL.boxLabel('ECS'),
+    { unit:'L', defaultValue:300, valueOptions:[150,200,300,500], famille:'Solaire thermique', def:"Cuve isolée qui stocke l'eau chaude produite par les capteurs solaires thermiques, avec appoint électrique/gaz possible.", wiki:'Chauffe-eau_solaire', alias:'ballon ecs solaire cumulus' }),
+  defRow('circulateur_solaire','Circulateur (pompe de charge)', T2, TPL.circleLetter('C'),
+    { unit:'W', defaultValue:80, valueOptions:[40,60,80,120], famille:'Solaire thermique', def:"Pompe électrique qui fait circuler le fluide caloporteur entre les capteurs solaires et le ballon de stockage.", wiki:'Circulateur_(chauffage)', alias:'pompe circulation solaire' }),
+  defRow('regulateur_solaire_thermique','Régulateur différentiel solaire', T4, `${leadLine(0,8,12,8)}${leadLine(0,22,12,22)}${leadLine(48,8,60,8)}${leadLine(48,22,60,22)}<rect x="12" y="3" width="36" height="24" fill="none" stroke="currentColor" stroke-width="2"/>${ctext(30,17,'ΔT',7)}`,
+    { famille:'Solaire thermique', def:"Compare la température des capteurs et du ballon, et démarre le circulateur uniquement quand le transfert de chaleur est utile.", wiki:'Régulation_différentielle', alias:'regulation differentielle solaire thermique' }),
+  defRow('sonde_temperature_solaire','Sonde de température (solaire thermique)', T2, TPL.boxLabel('T°'),
+    { unit:'°C', defaultValue:80, valueOptions:[60,80,100,120], famille:'Solaire thermique', def:"Mesure la température des capteurs ou du ballon pour la régulation différentielle du circuit solaire.", wiki:'Régulation_différentielle', alias:'sonde temperature capteur ballon' }),
 ];
 
 /* ==========================================================================
@@ -1279,10 +1321,19 @@ const INSTRUMENT_LIBRARY = [
 /* ==========================================================================
    RECHERCHE ET ACCÈS AU CATALOGUE
    ========================================================================== */
+// Composants personnalisés (§23/§26) : liste réactualisée à la connexion/à l'ouverture d'un
+// projet par js/composant-builder.js (setCustomComponents), propre à l'utilisateur connecté —
+// jamais écrite dans les tableaux statiques ci-dessus (qui restent le catalogue partagé).
+// Chaque fiche custom porte déjà `groupe:'personnel'` (posé par setCustomComponents), inutile
+// de le rajouter dans fullCatalog().
+let CUSTOM_COMPONENTS = [];
+function setCustomComponents(list){ CUSTOM_COMPONENTS = (list||[]).map(c => ({ ...c, groupe:'personnel' })); }
+
 function fullCatalog(){
   const out = COMMON_COMPONENTS.map(c => ({ ...c, groupe:'commun' }));
   Object.entries(COMPONENT_LIBRARY).forEach(([espace, list]) => list.forEach(c => out.push({ ...c, groupe:espace })));
   INSTRUMENT_LIBRARY.forEach(c => out.push({ ...c, groupe:'instrument' }));
+  CUSTOM_COMPONENTS.forEach(c => out.push(c));
   return out;
 }
 function searchCatalog(query){
@@ -1295,7 +1346,8 @@ function searchCatalog(query){
 function findDef(typeId){
   const common = COMMON_COMPONENTS.find(c=>c.id===typeId); if (common) return common;
   for (const list of Object.values(COMPONENT_LIBRARY)) { const f = list.find(c=>c.id===typeId); if (f) return f; }
-  return INSTRUMENT_LIBRARY.find(c=>c.id===typeId);
+  const instr = INSTRUMENT_LIBRARY.find(c=>c.id===typeId); if (instr) return instr;
+  return CUSTOM_COMPONENTS.find(c=>c.id===typeId);
 }
 // Regroupe une liste de composants par famille, en conservant l'ordre d'apparition (pour affichage en catégories repliables — §36).
 function groupByFamille(list){

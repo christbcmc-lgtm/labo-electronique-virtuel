@@ -28,12 +28,14 @@ async function viewDimensionnement(projectId){
           <a href="#/dimensionnement/${projectId}" class="active">Dimensionnement</a>
           <a href="#/plan/${projectId}">Plan</a>
           <a href="#/plan3d/${projectId}">3D</a>
+          <a href="#/cad3d/${projectId}">CAO 3D</a>
         </div>
       </div>
       <div class="ws-tabs-top" style="margin-bottom:14px">
         <a href="#" data-dim-tab="pv" class="${defaultTab==='pv'?'active':''}">Photovoltaïque</a>
         <a href="#" data-dim-tab="electrotechnique" class="${defaultTab==='electrotechnique'?'active':''}">Électrotechnique / Bâtiment</a>
         <a href="#" data-dim-tab="electronique" class="${defaultTab==='electronique'?'active':''}">Électronique</a>
+        <a href="#" data-dim-tab="renouvelables" class="${defaultTab==='renouvelables'?'active':''}">Éolien / Hydraulique / Solaire thermique</a>
       </div>
       <div id="dim-body">${dimTabHTML(defaultTab)}</div>
     </div></div>`;
@@ -42,6 +44,7 @@ async function viewDimensionnement(projectId){
 function dimTabHTML(tab){
   if (tab === 'pv') return dimPvHTML();
   if (tab === 'electronique') return dimElectroniqueHTML();
+  if (tab === 'renouvelables') return dimRenouvelablesHTML();
   return dimElectrotechniqueHTML();
 }
 
@@ -131,6 +134,97 @@ function computeEt(){
     <p style="font-size:.85em;font-style:italic">Hypothèses/remarques : ${hypotheses}</p>`;
 }
 
+/* ---- Éolien / Hydraulique / Solaire thermique ----
+   Ajoutés une fois les composants correspondants présents dans le catalogue (voir
+   RAPPORT-FINAL.md addendum 9) : mêmes principes que PV/Électrotechnique ci-dessus — formules
+   physiques standard avec substitution des valeurs saisies, hypothèses explicites, jamais de
+   valeur inventée pour une installation réelle. ---- */
+function dimRenouvelablesHTML(){
+  return `<div class="card">
+    <h3>Éolien — puissance théorique disponible dans le vent</h3>
+    <div class="grid grid-2">
+      <div class="field"><label>Diamètre du rotor (m)</label><input type="number" id="eo-diametre" value="3" step="0.1"></div>
+      <div class="field"><label>Vitesse du vent (m/s)</label><input type="number" id="eo-vitesse" value="8" step="0.5"></div>
+      <div class="field"><label>Coefficient de puissance Cp</label><input type="number" id="eo-cp" value="0.35" step="0.01" max="0.59"></div>
+      <div class="field"><label>Masse volumique de l'air (kg/m³)</label><input type="number" id="eo-rho" value="1.225" step="0.001"></div>
+    </div>
+    <button class="btn btn-primary btn-sm" id="eo-calc">Calculer</button>
+    <div id="eo-result" style="margin-top:16px"></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h3>Hydraulique — puissance théorique (micro-centrale au fil de l'eau)</h3>
+    <div class="grid grid-2">
+      <div class="field"><label>Débit (L/s)</label><input type="number" id="hy-debit" value="50" step="1"></div>
+      <div class="field"><label>Hauteur de chute nette (m)</label><input type="number" id="hy-hauteur" value="5" step="0.5"></div>
+      <div class="field"><label>Rendement global turbine + génératrice (%)</label><input type="number" id="hy-rendement" value="70"></div>
+    </div>
+    <button class="btn btn-primary btn-sm" id="hy-calc">Calculer</button>
+    <div id="hy-result" style="margin-top:16px"></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h3>Solaire thermique — production journalière du capteur</h3>
+    <div class="grid grid-2">
+      <div class="field"><label>Surface de capteur (m²)</label><input type="number" id="st-surface" value="4" step="0.5"></div>
+      <div class="field"><label>Irradiation (kWh/m²/jour)</label><input type="number" id="st-irrad" value="4.5" step="0.1"></div>
+      <div class="field"><label>Rendement du capteur (%)</label><input type="number" id="st-rendement" value="50"></div>
+    </div>
+    <button class="btn btn-primary btn-sm" id="st-calc">Calculer</button>
+    <div id="st-result" style="margin-top:16px"></div>
+  </div>`;
+}
+function computeEolien(){
+  const g = id => parseFloat(document.getElementById(id).value) || 0;
+  const d = g('eo-diametre'), v = g('eo-vitesse'), cp = g('eo-cp'), rho = g('eo-rho');
+  const aire = Math.PI * Math.pow(d/2, 2);
+  const puissance = 0.5 * rho * aire * cp * Math.pow(v, 3);
+  const hypotheses = "Puissance théorique disponible dans le vent traversant le disque balayé par les pales (formule standard de l'énergie cinétique du vent). Le coefficient Cp ne peut physiquement pas dépasser la limite de Betz (0,593) ; les éoliennes réelles atteignent typiquement 0,25 à 0,45 une fois les pertes mécaniques/électriques incluses. Ne tient pas compte de la courbe de puissance réelle du modèle choisi (à vérifier auprès du fabricant), ni de la distribution statistique du vent sur l'année.";
+  const formulesHtml = `
+    <div class="dim-formula">A = π × (D÷2)² = π × (${d}÷2)² = <span class="dim-result">${aire.toFixed(2)} m²</span></div>
+    <div class="dim-formula">P = 0,5 × ρ × A × Cp × v³ = 0,5 × ${rho} × ${aire.toFixed(2)} × ${cp} × ${v}³ = <span class="dim-result">${puissance.toFixed(0)} W</span></div>`;
+  document.getElementById('eo-result').innerHTML = `${formulesHtml}
+    <p style="font-size:.82em">${hypotheses}</p>
+    <button class="btn btn-ghost btn-sm" id="eo-use-in-pdf">Inclure ce résultat dans le rapport PDF</button>
+    <button class="btn btn-ghost btn-sm" id="eo-export-pdf">Exporter ce dimensionnement (PDF)</button>`;
+  window.__eoLastHTML = `<p><strong>Éolien</strong> — Données d'entrée : diamètre rotor ${d} m, vitesse du vent ${v} m/s, Cp ${cp}, masse volumique air ${rho} kg/m³.</p>
+    ${formulesHtml}
+    <p>Conclusion : puissance théorique disponible d'environ ${puissance.toFixed(0)} W dans ces conditions de vent.</p>
+    <p style="font-size:.85em;font-style:italic">Hypothèses/remarques : ${hypotheses}</p>`;
+}
+function computeHydro(){
+  const g = id => parseFloat(document.getElementById(id).value) || 0;
+  const debitLs = g('hy-debit'), h = g('hy-hauteur'), rendement = g('hy-rendement')/100;
+  const debitM3s = debitLs/1000;
+  const puissance = 1000 * 9.81 * debitM3s * h * rendement;
+  const hypotheses = "Formule standard de la puissance hydraulique (masse volumique de l'eau 1000 kg/m³, accélération de la pesanteur 9,81 m/s²). Le rendement global saisi doit couvrir la turbine, la génératrice ET les pertes de charge dans la conduite — à affiner selon l'installation réelle (une conduite forcée longue/étroite peut perdre une part significative de la hauteur de chute brute).";
+  const formulesHtml = `
+    <div class="dim-formula">Q = ${debitLs} L/s = <span class="dim-result">${debitM3s.toFixed(3)} m³/s</span></div>
+    <div class="dim-formula">P = ρ × g × Q × H × η = 1000 × 9,81 × ${debitM3s.toFixed(3)} × ${h} × ${(rendement*100).toFixed(0)}% = <span class="dim-result">${puissance.toFixed(0)} W</span></div>`;
+  document.getElementById('hy-result').innerHTML = `${formulesHtml}
+    <p style="font-size:.82em">${hypotheses}</p>
+    <button class="btn btn-ghost btn-sm" id="hy-use-in-pdf">Inclure ce résultat dans le rapport PDF</button>
+    <button class="btn btn-ghost btn-sm" id="hy-export-pdf">Exporter ce dimensionnement (PDF)</button>`;
+  window.__hyLastHTML = `<p><strong>Hydraulique</strong> — Données d'entrée : débit ${debitLs} L/s, hauteur de chute nette ${h} m, rendement global ${(rendement*100).toFixed(0)}%.</p>
+    ${formulesHtml}
+    <p>Conclusion : puissance théorique d'environ ${puissance.toFixed(0)} W dans ces conditions de débit et de chute.</p>
+    <p style="font-size:.85em;font-style:italic">Hypothèses/remarques : ${hypotheses}</p>`;
+}
+function computeSolaireThermique(){
+  const g = id => parseFloat(document.getElementById(id).value) || 0;
+  const surface = g('st-surface'), irrad = g('st-irrad'), rendement = g('st-rendement')/100;
+  const energie = surface * irrad * rendement;
+  const hypotheses = "Estimation de premier ordre (surface × irradiation journalière × rendement global du capteur). Le rendement réel varie selon la technologie (capteur plan vs tubes sous vide), l'écart de température entre le fluide et l'air ambiant, et l'orientation/inclinaison — 50% est une valeur d'usage courant pour un capteur plan bien orienté, à ajuster avec la fiche technique du capteur choisi.";
+  const formulesHtml = `
+    <div class="dim-formula">E = Surface × Irradiation × Rendement = ${surface} × ${irrad} × ${(rendement*100).toFixed(0)}% = <span class="dim-result">${energie.toFixed(2)} kWh/jour</span></div>`;
+  document.getElementById('st-result').innerHTML = `${formulesHtml}
+    <p style="font-size:.82em">${hypotheses}</p>
+    <button class="btn btn-ghost btn-sm" id="st-use-in-pdf">Inclure ce résultat dans le rapport PDF</button>
+    <button class="btn btn-ghost btn-sm" id="st-export-pdf">Exporter ce dimensionnement (PDF)</button>`;
+  window.__stLastHTML = `<p><strong>Solaire thermique</strong> — Données d'entrée : surface capteur ${surface} m², irradiation ${irrad} kWh/m²/jour, rendement capteur ${(rendement*100).toFixed(0)}%.</p>
+    ${formulesHtml}
+    <p>Conclusion : environ ${energie.toFixed(2)} kWh/jour d'énergie thermique récupérable dans ces conditions.</p>
+    <p style="font-size:.85em;font-style:italic">Hypothèses/remarques : ${hypotheses}</p>`;
+}
+
 /* ---- Électronique ---- */
 function dimElectroniqueHTML(){
   return `<div class="card">
@@ -216,6 +310,36 @@ function wireDimHandlers(){
       window.__lastDimResult = { projectId: window.__dimProjectId, type:'Électrotechnique / Bâtiment', html: window.__etLastHTML }; toast('Résultat ajouté au rapport PDF de ce projet.'); });
     document.getElementById('et-export-pdf')?.addEventListener('click', async () => {
       window.__lastDimResult = { projectId: window.__dimProjectId, type:'Électrotechnique / Bâtiment', html: window.__etLastHTML };
+      if (!confirm('Exporter ce dimensionnement en PDF maintenant ?')) return;
+      exportDimensionnementPDF(window.__dimProjectId);
+    });
+  });
+  document.getElementById('eo-calc')?.addEventListener('click', () => {
+    computeEolien();
+    document.getElementById('eo-use-in-pdf')?.addEventListener('click', () => {
+      window.__lastDimResult = { projectId: window.__dimProjectId, type:'Éolien', html: window.__eoLastHTML }; toast('Résultat ajouté au rapport PDF de ce projet.'); });
+    document.getElementById('eo-export-pdf')?.addEventListener('click', async () => {
+      window.__lastDimResult = { projectId: window.__dimProjectId, type:'Éolien', html: window.__eoLastHTML };
+      if (!confirm('Exporter ce dimensionnement en PDF maintenant ?')) return;
+      exportDimensionnementPDF(window.__dimProjectId);
+    });
+  });
+  document.getElementById('hy-calc')?.addEventListener('click', () => {
+    computeHydro();
+    document.getElementById('hy-use-in-pdf')?.addEventListener('click', () => {
+      window.__lastDimResult = { projectId: window.__dimProjectId, type:'Hydraulique', html: window.__hyLastHTML }; toast('Résultat ajouté au rapport PDF de ce projet.'); });
+    document.getElementById('hy-export-pdf')?.addEventListener('click', async () => {
+      window.__lastDimResult = { projectId: window.__dimProjectId, type:'Hydraulique', html: window.__hyLastHTML };
+      if (!confirm('Exporter ce dimensionnement en PDF maintenant ?')) return;
+      exportDimensionnementPDF(window.__dimProjectId);
+    });
+  });
+  document.getElementById('st-calc')?.addEventListener('click', () => {
+    computeSolaireThermique();
+    document.getElementById('st-use-in-pdf')?.addEventListener('click', () => {
+      window.__lastDimResult = { projectId: window.__dimProjectId, type:'Solaire thermique', html: window.__stLastHTML }; toast('Résultat ajouté au rapport PDF de ce projet.'); });
+    document.getElementById('st-export-pdf')?.addEventListener('click', async () => {
+      window.__lastDimResult = { projectId: window.__dimProjectId, type:'Solaire thermique', html: window.__stLastHTML };
       if (!confirm('Exporter ce dimensionnement en PDF maintenant ?')) return;
       exportDimensionnementPDF(window.__dimProjectId);
     });

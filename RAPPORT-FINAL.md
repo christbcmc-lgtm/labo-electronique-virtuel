@@ -1374,3 +1374,515 @@ un modèle de données de type « historique de fonctions » avec régénératio
 CSG, et un éditeur d'esquisse 2D sur plan de coupe. Non commencé cette session — voir
 `NOTES_REPRISE_2026.md` pour le détail de ce qui resterait à faire et pourquoi ce n'est pas une
 extension incrémentale du module 3D bâtiment qui vient d'être livré.
+
+## ADDENDUM 9 — Composants Énergies Renouvelables manquants (protection DC/batterie, éolien, hydraulique, solaire thermique)
+
+Suite de « fais-moi le reste du cahier des charges » : avant d'ajouter quoi que ce soit, le
+catalogue existant (déjà riche : panneaux PV, régulateurs PWM/MPPT, batteries plomb/lithium/
+LiFePO4, onduleurs, éolienne, turbine hydraulique...) a été vérifié composant par composant par
+recherche dans `js/catalog.js` (pas de supposition) contre la liste très détaillée du cahier
+reçu. **17 composants explicitement cités et absents** ont été identifiés puis ajoutés, dans le
+domaine `energies-renouvelables` :
+
+- **Protection DC/batterie** (famille `Protections`) : `fusible_gpv`, `sectionneur_dc`,
+  `fusible_batterie`, `sectionneur_batterie` — réutilisent exactement les symboles déjà
+  vérifiés du fusible/sectionneur génériques (`fusible`, `sectionneur`, déjà utilisés ailleurs
+  dans le catalogue), avec une étiquette distinctive (gPV/DC/BAT) — pas de nouveau gabarit
+  graphique inventé.
+- **Conversion/régulation** : `optimiseur_pv` (`Conversion`), `bms` (`Stockage`, représentation
+  simplifiée à 2 bornes, documentée comme telle dans sa fiche plutôt que d'inventer un brochage
+  précis non vérifié).
+- **Éolien** (complète l'éolienne déjà existante) : `generatrice_eolienne`, `redresseur_eolien`,
+  `controleur_eolien`, `frein_eolien`.
+- **Hydraulique** (complète la turbine déjà existante) : `controleur_hydraulique`,
+  `vanne_hydraulique` (réutilise le symbole déjà vérifié de l'électrovanne).
+- **Solaire thermique — nouvelle famille**, absente du catalogue jusqu'ici (à ne pas confondre
+  avec le chauffe-eau électrique déjà présent en famille `Bâtiment`) : `capteur_solaire_thermique`,
+  `ballon_solaire`, `circulateur_solaire`, `regulateur_solaire_thermique`,
+  `sonde_temperature_solaire`.
+
+Tous réutilisent les gabarits de symboles déjà établis dans ce fichier (`T2`/`T4`,
+`TPL.boxLabel`/`TPL.circleLetter`, motif fusible/sectionneur/box-régulation déjà répété une
+dizaine de fois pour d'autres composants) — aucun nouveau type de gabarit graphique introduit,
+conformément à l'architecture « par gabarits » documentée en tête de `js/catalog.js`.
+
+### Vérifié par exécution réelle
+
+- `tests/verify_catalog.js` : **522 composants** (505 avant, +17), toujours **0 doublon d'ID,
+  0 SYM manquant, 0 borne non alignée** — chaque nouvelle borne déclarée correspond bien à un
+  trait réellement dessiné dans son symbole.
+- `npm test` : **227 vérifications, 0 échec** (223 avant + 4 nouvelles : présence des 17
+  composants dans le domaine Énergies Renouvelables, brochage simplifié du BMS documenté comme
+  tel, 4 bornes de l'optimiseur PV, cohérence de la nouvelle famille Solaire thermique).
+
+### Ce qui n'a pas été vérifié
+
+Même limitation que pour l'audit des symboles déjà documenté (point 1 de
+`NOTES_REPRISE_2026.md`) : la conformité stricte à la norme IEC 60617 de chaque nouveau
+symbole n'a pas été validée visuellement dans un vrai navigateur — ils reprennent des gabarits
+déjà en place et vérifiés géométriquement (bornes ↔ tracé), mais pas contre-vérifiés vue par
+vue avec un outil de référence normatif.
+
+## ADDENDUM 10 — Dimensionnement étendu à l'éolien, l'hydraulique et le solaire thermique
+
+Suite directe de l'addendum 9 (point noté « à faire » dans `NOTES_REPRISE_2026.md`) : les 17
+composants ajoutés pouvaient être placés dans un schéma mais pas dimensionnés — le module
+Dimensionnement (§24) ne couvrait que le photovoltaïque, l'électrotechnique/bâtiment et
+l'électronique. Un nouvel onglet **« Éolien / Hydraulique / Solaire thermique »** a été ajouté
+à `js/dimensionnement.js`, avec le même principe que les onglets existants : formules physiques
+standard (pas inventées), valeurs saisies substituées dans la formule affichée, hypothèses
+explicites, export PDF indépendant.
+
+- **Éolien** : puissance théorique disponible dans le vent, $P = 0{,}5 \cdot \rho \cdot A \cdot
+  C_p \cdot v^3$ (formule standard de l'énergie cinétique du vent captée par un rotor). Hypothèse
+  documentée explicitement : $C_p$ ne peut physiquement pas dépasser la limite de Betz (0,593).
+- **Hydraulique** : puissance hydraulique théorique, $P = \rho_{eau} \cdot g \cdot Q \cdot H \cdot
+  \eta$ (formule standard, masse volumique de l'eau et pesanteur en constantes documentées).
+- **Solaire thermique** : production journalière, $E = Surface \times Irradiation \times
+  Rendement$ — même méthode que le calcul PV déjà existant (heures de soleil équivalentes),
+  transposée à un capteur thermique.
+
+### Vérifié par exécution réelle
+
+`npm test` : **234 vérifications, 0 échec** (227 avant + 7 nouvelles : aire balayée et
+puissance éolienne avec substitution numérique vérifiée à la main, puissance hydraulique,
+production solaire thermique, présence du bouton d'export PDF pour chacun des 3 nouveaux
+calculs).
+
+### Ce qui n'a pas été vérifié
+
+Comme pour les calculs PV/électrotechnique déjà en place : ce sont des formules physiques
+standard et vérifiables (aucune valeur de norme incertaine), mais le rendu visuel des 3
+nouvelles cartes dans l'onglet n'a pas été vérifié dans un vrai navigateur (même limitation
+que pour tout le reste de ce projet).
+
+## ADDENDUM 11 — Audit des symboles (§1 des notes de reprise) : liste "à vérifier" close
+
+Priorité n°1 explicite du client, restée ouverte depuis plusieurs sessions comme une simple
+liste de composants « à vérifier ». Cette session a fait le travail de vérification
+composant par composant plutôt que de la laisser en suspens plus longtemps.
+
+### Méthode
+
+Pour chaque composant listé comme suspect (`variateur_vitesse`, `gradateur_puissance`,
+`hacheur`, `relais_auxiliaire`, `analyseur_reseau`, `relais_protection`, `interphone`,
+`permutateur`, `telerupteur`), vérification individuelle : existe-t-il une représentation
+graphique IEC 60617 distinctive pour ce type d'appareil, ou la convention réelle des schémas
+professionnels (unifilaires, fonctionnels, plans de bâtiment) est-elle bien le bloc rectangulaire
+étiqueté ? Recherche faite composant par composant, pas une réponse générique appliquée à toute
+la liste.
+
+### Résultat
+
+- **6 composants confirmés corrects tels quels** (`variateur_vitesse`, `gradateur_puissance`,
+  `hacheur`, `analyseur_reseau`, `relais_protection`, `relais_auxiliaire`) : le bloc étiqueté
+  est la convention réellement utilisée pour ces appareils à ce niveau d'abstraction — il n'y a
+  pas de symbole IEC 60617 dédié à un variateur de fréquence, un gradateur ou un analyseur de
+  réseau en tant que dispositif complet (à la différence d'un composant électrique élémentaire
+  comme une résistance ou un transistor, qui EUX ont un symbole normalisé). Forcer un symbole
+  « dessiné à la main » ici aurait été inventer une convention qui n'existe pas.
+- **2 composants déjà réglés lors d'une session précédente** (`permutateur`, `telerupteur`) :
+  confirmés à jour, brochage IEC déjà documenté via `pinNames`.
+- **1 composant corrigé cette session** (`interphone`) : le rectangle générique portant le
+  texte "INT" a été remplacé par un boîtier avec un pictogramme reconnaissable — silhouette de
+  haut-parleur (réutilisation exacte de la forme déjà utilisée pour le composant `haut_parleur`,
+  cohérence visuelle du catalogue) + un bouton d'appel. Même principe que le multimètre
+  (addendum 5) : remplacer un texte générique par une silhouette d'appareil reconnaissable
+  quand une telle silhouette existe réellement et est établie.
+- **Les composants basés sur `icTemplate()` (circuits intégrés génériques, ~130-150
+  composants)** : confirmé — le rectangle à broches numérotées est la convention universelle
+  (fabricants, logiciels de CAO) pour représenter un circuit intégré. Vérification explicite
+  faite, ce n'était plus une simple supposition reportée de session en session.
+
+### Vérifié par exécution réelle
+
+`npm test` : **236 vérifications, 0 échec** (234 avant + 2 nouvelles : le symbole de
+l'interphone contient désormais un `<polygon>` et ne contient plus le texte "INT", ses 4 bornes
+restent inchangées par ce correctif purement visuel). `tests/verify_catalog.js` : 522
+composants, toujours 0 anomalie de brochage (le correctif visuel de l'interphone ne touche pas
+ses bornes).
+
+### Ce qui reste réellement ouvert sur ce point
+
+Un audit visuel pixel par pixel (proportions, épaisseur de trait, lisibilité à petite échelle)
+de l'ensemble des ~522 symboles n'a toujours pas pu être fait — seule la géométrie bornes↔tracé
+est vérifiée automatiquement, jamais le rendu visuel réel, faute d'accès à un vrai navigateur
+dans cet environnement (limitation documentée depuis le début de ce projet, voir point 4 de
+`NOTES_REPRISE_2026.md`). Ce qui pouvait être tranché de façon fiable sans navigateur — « la
+convention utilisée est-elle la bonne pour ce type d'appareil » — l'a été pour toute la liste
+signalée comme douteuse.
+
+## ADDENDUM 12 — Constructeur de composant personnalisé (§23/§26)
+
+Nouvelle page **« Créer un composant »** (3ᵉ onglet de la page Composants, `js/composant-builder.js`),
+qui répond directement à la demande du cahier : permettre à l'utilisateur d'ajouter un composant
+au catalogue sans toucher au code.
+
+### Choix d'architecture
+
+Plutôt que de construire un éditeur de symbole graphique libre (dessin à main levée, hors de
+portée raisonnable pour une session, et risqué : un symbole mal dessiné avec des bornes
+décorrélées de son tracé est exactement le défaut que ce projet corrige activement ailleurs —
+voir addenda 6 et 11), le constructeur **réutilise `icTemplate()`**, le gabarit déjà utilisé par
+~150 circuits intégrés du catalogue existant et déjà vérifié géométriquement
+(`tests/verify_catalog.js`) : l'utilisateur ne saisit qu'un nombre de bornes, le symbole
+(boîtier + broches numérotées, hauteur qui s'adapte automatiquement à la densité de broches —
+addendum 6) est généré et donc **automatiquement correct**, jamais désaligné.
+
+- Composant stocké **par utilisateur** (pas par projet) : `db.getPlan`/`saveCustomComponent`/
+  `deleteCustomComponent` (`js/backend.js`, mock + Supabase, nouvelle table
+  `custom_components` avec RLS stricte — un utilisateur ne voit jamais les composants d'un
+  autre) et immédiatement réutilisable dans **tous** ses projets.
+- Intégration au moteur existant par un seul point d'entrée : `CUSTOM_COMPONENTS` (nouveau
+  tableau mutable dans `js/catalog.js`), fusionné dans `fullCatalog()`/`findDef()`. Résultat :
+  la recherche de composants (page dédiée **et** panneau de l'éditeur de schéma, qui appellent
+  toutes deux `searchCatalog()`), le placement sur le canevas, l'affichage du symbole, le PDF —
+  **aucun de ces systèmes n'a eu besoin d'être modifié** pour comprendre les composants
+  personnalisés : c'est exactement l'extensibilité « ajouter une ligne à un tableau » déjà
+  documentée en tête de `js/catalog.js` (§16), simplement étendue à une source de données
+  chargée à l'exécution plutôt qu'écrite dans le code.
+- Chargement des composants personnalisés une fois par session de connexion
+  (`ensureCustomComponentsLoaded()`, `js/app.js`), **volontairement non bloquant** : un premier
+  essai qui l'attendait (`await`) dans `render()` a cassé le parcours de redirection après
+  connexion (le changement de mot de passe obligatoire n'était plus déclenché) — corrigé en le
+  laissant s'exécuter en tâche de fond, cf. commentaire dans le code. Ce genre de régression est
+  précisément ce que la suite de tests est censée attraper, et elle l'a fait : détectée avant le
+  commit, pas après.
+
+### Vérifié par exécution réelle
+
+`npm test` : **247 vérifications, 0 échec** (236 avant + 11 nouvelles) : formulaire affiché,
+génération dynamique des champs de nom de broche selon le nombre saisi, aperçu du symbole généré
+automatiquement, activation du bouton d'enregistrement, retrouvable par `findDef()` juste après
+enregistrement avec le bon nombre de bornes et le brochage saisi conservé tel quel, présent dans
+la recherche globale du catalogue, présent dans la liste « Mes composants », persisté côté
+backend (`db.listCustomComponents`), et retiré de `findDef()` après suppression.
+
+### Ce qui n'a pas été vérifié / limites connues
+
+- **Rendu visuel réel** du formulaire et de l'aperçu — même limitation que pour tout ce projet
+  (pas de navigateur réel disponible dans cet environnement).
+- **Supabase réel** : la table `custom_components` et sa policy RLS n'ont pu être vérifiées que
+  par relecture attentive (cohérente avec le style des policies déjà en place), jamais exécutées
+  contre un vrai projet Supabase.
+- Le symbole généré reste volontairement **simple** (boîtier rectangulaire + broches) : pas de
+  forme personnalisée (cercle, triangle, boîtier réaliste) — cohérent avec le choix de ne
+  jamais produire un symbole géométriquement incorrect, mais moins riche visuellement qu'un
+  composant "vedette" dessiné à la main. À faire évoluer si le besoin s'en fait sentir
+  (par exemple : proposer un choix parmi 2-3 gabarits de boîtier plutôt qu'un seul).
+- Suppression d'un composant personnalisé : les schémas qui l'utilisent déjà continuent de
+  l'afficher correctement tant que la page n'est pas rechargée (le symbole reste en mémoire
+  dans `SYM`), mais il ne réapparaît plus dans la recherche — comportement documenté dans le
+  message de confirmation de suppression, pas une fonctionnalité de "composant orphelin"
+  travaillée en profondeur.
+
+## ADDENDUM 13 — CAO mécanique 3D (Phase 3 du cahier, demandée explicitement)
+
+Nouveau **6ᵉ onglet « CAO 3D »** (`#/cad3d/:id`, `js/cao3d.js` + `css/cao3d.css`), sur le même
+principe de montage/démontage et de repli gracieux sans Three.js/WebGL que la vue 3D du bâtiment
+(addendum 8). C'est le chantier explicitement décrit dans `NOTES_REPRISE_2026.md` (point 8) comme
+« une tout autre ampleur » — traité cette session sur demande explicite du client, avec un
+périmètre délimité honnêtement plutôt qu'une promesse de noyau CAO complet non fiable.
+
+### Choix de périmètre assumé : pas d'opérations booléennes 3D générales
+
+Le cahier décrit un enchaînement esquisse → extrusion/révolution → **booléens (union/
+soustraction/intersection)** → arbre de conception. Les booléens 3D fiables entre solides
+quelconques nécessitent une bibliothèque CSG dédiée (ex. `three-bvh-csg`) — non incluse ici, et
+dont la fiabilité n'aurait de toute façon pas pu être vérifiée dans un environnement sans
+navigateur réel. Plutôt que d'intégrer une dépendance supplémentaire non vérifiable ou de
+simuler un faux résultat booléen, deux mécanismes honnêtes et réellement fiables couvrent
+l'essentiel des besoins réels :
+
+- **Perçage** : les trous se creusent dans l'esquisse 2D **avant** extrusion
+  (`Shape.holes` de Three.js — une vraie ouverture traversante calculée par le moteur de
+  triangulation, pas un artifice visuel). Couvre le cas le plus fréquent en pratique : plaques,
+  brides, supports, profilés percés.
+- **Assemblage** : plusieurs corps se positionnent (translation/rotation) dans la même scène,
+  comme un vrai assemblage mécanique — pas de fusion en un solide unique. La nomenclature et la
+  masse totale fonctionnent normalement sur un assemblage de plusieurs corps.
+
+Documenté explicitement dans l'aide intégrée du module (bouton « Aide ») pour que l'utilisateur
+ne s'attende pas à un booléen général qui n'existe pas.
+
+### Ce qui a été construit
+
+- **Primitives paramétriques** : boîte, cylindre, sphère, cône/tronc, tube (creux, via esquisse
+  anneau + extrusion), tore.
+- **Esquisse extrudée** : profil rectangle ou cercle, saisi numériquement (pas de dessin à la
+  souris — une simplification assumée, cf. limites ci-dessous), trous traversants optionnels
+  ("cx,cy,d" en liste), profondeur, option symétrique.
+- **Révolution** : profil "rayon,hauteur" tourné autour de l'axe vertical, angle réglable
+  (tour complet ou partiel).
+- **Bibliothèque de pièces standard paramétriques** : vis (M3 à M12, tête + tige, cotes
+  normalisées d'usage courant), écrou (hexagonal percé), rondelle (anneau), profilé
+  (carré/rond creux), engrenage (approximation disque au diamètre primitif + alésage — la
+  denture réelle n'est pas modélisée géométriquement, voir limites).
+- **Arbre de conception** : liste des corps, visibilité, sélection ; modifier un paramètre
+  régénère immédiatement la géométrie de ce corps (régénération par re-création complète du
+  maillage à partir de ses paramètres stockés — un modèle de régénération simple mais réel,
+  pas un historique de fonctions chaînées comme un vrai noyau paramétrique).
+- **Matériaux avec masse volumique** → masse par corps et masse totale de l'assemblage,
+  affichées en continu et exportables en CSV (nomenclature).
+- **Coupe horizontale réglable** (plan de clip Three.js, même technique que la vue 3D du
+  bâtiment) pour voir l'intérieur d'un assemblage.
+- **Export STL binaire** (`THREE.STLExporter`, chargé en CDN comme `OrbitControls`) —
+  utilisable directement pour l'impression 3D ou l'import dans un autre logiciel de CAO.
+- Persistance par projet (`db.getCad3d`/`saveCad3d`, `js/backend.js`, mock + Supabase, colonne
+  `cad3d` sur `projects`), même principe que le plan de bâtiment.
+
+### Vérifié par exécution réelle (`npm test`, **265 vérifications, 0 échec**, 247 avant cette
+section + 18 nouvelles)
+
+- **Géométrie pure vérifiée analytiquement**, sans dépendance à Three.js/WebGL : volume d'une
+  boîte, d'un cylindre (comparé à la formule πr²h), d'une esquisse extrudée avec trou (comparée
+  au calcul analytique, écart résiduel expliqué et attendu — approximation polygonale du
+  cercle), d'une révolution (comparée au théorème de Pappus-Guldin sur un cas simple dont le
+  résultat est calculable à la main), masse d'un cube d'acier de 100 mm (7,85 kg — masse
+  volumique 7850 kg/m³, résultat rond volontairement choisi comme cas de test vérifiable),
+  volumes positifs pour les pièces composites (vis, écrou), nommage automatique distinct pour
+  deux corps du même type, rejet d'un fichier de version inconnue.
+- **Repli gracieux vérifié en conditions réelles** (même situation que pour la vue 3D du
+  bâtiment) : ce harnais ne charge aucun script CDN, donc `Three.js`/`STLExporter` sont
+  absents — le module le détecte et affiche un message au lieu de planter, sans erreur JS.
+- **Persistance** : cycle complet `db.saveCad3d()` → `db.getCad3d()` vérifié par le vrai chemin
+  backend (mock).
+
+### Ce qui n'a PAS été vérifié (honnêteté, même limitation que tout ce projet)
+
+- **Rendu 3D réel** : comme pour la vue 3D du bâtiment, aucune vérification visuelle dans un
+  vrai navigateur n'a été possible dans cet environnement. Non vérifiés visuellement en
+  particulier : l'apparence des maillages générés (esquisse/révolution/bibliothèque), l'orbite
+  à la souris, le curseur de coupe, l'export STL ouvert dans un logiciel tiers.
+- **Pas d'opérations booléennes 3D générales** (voir choix de périmètre ci-dessus) — limite
+  assumée et documentée dans l'interface, pas un oubli.
+- **Pas d'esquisse dessinée à la souris** : les profils d'extrusion/révolution se saisissent
+  sous forme de listes de coordonnées numériques, pas par un éditeur d'esquisse visuel sur un
+  plan — simplification délibérée compte tenu de l'effort que demanderait un éditeur de
+  croquis 2D contraint (cotes, contraintes géométriques) fiable.
+- **Engrenage approximatif** : représenté comme un disque au diamètre primitif avec alésage,
+  sans denture géométrique réelle — suffisant pour l'encombrement/la masse indicative d'un
+  assemblage, explicitement pas un profil d'engrenage usinable.
+- **Export STL non vérifié dans un logiciel tiers** (pas d'environnement pour le faire ici) —
+  seule la présence de la fonction et son exécution sans exception ont pu être confirmées.
+
+## ADDENDUM 14 — Réduction des limites de la CAO 3D (denture réelle, perçage étendu, chanfrein, DXF)
+
+Suite à « finis les limites de ce que tu as livré, moi je contrôle depuis le navigateur » : le
+client prend en charge la vérification visuelle lui-même, ce qui lève le principal frein à
+l'avancement des limites listées dans l'addendum 13. Quatre limites concrètes ont été fermées
+dans `js/cao3d.js` :
+
+- **Denture réelle des engrenages** : `cao_gearProfile(module, teeth)` génère un vrai profil
+  denté (trapézoïdal, diamètres de tête/pied calculés selon les définitions normalisées
+  addendum = module, dedendum = 1,25×module), remplaçant l'ancien disque plein au diamètre
+  primitif. La même géométrie sert au calcul de volume/masse **et** au maillage 3D — garantit
+  que la masse affichée correspond exactement à ce qui est dessiné (même principe déjà appliqué
+  partout ailleurs dans ce projet).
+- **Perçage étendu aux primitives de base** : les corps `box` et `cylinder` acceptent désormais
+  un tableau de trous traversants optionnel (même mécanisme "cx,cy,d" que l'esquisse extrudée,
+  `Shape.holes` de Three.js — une vraie ouverture, pas un artifice), sans rien changer au cas
+  courant sans trou (toujours une géométrie simple `BoxGeometry`/`CylinderGeometry`).
+- **Chanfrein** : les esquisses extrudées acceptent un chanfrein (mm) aux deux extrémités, via
+  l'option native `bevelEnabled` de `THREE.ExtrudeGeometry` (pas un effet approximatif reconstruit
+  à la main). Le calcul de masse ne retranche pas le petit volume du chanfrein lui-même
+  (approximation assumée et documentée en commentaire — un chanfrein est une opération de bord
+  mineure au regard du volume total d'une pièce réelle).
+- **Export DXF** : `cao_profileToDXF()` génère un fichier DXF ASCII minimal (une `LWPOLYLINE`
+  fermée) à partir du profil d'une esquisse extrudée ou d'une révolution — exploitable dans un
+  autre logiciel de CAO/DAO ou pour une découpe laser/plasma. Bouton "Exporter le profil (DXF)"
+  dans le panneau de propriétés, visible uniquement pour les corps qui ont réellement un profil
+  2D exportable.
+
+### Vérifié par exécution réelle (`npm test`, **275 vérifications, 0 échec**, 265 avant + 10
+nouvelles)
+
+Volume d'une boîte/d'un cylindre percés comparé au calcul analytique (avec et sans trou — le cas
+sans trou reste inchangé, non-régression vérifiée explicitement), nombre de points et bornes de
+rayon du profil d'engrenage (module 2, 20 dents), écart significatif entre l'ancien calcul
+disque et le nouveau calcul par profil denté réel (preuve que le changement a bien un effet),
+volume positif des pièces composites, validité structurelle du DXF généré (section ENTITIES/
+LWPOLYLINE, terminé par EOF, bon nombre de coordonnées), disponibilité du profil exportable pour
+une esquisse extrudée et son absence pour une primitive sans esquisse (boîte).
+
+### Ce qui reste (choix de périmètre toujours assumé, pas des oublis)
+
+- Toujours aucune opération booléenne 3D générale entre solides quelconques (le perçage étendu
+  aux primitives de base couvre une bonne partie des besoins réels sans cette dépendance).
+- Toujours pas d'éditeur d'esquisse à la souris (saisie numérique des profils) — le point
+  suivant le plus significatif si le client souhaite continuer sur ce module.
+- L'export DXF ne couvre que le profil 2D d'un corps (pas une mise en plan complète avec cotes).
+
+## ADDENDUM 15 — Plan de bâtiment : verrouillage lecture seule revérifié + logo partagé dans le PDF
+
+Suite de « finis les limites de ce que tu as livré ». Deux limites de l'addendum 7 traitées :
+
+### Verrouillage lecture seule — limite en réalité déjà fermée, revérifiée et corrigée dans la doc
+
+En relisant `js/plan.js` avant d'y toucher, chaque point de mutation (ajout/suppression
+d'entité, sauvegarde, clic sur le ruban, ligne de commande, collage, glisser une poignée...)
+s'est révélé **déjà protégé** par un test `S.readOnly` — l'affirmation de l'addendum 7 (« un
+collaborateur en lecture seule peut toujours cliquer les outils de dessin ») était inexacte au
+moment où elle a été écrite. Plutôt que de la laisser telle quelle, un test de bout en bout a
+été ajouté pour la vérifier réellement plutôt que de la corriger de mémoire : connexion en tant
+que collaborateur "voir seulement", clic sur le bouton de ruban "Mur", clics sur le canevas,
+saisie de la commande clavier "MU" — **aucune entité n'est ajoutée** dans les trois cas. La
+mention inexacte est corrigée dans cette note plutôt que reconduite.
+
+### Logo partagé ajouté au cartouche du PDF du plan
+
+`js/plan.js` (`buildSheetSVG`) insère désormais `LAB_LOGO_SVG` (même symbole vectoriel que la
+barre supérieure de l'application et les 4 exports PDF de `js/pdf.js`, §17 des mises à jour
+reçues) dans le coin de la cellule "Projet" du cartouche, sans toucher au reste de la planche
+technique (dimensions, flèche nord, échelle graphique, légende des symboles restent identiques).
+
+### Vérifié par exécution réelle (`npm test`, **278 vérifications, 0 échec**, 275 avant + 3
+nouvelles)
+
+Bandeau "Lecture seule" affiché pour un collaborateur en lecture, aucune entité ajoutée après
+trois tentatives de tracé différentes (ruban, canevas, commande clavier) en lecture seule,
+présence du logo vectoriel partagé dans la sortie de `sheetSVG()`.
+
+## ADDENDUM 16 — Constructeur de composant : second gabarit de boîtier + import JSON
+
+Suite de « finis les limites de ce que tu as livré ». Les deux limites explicitement listées en
+fin d'addendum 12 sont fermées :
+
+### Second gabarit de boîtier (`js/composant-builder.js`)
+
+Nouvelle fonction `circularTemplate(n, label)`, construite sur le même principe de garantie
+géométrique que `icTemplate()` (aucun moteur de dessin libre, aucune borne pouvant être
+désynchronisée de son tracé) : `n` broches réparties à 360° autour d'un cercle, chaque
+extrémité de `leadLine()` **est** directement poussée dans le tableau des bornes — la
+coordonnée de la ligne et celle de la borne sont littéralement la même valeur, pas deux valeurs
+qui doivent rester synchronisées manuellement. Un sélecteur `<select id="cb-boitier">` (options
+`BUILDER_BOITIERS.rect` / `.circle`) choisit le gabarit avant génération de l'aperçu ; le reste
+du formulaire (nombre de bornes, noms de broches, familles, enregistrement) est inchangé et
+partagé entre les deux gabarits.
+
+### Import JSON (`js/composant-builder.js`)
+
+Nouvelle carte « Importer un composant (JSON) » sur la page du constructeur : un fichier
+`.json` (champs attendus `nom`/`sym`/`terminals`, `famille`/`def`/`pinNames`/`refTechnique`/
+`boitier`/`viewH` optionnels) est validé par `validateCustomComponentImport()` — rejette tout
+objet sans `nom`, sans `sym` non vide, ou dont `terminals` n'est pas une liste de couples
+`[x, y]` numériques — puis enregistré via le même `db.saveCustomComponent` que le formulaire.
+
+Différence assumée et documentée avec le formulaire : un composant importé **n'a pas** la
+garantie géométrique par construction des gabarits `icTemplate`/`circularTemplate` (le SVG et
+les bornes viennent d'une source externe, potentiellement désynchronisés). Plutôt que de
+prétendre à une vérification qui n'existe pas, le champ `niveauVerification` du composant
+importé le dit explicitement : « bornes ↔ tracé NON garanties par construction... à vérifier
+avant un usage critique » — cohérent avec le principe déjà appliqué partout ailleurs dans ce
+projet (ne jamais documenter comme vérifié ce qui ne l'a été que par relecture).
+
+### Vérifié par exécution réelle (`npm test`, **289 vérifications, 0 échec**, 278 avant + 11
+nouvelles)
+
+Les deux options de boîtier sont listées dans le sélecteur ; générer l'aperçu avec le gabarit
+circulaire produit bien un SVG contenant un `<circle>` (pas le rectangle par défaut) ;
+enregistrement d'un composant à boîtier circulaire avec le bon nombre de bornes ; **chaque
+borne enregistrée correspond exactement à l'extrémité d'une ligne réellement tracée dans le
+SVG** (même check que `tests/verify_catalog.js` applique au catalogue statique, reproduit ici
+en ligne car les composants personnalisés n'y sont pas soumis) ; import d'un fichier JSON valide
+retrouvable par `findDef()` avec ses bornes et son brochage conservés tels quels, et son
+`niveauVerification` signalant honnêtement l'absence de garantie automatique ; import d'un
+fichier JSON invalide (sans `terminals`) rejeté avec un message d'erreur clair, sans exception
+non interceptée et sans enregistrer de composant. `tests/verify_catalog.js` re-exécuté sans
+changement (522 composants, 0 anomalie — les gabarits du constructeur ne touchent pas au
+catalogue statique).
+
+### Ce qui n'a pas été vérifié / limites connues
+
+- **Rendu visuel réel** du sélecteur de boîtier et de la carte d'import — même limitation que
+  pour tout ce projet (pas de navigateur réel disponible dans cet environnement).
+- Le gabarit circulaire reste un **cercle simple avec broches radiales régulières** — pas un
+  vrai boîtier de potentiomètre/capteur à l'apparence réaliste, ni une forme triangulaire ou un
+  boîtier réaliste type TO-220. Cohérent avec le principe déjà établi de ne jamais produire un
+  symbole géométriquement incorrect, mais reste un gabarit générique plutôt qu'une bibliothèque
+  de boîtiers réalistes.
+- L'import JSON ne vérifie **que la forme** des données (types, présence des champs requis) —
+  il ne peut pas garantir que le SVG fourni dans `sym` dessine réellement des lignes qui se
+  terminent aux coordonnées déclarées dans `terminals` (impossible à garantir pour un SVG
+  arbitraire sans un moteur de rendu réel) ; c'est explicitement signalé à l'utilisateur dans le
+  texte de la carte d'import et dans `niveauVerification`, plutôt que caché.
+- Pas de validation du SVG importé contre une liste blanche de balises (un `sym` importé
+  pourrait en théorie contenir n'importe quel SVG) — comme tout le reste du symbole est déjà
+  injecté via `innerHTML`/`dangerouslySetInnerHTML`-style rendu dans ce projet (aucun sandboxing
+  SVG nulle part dans le catalogue existant), ce n'est pas une régression introduite ici, mais
+  ça reste une limite à garder en tête si l'import est un jour ouvert à des fichiers non fournis
+  par l'utilisateur lui-même.
+
+## ADDENDUM 17 — CAO 3D : éditeur d'esquisse 2D à la souris (contour extrudé + profil de révolution)
+
+Suite de « finis les limites... continue avec les autres modules ». La limite la plus
+significative encore listée pour la CAO 3D (addendum 14 : « pas d'éditeur d'esquisse à la
+souris — le point suivant le plus significatif si le client souhaite continuer sur ce module »)
+est fermée dans `js/cao3d.js`, sans nouvelle dépendance.
+
+### Ce qui a été fait
+
+- **Un contour libre** (`shape:'polygon'`) rejoint rectangle/cercle comme forme de profil pour
+  une esquisse extrudée — nouveau, n'existait pas avant cette session (l'extrusion se limitait à
+  rectangle/cercle). `cao_ensurePolygonProfile()` bascule vers ce contour en repartant de la
+  forme actuelle (le rectangle ou le cercle déjà dessiné, converti en liste de points), jamais
+  d'un contour vide.
+- **Un éditeur graphique** (`cao_sketchEditorHTML`, SVG intégré au panneau de propriétés) permet
+  de dessiner ce contour libre, ou le profil rayon/hauteur d'une révolution, à la souris ou au
+  doigt : cliquer le fond ajoute un point à la suite du contour, glisser un point le déplace,
+  cliquer son "✕" le supprime. Un bouton "Dessiner à la souris" ouvre l'éditeur depuis le panneau
+  de propriétés du corps sélectionné.
+- **La saisie numérique existante n'est pas retirée** — pour une révolution, le champ texte
+  "rayon,hauteur ; ..." (`__pts`) reste affiché à côté du nouveau bouton graphique ; les deux
+  agissent sur le même tableau `feature.profile.pts`, donc restent toujours synchronisés, sans
+  code de conversion séparé à maintenir.
+- **Même principe de transform déjà éprouvé dans ce projet** (`js/plan.js`) plutôt qu'une
+  nouvelle approche : décalage écran via `getBoundingClientRect()` (offset seulement, jamais une
+  division par la taille rendue — donc stable même quand cette taille vaut 0, comme sous jsdom),
+  mise à l'échelle via une constante locale fixe (`C3D_SKETCH_SCALE`) plutôt que la géométrie SVG
+  réelle (`getScreenCTM`/`createSVGPoint`, non fournie par le harnais de test). Pendant le
+  glisser d'un point, seul le SVG est mis à jour directement (comme le déplacement des panneaux
+  flottants de `js/editor.js`) ; le relâchement déclenche le recalcul volume/masse/scène 3D et la
+  sauvegarde — pas chaque pixel du mouvement.
+- Écouteurs souris/tactile posés une seule fois sur `#c3d-props` (délégation), qui reste le même
+  élément entre deux rendus (seul son contenu est remplacé) — aucune fuite de listener à nettoyer,
+  cohérent avec le reste de ce module qui n'a pas de logique de démontage dédiée à ses panneaux.
+
+### Vérifié par exécution réelle (`npm test`, **305 vérifications, 0 échec**, 289 avant + 16
+nouvelles)
+
+Toute la logique **indépendante du rendu 3D/DOM réel** a été vérifiée directement : aller-retour
+exact de la transformation écran↔monde et sens de l'axe Y (convention "vers le haut" cohérente
+avec les profils de révolution déjà en place) ; `cao_ensurePolygonProfile` conserve les 4 points
+du rectangle de départ au lieu de vider le contour, et un contour vidé revient à un contour par
+défaut exploitable ; le volume d'un rectangle retracé point par point en contour libre est
+identique à celui du même rectangle exprimé en profil paramétrique (le contour libre n'est pas un
+second moteur de calcul divergent) ; ouvrir l'esquisse d'une extrusion rectangle/cercle la
+convertit bien en contour libre, et celle d'une révolution sans profil fournit un profil de
+départ ; le panneau de propriétés n'affiche l'éditeur graphique que lorsque l'esquisse est
+ouverte pour le corps sélectionné (et plus après fermeture) ; chaque point du contour a bien son
+propre repère cliquable et son bouton de suppression, dessinés exactement à la coordonnée écran
+calculée par `cao_sketchToScreen` (même garantie "coordonnée déclarée = coordonnée réellement
+dessinée" que pour les gabarits du catalogue, `tests/verify_catalog.js`) ; le nouveau bouton
+graphique est bien ajouté aux côtés de la saisie numérique existante pour une révolution, jamais
+à sa place. `tests/verify_catalog.js` re-exécuté sans changement (522 composants, 0 anomalie).
+
+### Ce qui n'a pas été vérifié / limites connues
+
+- **Interaction souris/tactile réelle** (glisser un point, cliquer précisément dans le SVG) :
+  n'a pas pu être vérifiée de bout en bout dans ce harnais, pour une raison structurelle et non
+  contournable — `afterCad3DView()` s'arrête au message de repli dès que Three.js est absent
+  (systématiquement le cas ici, les balises `<script src>` étant retirées volontairement par le
+  harnais), donc le panneau `#c3d-props` et ses écouteurs souris ne sont jamais montés dans cet
+  environnement. Toute la logique qui NE dépend PAS de ce montage (transform, génération HTML,
+  conversion de profil) a été vérifiée directement par des appels de fonction ; seule
+  l'interaction DOM en direct (`c3dSketchDown`/`c3dSketchMove`/`c3dSketchUp`) reste non exercée
+  par ce harnais — même limitation, pour la même raison, que le reste du rendu 3D de ce module.
+- **Rendu visuel réel** de l'éditeur (positionnement des points à l'écran, ergonomie du glisser,
+  lisibilité sur petit écran tactile) — même limitation que pour tout ce projet.
+- **Toujours pas d'opérations booléennes 3D générales** (seule limite de périmètre volontairement
+  restante pour ce module — nécessiterait une bibliothèque CSG dédiée, contraire au principe
+  "aucune nouvelle dépendance" suivi jusqu'ici).
+- Le contour libre ne propose ni cotation ni contraintes géométriques (parallélisme,
+  perpendicularité, symétrie...) — un point se place où l'utilisateur clique, sans assistance de
+  précision au-delà de l'arrondi au dixième de mm déjà appliqué.

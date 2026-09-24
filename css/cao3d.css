@@ -1,0 +1,66 @@
+/* ==========================================================================
+   CAO MÉCANIQUE 3D — styles (js/cao3d.js). Ancré sur #cao3d-shell, même
+   principe de scoping que css/plan.css et css/plan3d.css.
+   ========================================================================== */
+#cao3d-shell{
+  display:flex; flex-direction:column; height:100%; min-height:0;
+  background:var(--bg-raised); color:var(--text);
+}
+#cao3d-shell .c3d-toolbar{
+  display:flex; flex-wrap:wrap; align-items:center; gap:14px;
+  padding:8px 12px; border-bottom:1px solid var(--panel-border); background:var(--panel);
+}
+#cao3d-shell .c3d-group{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding-right:10px; border-right:1px solid var(--panel-border); }
+#cao3d-shell .c3d-group:last-child{ border-right:none; }
+#cao3d-shell .c3d-btn{
+  background:var(--bg-raised); border:1px solid var(--panel-border); color:var(--text);
+  border-radius:var(--radius); padding:.4em .7em; font-size:.78em; cursor:pointer; white-space:nowrap;
+}
+#cao3d-shell .c3d-btn:hover{ border-color:var(--cyan); color:var(--cyan); }
+#cao3d-shell .c3d-btn.c3d-bad{ border-color:var(--danger-dim); color:var(--danger); }
+#cao3d-shell .c3d-btn.c3d-bad:hover{ background:var(--danger-dim); }
+#cao3d-shell .c3d-clipgroup{ font-size:.78em; color:var(--text-muted); }
+#cao3d-shell .c3d-clipgroup input[type=range]{ width:130px; }
+
+#cao3d-shell .c3d-main{ flex:1; min-height:0; display:flex; position:relative; }
+#cao3d-shell #c3d-viewport{ flex:1; min-height:0; position:relative; background:#14171c; }
+#cao3d-shell #c3d-viewport canvas{ display:block; width:100%; height:100%; }
+#cao3d-shell #c3d-viewport.hidden{ display:none; }
+#cao3d-shell .c3d-fallback{ flex:1; display:flex; align-items:center; justify-content:center; padding:40px 20px; }
+#cao3d-shell .c3d-fallback.hidden{ display:none; }
+#cao3d-shell .c3d-fallback-box{ max-width:460px; text-align:center; color:var(--text-muted); font-size:.9em; }
+#cao3d-shell .c3d-fallback-box b{ display:block; color:var(--text); font-size:1.1em; margin-bottom:8px; }
+
+#cao3d-shell #c3d-side{ width:290px; flex:none; background:var(--panel); border-left:1px solid var(--panel-border); display:flex; flex-direction:column; overflow-y:auto; }
+#cao3d-shell .c3d-tree{ border-bottom:1px solid var(--panel-border); max-height:34%; overflow-y:auto; }
+#cao3d-shell .c3d-tree-row{ display:grid; grid-template-columns:22px 1fr auto; gap:6px; align-items:center; padding:5px 8px; cursor:pointer; border-bottom:1px solid #ffffff0a; }
+#cao3d-shell .c3d-tree-row:hover{ background:#ffffff08; }
+#cao3d-shell .c3d-tree-row.sel{ background:var(--cyan-dim); }
+#cao3d-shell .c3d-tree-name{ font-size:.82em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#cao3d-shell .c3d-eye{ background:none; border:0; color:var(--text-muted); cursor:pointer; font-size:.9em; }
+#cao3d-shell .c3d-props{ border-bottom:1px solid var(--panel-border); }
+#cao3d-shell .c3d-h4{ font-size:.7em; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint); margin:10px 0 4px; }
+#cao3d-shell .c3d-frm{ display:grid; grid-template-columns:1fr 1fr; gap:4px 8px; align-items:center; }
+#cao3d-shell .c3d-frm label{ font-size:.72em; color:var(--text-muted); }
+#cao3d-shell .c3d-frm input, #cao3d-shell .c3d-frm select{ width:100%; background:var(--bg); border:1px solid var(--panel-border); border-radius:4px; padding:3px 5px; font-size:.8em; color:var(--text); }
+#cao3d-shell .c3d-frm3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px; }
+#cao3d-shell .c3d-frm3 input{ width:100%; background:var(--bg); border:1px solid var(--panel-border); border-radius:4px; padding:3px 4px; font-size:.78em; color:var(--text); }
+#cao3d-shell .c3d-props input, #cao3d-shell .c3d-props select{ background:var(--bg); border:1px solid var(--panel-border); border-radius:4px; color:var(--text); padding:4px 6px; font-size:.82em; width:100%; }
+#cao3d-shell .c3d-props .field{ margin-bottom:6px; }
+#cao3d-shell .c3d-summary{ padding-bottom:10px; }
+#cao3d-shell table.c3d-rep{ width:100%; border-collapse:collapse; font-size:.78em; }
+#cao3d-shell table.c3d-rep td{ padding:2px 4px; border-bottom:1px solid #ffffff0a; }
+#cao3d-shell table.c3d-rep td.n{ text-align:right; white-space:nowrap; }
+
+#cao3d-shell .c3d-sk-hint{ font-size:.72em; color:var(--text-muted); padding:0 2px 4px; }
+#cao3d-shell .c3d-sk-svg{ width:100%; height:180px; background:var(--bg); border:1px solid var(--panel-border); border-radius:4px; cursor:crosshair; touch-action:none; user-select:none; }
+#cao3d-shell .c3d-sk-axis{ stroke:var(--panel-border); stroke-width:1; }
+#cao3d-shell .c3d-sk-poly{ fill:var(--cyan-dim); stroke:var(--cyan); stroke-width:1.5; fill-opacity:.35; }
+#cao3d-shell .c3d-sk-pt{ fill:var(--cyan); stroke:var(--bg); stroke-width:1.5; cursor:grab; }
+#cao3d-shell .c3d-sk-pt:hover{ fill:var(--text); }
+#cao3d-shell .c3d-sk-del{ fill:var(--danger); font-size:9px; cursor:pointer; text-anchor:middle; }
+
+@media (max-width:860px){
+  #cao3d-shell .c3d-main{ flex-direction:column; }
+  #cao3d-shell #c3d-side{ width:100%; max-height:44vh; border-left:none; border-top:1px solid var(--panel-border); }
+}

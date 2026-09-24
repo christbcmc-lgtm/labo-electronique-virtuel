@@ -58,6 +58,7 @@ async function viewDevis(projectId){
           <a href="#/dimensionnement/${projectId}">Dimensionnement</a>
           <a href="#/plan/${projectId}">Plan</a>
           <a href="#/plan3d/${projectId}">3D</a>
+          <a href="#/cad3d/${projectId}">CAO 3D</a>
         </div>
       </div>
       <div class="card">

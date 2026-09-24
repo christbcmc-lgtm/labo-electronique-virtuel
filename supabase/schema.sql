@@ -88,10 +88,22 @@ create table if not exists public.projects (
   schema        jsonb not null default '{"items":[],"wires":[]}'::jsonb,
   devis         jsonb not null default '{"lignes":[],"remisePct":0,"tauxTaxe":20,"taxeActive":false}'::jsonb, -- §22/§23
   plan          jsonb,                                                                                       -- plan de bâtiment/électricité (js/plan.js), null tant qu'aucun plan n'a été créé
+  cad3d         jsonb,                                                                                       -- CAO mécanique 3D (js/cao3d.js), null tant qu'aucune pièce n'a été créée
   erreurs       integer not null default 0,
   statut        text not null default 'brouillon' check (statut in ('brouillon','en_cours','verification','finalise','exporte')), -- §6 des notes en cours
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
+);
+
+-- Composants personnalisés (§23/§26) : propres à leur créateur, réutilisables dans tous ses
+-- projets. `id` est l'identifiant de type de composant (même rôle que les clés statiques de
+-- js/catalog.js, ex. "resistance") — préfixé "custom_" côté client pour ne jamais entrer en
+-- collision avec le catalogue partagé ni avec les composants d'un autre utilisateur.
+create table if not exists public.custom_components (
+  id          text primary key,
+  owner_id    uuid not null references public.profiles(id) on delete cascade,
+  definition  jsonb not null,
+  created_at  timestamptz not null default now()
 );
 
 create table if not exists public.project_collaborators (
@@ -218,6 +230,7 @@ alter table public.profiles add column if not exists suspended boolean not null 
 alter table public.profiles add column if not exists storage_quota bigint not null default 2097152;
 alter table public.projects add column if not exists devis jsonb not null default '{"lignes":[],"remisePct":0,"tauxTaxe":20,"taxeActive":false}'::jsonb;
 alter table public.projects add column if not exists plan jsonb;
+alter table public.projects add column if not exists cad3d jsonb;
 alter table public.projects add column if not exists statut text not null default 'brouillon';
 do $$
 begin
@@ -264,6 +277,7 @@ alter table public.suggestions           enable row level security;
 alter table public.group_members         enable row level security;
 alter table public.storage_requests      enable row level security;
 alter table public.notifications         enable row level security;
+alter table public.custom_components     enable row level security;
 
 -- PROFILES : lecture ouverte à tout utilisateur connecté (annuaire nécessaire
 -- pour la messagerie, les noms d'auteurs de commentaires/suggestions, etc. —
@@ -409,6 +423,13 @@ create policy "notifications_insert_authenticated" on public.notifications
   for insert with check (auth.role() = 'authenticated');
 create policy "notifications_update_own" on public.notifications
   for update using (user_id = auth.uid());
+
+-- CUSTOM_COMPONENTS (§23/§26) : entièrement privés à leur créateur — ni lecture ni écriture
+-- pour les autres utilisateurs (contrairement aux profils/messages ci-dessus, un composant
+-- personnalisé n'a pas vocation à être visible par d'autres avant un partage explicite,
+-- fonctionnalité non prévue dans ce schéma).
+create policy "custom_components_owner_all" on public.custom_components
+  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 
 -- ============================================================================
 -- FIN DU SCHÉMA.

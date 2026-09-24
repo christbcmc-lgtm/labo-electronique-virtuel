@@ -365,6 +365,7 @@ async function viewProject(id){
           <a href="#/dimensionnement/${id}">Dimensionnement</a>
           <a href="#/plan/${id}">Plan</a>
           <a href="#/plan3d/${id}">3D</a>
+          <a href="#/cad3d/${id}">CAO 3D</a>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           ${wsState.isOwner ? `<button class="btn btn-ghost btn-sm" id="btn-share">Partager</button>` : ''}

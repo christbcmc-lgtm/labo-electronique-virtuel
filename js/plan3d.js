@@ -283,6 +283,7 @@ async function viewPlan3D(projectId) {
         <a href="#/dimensionnement/${projectId}">Dimensionnement</a>
         <a href="#/plan/${projectId}">Plan</a>
         <a href="#/plan3d/${projectId}" class="active">3D</a>
+        <a href="#/cad3d/${projectId}">CAO 3D</a>
       </div>
     </div>
     <div id="plan3d-shell">

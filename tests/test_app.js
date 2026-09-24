@@ -39,7 +39,7 @@ async function boot(){
   // browsers) — injecting real <script> elements does, exactly like the browser loading js/*.js
   // via <script src>. This is what actually behaves like the shipped page.
   const doc0 = dom.window.document;
-  for (const f of ['js/config.js','js/catalog.js','js/backend.js','js/editor.js','js/pdf.js','js/devis.js','js/dimensionnement.js','js/plan.js','js/plan3d.js','js/app.js']){
+  for (const f of ['js/config.js','js/catalog.js','js/backend.js','js/editor.js','js/pdf.js','js/devis.js','js/dimensionnement.js','js/plan.js','js/plan3d.js','js/cao3d.js','js/composant-builder.js','js/app.js']){
     const s = doc0.createElement('script');
     s.textContent = readFile(f);
     doc0.body.appendChild(s);
@@ -614,6 +614,43 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(etResultText.includes('10.0 A') || etResultText.includes('10 A'), 'calcul électrotechnique correct : courant nominal = 10 A (résultat: ' + etResultText.replace(/\s+/g,' ').slice(0,200) + ')');
   assert(!!doc.getElementById('et-export-pdf'), 'bouton "Exporter ce dimensionnement (PDF)" présent après un calcul');
 
+  section('Dimensionnement — Éolien / Hydraulique / Solaire thermique (§24 étendu, addendum 9 : formules ajoutées une fois les composants disponibles au catalogue)');
+  await nav(win, 'dimensionnement/' + projectId);
+  await tick(150);
+  click(win, [...doc.querySelectorAll('[data-dim-tab]')].find(a=>a.dataset.dimTab==='renouvelables'));
+  await tick(150);
+  setVal(win, doc.getElementById('eo-diametre'), '2');
+  setVal(win, doc.getElementById('eo-vitesse'), '10');
+  setVal(win, doc.getElementById('eo-cp'), '0.4');
+  setVal(win, doc.getElementById('eo-rho'), '1.2');
+  click(win, doc.getElementById('eo-calc'));
+  await tick(150);
+  const eoResultText = doc.getElementById('eo-result').textContent;
+  // A = π×1² = 3.14 m² ; P = 0.5×1.2×3.14×0.4×10³ ≈ 754 W
+  assert(eoResultText.includes('3.14'), 'calcul éolien correct : aire balayée ≈ 3,14 m² (résultat: ' + eoResultText.replace(/\s+/g,' ').slice(0,220) + ')');
+  assert(eoResultText.includes('754'), 'calcul éolien correct : puissance théorique ≈ 754 W');
+  assert(!!doc.getElementById('eo-export-pdf'), 'bouton "Exporter ce dimensionnement (PDF)" présent pour l\'éolien');
+
+  setVal(win, doc.getElementById('hy-debit'), '100');
+  setVal(win, doc.getElementById('hy-hauteur'), '10');
+  setVal(win, doc.getElementById('hy-rendement'), '80');
+  click(win, doc.getElementById('hy-calc'));
+  await tick(150);
+  const hyResultText = doc.getElementById('hy-result').textContent;
+  // P = 1000 × 9.81 × 0.1 × 10 × 0.8 = 7848 W
+  assert(hyResultText.includes('7848'), 'calcul hydraulique correct : puissance théorique = 7848 W (résultat: ' + hyResultText.replace(/\s+/g,' ').slice(0,220) + ')');
+  assert(!!doc.getElementById('hy-export-pdf'), 'bouton "Exporter ce dimensionnement (PDF)" présent pour l\'hydraulique');
+
+  setVal(win, doc.getElementById('st-surface'), '5');
+  setVal(win, doc.getElementById('st-irrad'), '5');
+  setVal(win, doc.getElementById('st-rendement'), '60');
+  click(win, doc.getElementById('st-calc'));
+  await tick(150);
+  const stResultText = doc.getElementById('st-result').textContent;
+  // E = 5 × 5 × 0.6 = 15 kWh/jour
+  assert(stResultText.includes('15.00'), 'calcul solaire thermique correct : production journalière = 15,00 kWh/jour (résultat: ' + stResultText.replace(/\s+/g,' ').slice(0,220) + ')');
+  assert(!!doc.getElementById('st-export-pdf'), 'bouton "Exporter ce dimensionnement (PDF)" présent pour le solaire thermique');
+
   section('Export PDF du dimensionnement seul (§15 Option 3 — indépendant du schéma)');
   // Fixe directement l'état que le vrai gestionnaire de clic pose avant d'appeler l'export
   // (évite de dépendre du comportement de window.confirm() non implémenté par jsdom).
@@ -667,6 +704,10 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(doc.getElementById('cv') && doc.getElementById('cv').innerHTML.includes('<line'), 'le mur rechargé est effectivement dessiné dans le SVG (pas seulement présent dans l\'état)');
   assert(win.__jsErrors.length === jsErrCountBeforePlan, 'aucune erreur JS non interceptée pendant le montage/démontage/remontage de l\'éditeur de plan' + (win.__jsErrors.length > jsErrCountBeforePlan ? ' — NOUVELLES ERREURS: ' + win.__jsErrors.slice(jsErrCountBeforePlan).join(' | ') : ''));
 
+  section('Plan bâtiment — logo partagé dans le cartouche du PDF (limite fermée : addendum 7 signalait la planche indépendante de l\'identité visuelle des autres PDF)');
+  const planSheetSvg = win.AtelierPlan.sheetSVG({});
+  assert(planSheetSvg.includes('rx="2.5"') && planSheetSvg.includes('<svg'), 'la planche imprimable du plan intègre désormais le même symbole de logo vectoriel que les 4 autres exports PDF (résultat contient-il le logo ? ' + planSheetSvg.includes('rx="2.5"') + ')');
+
   await nav(win, 'project/' + projectId);
   await tick(200);
   assert(!doc.getElementById('plan-shell'), 'en quittant la route Plan, son DOM est bien retiré (remplacé par la vue Schéma)');
@@ -708,6 +749,143 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   await nav(win, 'project/' + projectId);
   await tick(200);
   assert(!doc.getElementById('plan3d-shell'), 'en quittant la route 3D, son DOM est bien retiré');
+
+  section('CAO mécanique 3D — géométrie pure (js/cao3d.js, sans WebGL/Three.js requis)');
+  assert(win.cao_primitiveVolume({ type:'box', w:10, h:20, d:5 }) === 1000, 'volume d\'une boîte 10×20×5 = 1000 mm³');
+  const cylVol = win.cao_primitiveVolume({ type:'cylinder', d:10, h:20 });
+  assert(Math.abs(cylVol - Math.PI*25*20) < 0.001, 'volume d\'un cylindre Ø10×20 = π×5²×20 (résultat: ' + cylVol.toFixed(3) + ')');
+  const extrudeVol = win.cao_extrudeVolume({ profile:{ shape:'rect', w:20, h:10 }, holes:[{cx:0,cy:0,d:4}], depth:5 });
+  // Le trou est approché par un polygone à 24 côtés inscrit dans le cercle (même technique que le
+  // reste du projet) : son aire est légèrement inférieure à π×r², d'où une tolérance un peu plus
+  // large qu'un calcul purement analytique — pas une imprécision du calcul, une conséquence assumée
+  // de l'approximation polygonale (cohérente avec le maillage réellement construit par Three.js).
+  const expectedExtrude = (200 - Math.PI*4) * 5;
+  assert(Math.abs(extrudeVol - expectedExtrude) < 1, 'volume d\'une esquisse rectangle 20×10 percée d\'un trou Ø4, extrudée sur 5 mm ≈ ' + expectedExtrude.toFixed(1) + ' mm³ (résultat: ' + extrudeVol.toFixed(1) + ', écart dû à l\'approximation polygonale du trou)');
+  const revolveVol = win.cao_revolveVolume({ profile:{ pts:[[10,-10],[20,-10],[20,10],[10,10]] }, angle:360 });
+  const expectedRevolve = Math.PI*(400-100)*20; // = tube plein rayon 10→20, hauteur 20 (théorème de Pappus-Guldin)
+  assert(Math.abs(revolveVol - expectedRevolve) < 1, 'révolution d\'un rectangle (rayon 10→20, hauteur 20) sur 360° = volume d\'un tube plein (Pappus-Guldin), attendu ' + expectedRevolve.toFixed(0) + ' mm³ (résultat: ' + revolveVol.toFixed(0) + ')');
+  const steelCubeMass = win.cao_bodyMassKg({ feature:{ type:'box', w:100, h:100, d:100 }, material:'acier' });
+  assert(Math.abs(steelCubeMass - 7.85) < 0.001, 'un cube d\'acier de 100 mm de côté pèse 7,85 kg (masse volumique 7850 kg/m³) — résultat: ' + steelCubeMass.toFixed(3) + ' kg');
+  const boxHoleVol = win.cao_primitiveVolume({ type:'box', w:20, h:5, d:10, holes:[{cx:0,cy:0,d:4}] });
+  assert(Math.abs(boxHoleVol - (200-Math.PI*4)*5) < 1, 'une boîte 20×10×5 avec un trou traversant Ø4 perd le volume du trou (résultat: ' + boxHoleVol.toFixed(1) + ')');
+  assert(win.cao_primitiveVolume({ type:'box', w:20, h:5, d:10 }) === 1000, 'sans trou, une boîte 20×10×5 garde son volume plein (1000 mm³, pas de régression pour le cas courant)');
+  const cylHoleVol = win.cao_primitiveVolume({ type:'cylinder', d:20, h:10, holes:[{cx:0,cy:0,d:6}] });
+  // Le diamètre extérieur reste calculé analytiquement (πr²) ; seul le trou passe par
+  // l'approximation polygonale (24 côtés, cf. cao_circlePoints) — d'où une tolérance un peu plus
+  // large que le calcul purement analytique, pour la même raison que le test d'esquisse ci-dessus.
+  assert(Math.abs(cylHoleVol - (Math.PI*100-Math.PI*9)*10) < 5, 'un cylindre Ø20×10 avec un alésage Ø6 perd le volume de l\'alésage (résultat: ' + cylHoleVol.toFixed(1) + ')');
+  const gearPts = win.cao_gearProfile(2, 20);
+  assert(gearPts.length === 80, 'le profil d\'un pignon à 20 dents a 4 points par dent (80 points) — résultat: ' + gearPts.length);
+  const gearRadii = gearPts.map(p => Math.hypot(p[0], p[1]));
+  assert(Math.min(...gearRadii) > 17 && Math.max(...gearRadii) < 23, 'les points du profil d\'engrenage restent entre le diamètre de pied et de tête attendus (module 2, 20 dents) — bornes observées: ' + Math.min(...gearRadii).toFixed(1) + '..' + Math.max(...gearRadii).toFixed(1));
+  const gearVol = win.cao_primitiveVolume({ type:'gear', module:2, teeth:20, thickness:5, bore:6 });
+  const discVol = Math.PI*400*5; // ancienne approximation (disque au diamètre primitif) : le nouveau calcul doit s'en écarter (denture réelle prise en compte)
+  assert(gearVol > 0 && Math.abs(gearVol - discVol) > 50, 'le volume de l\'engrenage reflète désormais le profil denté réel, pas un simple disque plein (résultat: ' + gearVol.toFixed(0) + ' mm³, ancien calcul disque: ' + discVol.toFixed(0) + ')');
+  assert(win.cao_bodyVolume({ feature: win.cao_defaultFeature('screw') }) > 0, 'le volume d\'une vis générée par défaut est positif (tête + tige)');
+  assert(win.cao_bodyVolume({ feature: win.cao_defaultFeature('nut') }) > 0, 'le volume d\'un écrou généré par défaut est positif');
+  // Coordonnées volontairement différentes de "10" (le code de groupe DXF pour X) pour ne pas
+  // fausser le comptage ci-dessous : une valeur de coordonnée qui vaudrait littéralement 10
+  // apparaîtrait aussi comme la chaîne "10" et serait comptée à tort comme un code de groupe.
+  const dxfSample = win.cao_profileToDXF([[0,0],[5,0],[5,5],[0,5]]);
+  assert(dxfSample.includes('LWPOLYLINE') && dxfSample.includes('ENDSEC') && dxfSample.trim().endsWith('EOF'), 'l\'export DXF d\'un profil produit un fichier structurellement valide (section ENTITIES/LWPOLYLINE, terminé par EOF)');
+  assert((dxfSample.match(/\n10\n/g)||[]).length === 4, 'le DXF contient bien les 4 coordonnées X du profil carré (résultat: ' + (dxfSample.match(/\n10\n/g)||[]).length + ')');
+  const extrudeBodyForDxf = { feature: win.cao_defaultFeature('extrude') };
+  assert(Array.isArray(win.cao_bodyProfilePoints(extrudeBodyForDxf)) && win.cao_bodyProfilePoints(extrudeBodyForDxf).length >= 3, 'le profil d\'une esquisse extrudée est exploitable pour un export DXF');
+  assert(win.cao_bodyProfilePoints({ feature: win.cao_defaultFeature('box') }) === null, 'une primitive sans esquisse 2D (boîte) n\'expose pas de profil exportable en DXF');
+  const freshCad = win.cao_newProject();
+  assert(freshCad.version === 1 && Array.isArray(freshCad.bodies) && freshCad.bodies.length === 0, 'un projet CAO 3D vide est correctement initialisé');
+  let cadValidateError = null;
+  try { win.cao_validateProject({ version:2, bodies:[] }); } catch (e) { cadValidateError = e; }
+  assert(!!cadValidateError, 'un fichier CAO 3D de version inconnue est rejeté plutôt que silencieusement accepté');
+  const bodiesForNaming = [];
+  const b1 = win.cao_newBody(bodiesForNaming, 'box'); bodiesForNaming.push(b1);
+  const b2 = win.cao_newBody(bodiesForNaming, 'box'); bodiesForNaming.push(b2);
+  assert(b1.name !== b2.name, 'deux corps du même type reçoivent des noms distincts (résultat: "' + b1.name + '" / "' + b2.name + '")');
+  assert(win.cao_assemblyMassKg(bodiesForNaming) > 0, 'la masse totale d\'un assemblage est la somme des masses de ses corps');
+
+  section('CAO mécanique 3D — éditeur d\'esquisse à la souris (limite fermée : profils numériques uniquement avant cette session)');
+  // Transform écran <-> monde pure (mêmes constantes que js/cao3d.js) : aller-retour exact, et
+  // vérification que l'axe Y écran (vers le bas) est bien inversé pour donner un Y monde vers le
+  // haut (convention déjà utilisée par les profils de révolution existants, ex. cao_defaultFeature).
+  const sk1 = win.cao_sketchToScreen(10, 20);
+  const back1 = win.cao_sketchToWorld(sk1[0], sk1[1]);
+  assert(Math.abs(back1[0]-10) < 1e-9 && Math.abs(back1[1]-20) < 1e-9, 'aller-retour écran<->monde exact pour un point d\'esquisse (résultat: ' + JSON.stringify(back1) + ')');
+  const skOrigin = win.cao_sketchToScreen(0, 0);
+  const skUp = win.cao_sketchToScreen(0, 10);
+  assert(skUp[1] < skOrigin[1], 'un Y monde positif (vers le haut) correspond à une coordonnée écran plus petite (Y écran croît vers le bas) — convention cohérente avec les profils de révolution déjà en place');
+
+  // cao_ensurePolygonProfile : bascule un profil rectangle en contour libre à 4 points sans le
+  // vider, puis un second appel sur un polygone déjà vide retombe sur un contour par défaut
+  // plutôt que de laisser un profil inutilisable.
+  const polyFeature = { type:'extrude', profile:{ shape:'rect', w:40, h:20 }, depth:5 };
+  win.cao_ensurePolygonProfile(polyFeature);
+  assert(polyFeature.profile.shape === 'polygon' && polyFeature.profile.pts.length === 4, 'basculer un profil rectangle en contour libre conserve 4 points de départ (le rectangle tracé), pas un contour vide (résultat: ' + JSON.stringify(polyFeature.profile.pts) + ')');
+  polyFeature.profile.pts = [];
+  win.cao_ensurePolygonProfile(polyFeature);
+  assert(polyFeature.profile.pts.length === 4, 'un contour libre vidé revient à un contour par défaut exploitable plutôt que de rester vide (résultat: ' + polyFeature.profile.pts.length + ' point(s))');
+  // Le volume d'une esquisse extrudée en contour libre (rectangle 40×20 retracé point par point)
+  // doit rester cohérent avec le même rectangle exprimé directement en profil 'rect' — preuve que
+  // le contour libre n'est pas un second moteur de calcul divergent, juste une autre façon
+  // d'exprimer le même polygone.
+  const rectVolDirect = win.cao_extrudeVolume({ profile:{ shape:'rect', w:40, h:20 }, depth:5 });
+  const rectVolAsPolygon = win.cao_extrudeVolume({ profile: polyFeature.profile, depth:5 });
+  assert(Math.abs(rectVolDirect - rectVolAsPolygon) < 1e-6, 'le volume d\'un rectangle retracé en contour libre est identique à celui du même rectangle en profil paramétrique (résultat: ' + rectVolDirect + ' vs ' + rectVolAsPolygon + ')');
+
+  const sketchBodyExtrude = win.cao_newBody([], 'extrude');
+  const extrudePts = win.cao_sketchProfilePts(sketchBodyExtrude);
+  assert(Array.isArray(extrudePts) && extrudePts.length >= 3 && sketchBodyExtrude.feature.profile.shape === 'polygon', 'ouvrir l\'esquisse d\'une extrusion rectangle/cercle la convertit automatiquement en contour libre exploitable par l\'éditeur graphique');
+  const sketchBodyRevolve = win.cao_newBody([], 'revolve');
+  sketchBodyRevolve.feature.profile.pts = [];
+  const revolvePts = win.cao_sketchProfilePts(sketchBodyRevolve);
+  assert(Array.isArray(revolvePts) && revolvePts.length === 4, 'ouvrir l\'esquisse d\'une révolution sans profil défini fournit un profil de départ exploitable plutôt qu\'un contour vide');
+
+  // cao_sketchOpen/Close pilotent l'état affiché par cao_propsHTML (observé indirectement via le
+  // HTML généré, la variable d'état interne n'étant volontairement pas exposée hors du module —
+  // même principe que C3D/c3dSelected, cf. tests d'intégration routeur ci-dessous).
+  win.cao_sketchClose();
+  const propsClosed = win.cao_propsHTML(sketchBodyExtrude);
+  assert(!propsClosed.includes('c3d-sketch-svg'), 'sans esquisse ouverte, le panneau de propriétés n\'affiche pas l\'éditeur graphique');
+  win.cao_sketchOpen(sketchBodyExtrude);
+  const propsOpenExtrude = win.cao_propsHTML(sketchBodyExtrude);
+  assert(propsOpenExtrude.includes('id="c3d-sketch-svg"'), 'ouvrir l\'esquisse d\'un corps affiche l\'éditeur graphique (SVG) dans le panneau de propriétés');
+  assert((propsOpenExtrude.match(/data-pt="/g)||[]).length === extrudePts.length, 'l\'éditeur graphique affiche exactement un point cliquable par point du contour (résultat: ' + (propsOpenExtrude.match(/data-pt="/g)||[]).length + ' pour ' + extrudePts.length + ' point(s))');
+  assert((propsOpenExtrude.match(/data-del="/g)||[]).length === extrudePts.length, 'chaque point de l\'esquisse a son propre bouton de suppression (✕)');
+  // Chaque point cliquable est placé à la coordonnée écran exacte issue de cao_sketchToScreen —
+  // même garantie "coordonnée déclarée = coordonnée réellement dessinée" que pour les gabarits de
+  // symboles du catalogue (tests/verify_catalog.js), appliquée ici à l'esquisse.
+  const firstPt = extrudePts[0], firstScreen = win.cao_sketchToScreen(firstPt[0], firstPt[1]);
+  assert(propsOpenExtrude.includes(`data-pt="0" cx="${firstScreen[0]}" cy="${firstScreen[1]}"`), 'le premier point de l\'esquisse est dessiné exactement à la coordonnée écran calculée par cao_sketchToScreen (pas une valeur désynchronisée)');
+  const propsClosedAfter = (() => { win.cao_sketchClose(); return win.cao_propsHTML(sketchBodyExtrude); })();
+  assert(!propsClosedAfter.includes('c3d-sketch-svg'), 'fermer l\'esquisse retire l\'éditeur graphique du panneau de propriétés');
+
+  // cao_fieldsHTML expose les nouvelles commandes : option "Contour libre" pour une extrusion,
+  // bouton "Dessiner à la souris" pour une révolution — sans rien retirer de la saisie numérique
+  // déjà en place (le champ "__pts" texte reste présent pour la révolution, ajout pas remplacement).
+  const extrudeFieldsRect = win.cao_fieldsHTML({ type:'extrude', profile:{ shape:'rect', w:40, h:20 }, depth:5 });
+  assert(extrudeFieldsRect.includes('value="polygon"'), 'l\'option "Contour libre (esquisse)" est proposée pour une extrusion, en plus de rectangle/cercle');
+  const extrudeFieldsPoly = win.cao_fieldsHTML({ type:'extrude', profile: polyFeature.profile, depth:5 });
+  assert(extrudeFieldsPoly.includes('data-sketch-open'), 'quand le profil d\'extrusion est déjà en contour libre, le bouton pour dessiner à la souris est affiché');
+  const revolveFields = win.cao_fieldsHTML({ type:'revolve', profile:{ pts:[[0,-20],[10,-20],[10,20],[0,20]] }, angle:360 });
+  assert(revolveFields.includes('data-sketch-open') && revolveFields.includes('data-f="__pts"'), 'le champ de révolution propose à la fois la saisie numérique existante ("__pts") ET le nouveau bouton pour dessiner à la souris — ajout, pas remplacement');
+
+  section('CAO mécanique 3D — intégration routeur et repli gracieux sans WebGL (attendu dans ce harnais de test)');
+  const jsErrCountBeforeCad = win.__jsErrors.length;
+  await nav(win, 'cad3d/' + projectId);
+  await tick(250);
+  assert(!!doc.getElementById('cao3d-shell'), 'l\'atelier CAO 3D est monté dans la page (conteneur #cao3d-shell présent)');
+  assert(!!doc.querySelector(`.ws-tabs-top a[href="#/cad3d/${projectId}"].active`), 'le 6e onglet "CAO 3D" est actif sur cette route');
+  assert(win.cao_threeAvailable() === false, 'Three.js/STLExporter ne sont pas chargés dans ce harnais (scripts CDN retirés volontairement) — attendu, pas une erreur');
+  assert(!doc.getElementById('c3d-fallback').classList.contains('hidden'), 'en l\'absence de Three.js, le message de repli est affiché au lieu de planter');
+  assert(win.__jsErrors.length === jsErrCountBeforeCad, 'aucune erreur JS non interceptée en montant l\'atelier CAO 3D sans Three.js disponible' + (win.__jsErrors.length > jsErrCountBeforeCad ? ' — NOUVELLES ERREURS: ' + win.__jsErrors.slice(jsErrCountBeforeCad).join(' | ') : ''));
+  await nav(win, 'project/' + projectId);
+  await tick(200);
+  assert(!doc.getElementById('cao3d-shell'), 'en quittant la route CAO 3D, son DOM est bien retiré');
+
+  section('CAO mécanique 3D — persistance par projet (db.getCad3d/db.saveCad3d, même principe que le plan §22/§23)');
+  const sampleCad = { version:1, meta:{ name:'Pièce test' }, bodies:[{ id:'b1', name:'Plaque', visible:true, material:'aluminium', transform:{ pos:[0,0,0], rot:[0,0,0] }, feature:{ type:'box', w:50, h:5, d:30 } }] };
+  await win.db.saveCad3d(projectId, sampleCad);
+  const { data: reloadedCad } = await win.db.getCad3d(projectId);
+  assert(!!reloadedCad && reloadedCad.bodies.length === 1 && reloadedCad.bodies[0].feature.type === 'box', 'le projet CAO 3D enregistré (db.saveCad3d) est bien relu tel quel (db.getCad3d)');
 
   section('Thème (§33)');
   const themeBtn = doc.querySelector('[data-theme-pick="clair"]');
@@ -852,6 +1030,92 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(win.getFavoris().includes('ne555'), 'favori ajouté depuis la page de recherche dédiée');
   win.toggleFavorite('ne555'); // nettoyage
 
+  section('Constructeur de composant personnalisé (§23/§26)');
+  click(win, doc.querySelector('[data-comp-mode="creer"]'));
+  await tick(150);
+  assert(!!doc.getElementById('cb-nom'), 'formulaire du constructeur de composant affiché');
+  setVal(win, doc.getElementById('cb-nom'), 'Module capteur test');
+  setVal(win, doc.getElementById('cb-nbornes'), '3');
+  doc.getElementById('cb-nbornes').dispatchEvent(new win.Event('input', { bubbles:true }));
+  await tick(80);
+  assert(doc.querySelectorAll('.cb-pinname').length === 3, 'trois champs de nom de broche générés après avoir saisi 3 bornes');
+  setVal(win, doc.querySelectorAll('.cb-pinname')[0], 'VCC');
+  setVal(win, doc.querySelectorAll('.cb-pinname')[1], 'GND');
+  setVal(win, doc.querySelectorAll('.cb-pinname')[2], 'OUT');
+  click(win, doc.getElementById('cb-preview'));
+  await tick(100);
+  assert(doc.querySelector('#cb-preview-box svg'), 'un aperçu du symbole (boîtier + broches) est généré automatiquement, sans que l\'utilisateur ait dessiné quoi que ce soit');
+  assert(!doc.getElementById('cb-save').disabled, 'le bouton Enregistrer est activé une fois l\'aperçu généré');
+  click(win, doc.getElementById('cb-save'));
+  await tick(250);
+  const customDef = win.findDef('custom_module_capteur_test');
+  assert(!!customDef, 'le composant personnalisé est immédiatement retrouvable par findDef() après enregistrement (id=' + (customDef && customDef.id) + ')');
+  assert(customDef && customDef.terminals.length === 3, 'le composant personnalisé enregistré a bien ses 3 bornes');
+  assert(customDef && Array.isArray(customDef.pinNames) && customDef.pinNames.join(',') === 'VCC,GND,OUT', 'le brochage saisi (VCC/GND/OUT) est conservé tel quel (résultat: ' + JSON.stringify(customDef && customDef.pinNames) + ')');
+  assert(win.searchCatalog('Module capteur test').some(c => c.id === 'custom_module_capteur_test'), 'le composant personnalisé apparaît dans la recherche globale du catalogue, comme n\'importe quel composant existant');
+  assert(!!doc.querySelector('[data-mine-id="custom_module_capteur_test"]'), 'le composant personnalisé apparaît dans la liste "Mes composants"');
+  const { data: savedList } = await win.db.listCustomComponents(win.auth.currentUser.id);
+  assert(savedList.some(c => c.id === 'custom_module_capteur_test'), 'le composant personnalisé est bien persisté côté backend (db.listCustomComponents)');
+  const origConfirmCb = win.confirm; win.confirm = () => true;
+  click(win, doc.querySelector('[data-del-mine="custom_module_capteur_test"]'));
+  await tick(250);
+  win.confirm = origConfirmCb;
+  assert(!win.findDef('custom_module_capteur_test'), 'le composant personnalisé supprimé n\'est plus retrouvable par findDef()');
+
+  section('Constructeur de composant — boîtier circulaire (limite fermée : un seul gabarit disponible avant cette session)');
+  assert(!!doc.getElementById('cb-boitier'), 'sélecteur de forme de boîtier présent dans le formulaire');
+  const boitierOptions = [...doc.getElementById('cb-boitier').options].map(o => o.value);
+  assert(boitierOptions.includes('rect') && boitierOptions.includes('circle'), 'deux gabarits de boîtier proposés : rectangulaire et circulaire (options: ' + boitierOptions.join(',') + ')');
+  setVal(win, doc.getElementById('cb-nom'), 'Capteur rond test');
+  setVal(win, doc.getElementById('cb-nbornes'), '5');
+  doc.getElementById('cb-nbornes').dispatchEvent(new win.Event('input', { bubbles:true }));
+  await tick(80);
+  doc.getElementById('cb-boitier').value = 'circle';
+  click(win, doc.getElementById('cb-preview'));
+  await tick(100);
+  const circlePreviewSvg = doc.querySelector('#cb-preview-box svg');
+  assert(!!circlePreviewSvg && circlePreviewSvg.innerHTML.includes('<circle'), 'l\'aperçu du boîtier circulaire contient bien un <circle> (pas le gabarit rectangulaire par défaut)');
+  click(win, doc.getElementById('cb-save'));
+  await tick(250);
+  const circleDef = win.findDef('custom_capteur_rond_test');
+  assert(!!circleDef && circleDef.terminals.length === 5, 'le composant à boîtier circulaire est enregistré avec ses 5 bornes (résultat: ' + (circleDef && circleDef.terminals.length) + ')');
+  // Vérifie la même garantie bornes ↔ tracé que tests/verify_catalog.js applique au reste du
+  // catalogue : chaque borne déclarée doit être l'extrémité exacte d'un <line> réellement dessiné.
+  const circleLineEnds = [...win.SYM['custom_capteur_rond_test'].matchAll(/<line[^>]*x2="([-\d.]+)"[^>]*y2="([-\d.]+)"/g)].map(m => [Number(m[1]), Number(m[2])]);
+  const circleBornesOk = circleDef.terminals.every(([tx, ty]) => circleLineEnds.some(([lx, ly]) => Math.abs(lx - tx) < 1e-9 && Math.abs(ly - ty) < 1e-9));
+  assert(circleBornesOk, 'chaque borne du boîtier circulaire correspond exactement à l\'extrémité d\'une ligne tracée (garantie par construction, comme icTemplate)');
+  const origConfirmCircle = win.confirm; win.confirm = () => true;
+  click(win, doc.querySelector('[data-del-mine="custom_capteur_rond_test"]'));
+  await tick(250);
+  win.confirm = origConfirmCircle;
+
+  section('Constructeur de composant — import JSON (limite fermée : aucun import possible avant cette session)');
+  assert(!!doc.getElementById('cb-import-file') && !!doc.getElementById('cb-import-btn'), 'bouton et champ fichier d\'import JSON présents');
+  const validImportJSON = JSON.stringify({
+    nom: 'Module importé test',
+    sym: '<line x1="0" y1="15" x2="60" y2="15" stroke="currentColor" stroke-width="2"/><rect x="10" y="5" width="40" height="20" fill="none" stroke="currentColor"/>',
+    terminals: [[0, 15], [60, 15]],
+    pinNames: ['IN', 'OUT'],
+    famille: 'Autre',
+  });
+  const validImportFile = new win.File([validImportJSON], 'composant.json', { type: 'application/json' });
+  await win.cbImportJSON(validImportFile);
+  await tick(150);
+  const importedDef = win.findDef('custom_module_importe_test');
+  assert(!!importedDef, 'le composant importé depuis un fichier JSON est retrouvable par findDef() après import');
+  assert(importedDef && importedDef.terminals.length === 2 && importedDef.pinNames.join(',') === 'IN,OUT', 'les bornes et le brochage du fichier JSON importé sont conservés tels quels');
+  assert(importedDef && /non garanties/i.test(importedDef.niveauVerification), 'le niveau de vérification d\'un import signale honnêtement l\'absence de garantie automatique bornes ↔ tracé (contrairement aux composants générés par le formulaire)');
+  const origConfirmImp = win.confirm; win.confirm = () => true;
+  click(win, doc.querySelector('[data-del-mine="custom_module_importe_test"]'));
+  await tick(250);
+  win.confirm = origConfirmImp;
+
+  const invalidImportFile = new win.File(['{"nom":"Sans bornes"}'], 'bad.json', { type: 'application/json' });
+  await win.cbImportJSON(invalidImportFile);
+  await tick(150);
+  assert(doc.getElementById('cb-import-msg').textContent.includes('Import impossible'), 'un fichier JSON invalide (sans "terminals") produit un message d\'erreur clair, sans lever d\'exception non interceptée');
+  assert(!win.findDef('custom_sans_bornes'), 'un import invalide n\'enregistre aucun composant');
+
   section('Bibliothèque 3 colonnes — Famille → Sous-famille → Fiche (§6/§7 des mises à jour reçues)');
   click(win, doc.querySelector('[data-comp-mode="parcourir"]'));
   await tick(150);
@@ -974,6 +1238,27 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(win.wsState.schema.items.length === itemsBefore, 'un collaborateur en lecture seule ne peut pas dupliquer un composant');
   assert(!doc.getElementById('btn-save-project') && !doc.getElementById('btn-share'), 'les boutons Enregistrer/Partager sont masqués en lecture seule');
 
+  section('Plan bâtiment en lecture seule — vérification du verrouillage complet (limite documentée dans l\'addendum 7, revérifiée ici)');
+  await nav(win, 'plan/' + projectId);
+  await tick(300);
+  assert(doc.querySelector('.ws-topbar .pill')?.textContent.includes('Lecture seule') || [...doc.querySelectorAll('.ws-topbar .pill')].some(p=>p.textContent.includes('Lecture seule')), 'le bandeau "Lecture seule" est bien affiché pour Bob sur le plan');
+  const planEntitiesBefore = win.AtelierPlan.getProject().entities.length;
+  const murBtn = doc.querySelector('#ribbon [title="Mur"]');
+  if (murBtn) click(win, murBtn);
+  const cvEl = doc.getElementById('cv');
+  mouseAt(win, cvEl, 'click', 50, 50);
+  await tick(80);
+  mouseAt(win, cvEl, 'click', 150, 50);
+  await tick(80);
+  setVal(win, doc.getElementById('cmd'), 'MU');
+  doc.getElementById('cmd').dispatchEvent(new win.KeyboardEvent('keydown', { key:'Enter', bubbles:true, cancelable:true }));
+  await tick(80);
+  mouseAt(win, cvEl, 'click', 50, 150);
+  await tick(80);
+  mouseAt(win, cvEl, 'click', 150, 150);
+  await tick(80);
+  assert(win.AtelierPlan.getProject().entities.length === planEntitiesBefore, 'aucune entité n\'a été ajoutée au plan malgré les tentatives de tracé (clic ruban + clics canevas + commande clavier "MU") en lecture seule — résultat: ' + win.AtelierPlan.getProject().entities.length + ' (attendu ' + planEntitiesBefore + ')');
+
   await win.auth.signOut();
   await nav(win, 'login');
   const loginAlice2 = doc.getElementById('form-login');
@@ -1020,6 +1305,19 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   const total = win.COMMON_COMPONENTS.length + Object.values(win.COMPONENT_LIBRARY).reduce((n,l)=>n+l.length,0) + win.INSTRUMENT_LIBRARY.length;
   assert(total >= 500, 'catalogue élargi (total=' + total + ' composants, 5 domaines) — garde-fou anti-régression, pas la cible finale de 900');
   assert(Object.keys(win.ESPACES).length === 5, '5 domaines disponibles (électronique, électrotechnique, bâtiment, renouvelables, automatisme)');
+
+  section('Énergies renouvelables — protection DC/batterie, éolien, hydraulique, solaire thermique (composants cités dans les mises à jour reçues, absents avant cette session)');
+  const renIds = ['fusible_gpv','sectionneur_dc','fusible_batterie','sectionneur_batterie','optimiseur_pv','bms',
+    'generatrice_eolienne','redresseur_eolien','controleur_eolien','frein_eolien',
+    'controleur_hydraulique','vanne_hydraulique',
+    'capteur_solaire_thermique','ballon_solaire','circulateur_solaire','regulateur_solaire_thermique','sonde_temperature_solaire'];
+  assert(renIds.every(id => win.COMPONENT_LIBRARY['energies-renouvelables'].some(c => c.id === id)), 'les 17 nouveaux composants sont bien présents dans le domaine Énergies Renouvelables (manquants: ' + renIds.filter(id => !win.COMPONENT_LIBRARY['energies-renouvelables'].some(c => c.id === id)).join(', ') + ')');
+  const bmsDef = win.findDef('bms');
+  assert(bmsDef && bmsDef.terminals.length === 2 && bmsDef.famille === 'Stockage', 'le BMS existe avec 2 bornes (représentation simplifiée pack +/-) dans la famille Stockage');
+  const optDef = win.findDef('optimiseur_pv');
+  assert(optDef && optDef.terminals.length === 4, "l'optimiseur de puissance PV existe avec 4 bornes (entrée/sortie)");
+  const thermSolaireIds = ['capteur_solaire_thermique','ballon_solaire','circulateur_solaire','regulateur_solaire_thermique','sonde_temperature_solaire'];
+  assert(thermSolaireIds.every(id => win.findDef(id).famille === 'Solaire thermique'), 'les 5 composants solaire thermique forment une famille cohérente et distincte du chauffe-eau électrique (Bâtiment)');
 
   section('Brochage DIP conforme + brochage réel affiché (correction de cette session)');
   const ne555Def = win.findDef('ne555');
@@ -1079,6 +1377,10 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(win.SYM['multimetre'].includes('<rect') && !win.SYM['multimetre'].includes('<circle'), 'le symbole du multimètre est un boîtier avec afficheur (rectangle), pas un cercle générique avec une lettre (résultat brut: ' + win.SYM['multimetre'].replace(/\s+/g,' ').slice(0,120) + ')');
   assert(!!win.findDef('voltmetre'), 'un voltmètre existe désormais comme instrument séparé du multimètre');
   assert(!!win.findDef('alimentation'), 'une alimentation stabilisée existe désormais dans les instruments de banc');
+
+  section('Audit des symboles (§1 des notes de reprise) — interphone redessiné avec un pictogramme reconnaissable');
+  assert(win.SYM['interphone'].includes('<polygon') && !win.SYM['interphone'].includes('>INT<'), 'le symbole de l\'interphone est désormais un boîtier avec pictogramme haut-parleur + bouton d\'appel, pas un rectangle générique avec le texte "INT" (résultat brut: ' + win.SYM['interphone'].replace(/\s+/g,' ').slice(0,160) + ')');
+  assert(win.findDef('interphone').terminals.length === 4, 'le nombre de bornes de l\'interphone (4) est inchangé par ce correctif purement visuel');
 
   console.log('\n=== Erreurs JS non interceptées pendant toute la session ===');
   console.log(win.__jsErrors.length ? win.__jsErrors.join('\n---\n') : '(aucune)');

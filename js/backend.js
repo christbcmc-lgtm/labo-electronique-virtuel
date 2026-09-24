@@ -32,6 +32,8 @@ const DB = {
   storageRequests: [], // { id, userId, montantOctets, motif, statut:'en attente'|'acceptee'|'refusee', createdAt }
   devis: {},           // projectId -> { lignes:[], remisePct, tauxTaxe, taxeActive }
   plans: {},           // projectId -> projet Atelier Plan (murs/ouvertures/symboles/circuits...), voir js/plan.js
+  cad3d: {},           // projectId -> projet CAO mécanique 3D (corps paramétriques), voir js/cao3d.js
+  customComponents: {},// userId -> [ fiche composant personnalisé ] (§23/§26), voir js/composant-builder.js
   notifications: [],   // { id, userId, type:'important'|'normal', titre, texte, lien, lu, notified, createdAt }
 };
 
@@ -59,6 +61,8 @@ function loadDB(){
     });
     if (!Array.isArray(DB.notifications)) DB.notifications = [];
     if (!DB.plans || typeof DB.plans !== 'object') DB.plans = {};
+    if (!DB.cad3d || typeof DB.cad3d !== 'object') DB.cad3d = {};
+    if (!DB.customComponents || typeof DB.customComponents !== 'object') DB.customComponents = {};
   }catch(e){}
 }
 loadDB();
@@ -456,6 +460,40 @@ const mockDb = {
     return { error:null };
   },
 
+  // CAO mécanique 3D (§ Phase 3 du cahier) : stocké par projet, même principe que le plan ci-dessus.
+  async getCad3d(projectId){
+    await wait(80);
+    return { data: DB.cad3d[projectId] || null, error:null };
+  },
+  async saveCad3d(projectId, data){
+    await wait(80);
+    DB.cad3d[projectId] = data;
+    persistDB();
+    return { error:null };
+  },
+
+  // Composants personnalisés (§23/§26) : propres à l'utilisateur (pas au projet), utilisables
+  // ensuite dans tous ses projets — même principe de stockage que le plan/devis ci-dessus.
+  async listCustomComponents(userId){
+    await wait(60);
+    return { data: DB.customComponents[userId] || [], error:null };
+  },
+  async saveCustomComponent(userId, def){
+    await wait(80);
+    const list = DB.customComponents[userId] || (DB.customComponents[userId] = []);
+    const i = list.findIndex(c => c.id === def.id);
+    if (i >= 0) list[i] = def; else list.push(def);
+    persistDB();
+    return { data:def, error:null };
+  },
+  async deleteCustomComponent(userId, id){
+    await wait(60);
+    const list = DB.customComponents[userId];
+    if (list) DB.customComponents[userId] = list.filter(c => c.id !== id);
+    persistDB();
+    return { error:null };
+  },
+
   userById(id){ return DB.users.find(u => u.id === id); },
 };
 
@@ -842,6 +880,31 @@ const supabaseDb = {
   },
   async savePlan(projectId, plan){
     const { error } = await supabaseClient.from('projects').update({ plan }).eq('id', projectId);
+    return { error: error ? { message:error.message } : null };
+  },
+
+  async getCad3d(projectId){
+    const { data, error } = await supabaseClient.from('projects').select('cad3d').eq('id', projectId).single();
+    if (error) return { data:null, error:null };
+    return { data: data.cad3d || null, error:null };
+  },
+  async saveCad3d(projectId, data){
+    const { error } = await supabaseClient.from('projects').update({ cad3d: data }).eq('id', projectId);
+    return { error: error ? { message:error.message } : null };
+  },
+
+  async listCustomComponents(userId){
+    const { data, error } = await supabaseClient.from('custom_components').select('definition').eq('owner_id', userId);
+    if (error) return { data:[], error:null };
+    return { data: (data||[]).map(r => r.definition), error:null };
+  },
+  async saveCustomComponent(userId, def){
+    const { error } = await supabaseClient.from('custom_components')
+      .upsert({ id: def.id, owner_id: userId, definition: def }, { onConflict: 'id' });
+    return { data:def, error: error ? { message:error.message } : null };
+  },
+  async deleteCustomComponent(userId, id){
+    const { error } = await supabaseClient.from('custom_components').delete().eq('id', id).eq('owner_id', userId);
     return { error: error ? { message:error.message } : null };
   },
 
