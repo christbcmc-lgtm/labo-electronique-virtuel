@@ -339,7 +339,7 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:.86em; }
 .wire-line.selected{ stroke:var(--cyan); stroke-width:2.6; }
 .ws-svg.tool-supprimer .wire-line:hover{ stroke:var(--danger); cursor:pointer; }
 .ws-svg.tool-select .wire-line:hover{ stroke:var(--cyan); cursor:pointer; }
-.wire-preview{ stroke:var(--amber); stroke-width:1.5; stroke-dasharray:4 3; opacity:.7; }
+.wire-preview{ stroke:var(--amber); stroke-width:1.5; stroke-dasharray:4 3; opacity:.7; fill:none; }
 .wire-junction{ fill:var(--amber); }
 .wire-tap{ fill:var(--cyan); }
 .wire-crossing{ fill:transparent; stroke:none; cursor:pointer; }

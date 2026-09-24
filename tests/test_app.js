@@ -319,6 +319,19 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(indicator.style.display !== 'none', 'l\'indicateur vert de connexion possible est affiché');
   const previewPtsNow = doc.getElementById('wire-preview-line').getAttribute('points').trim().split(/\s+/);
   assert(previewPtsNow.length === 3, 'la prévisualisation reste un coude à 3 points même quand elle est aimantée à une borne');
+  assert(doc.getElementById('wire-preview-line').getAttribute('fill') === 'none',
+    'le fil provisoire n\'a pas de remplissage — pas de triangle noir sous le coude (bug corrigé cette session)');
+
+  section('Fils — le tracé validé garde EXACTEMENT la même forme que son aperçu (plus de "saut" visuel à la validation)');
+  assert(typeof win.orthoPoints === 'function' && typeof win.previewCorner === 'function', 'orthoPoints/previewCorner exposées');
+  const cornerA = { x:0, y:0 }, cornerB = { x:80, y:40 }; // ni alignés en x, ni en y
+  const finalPts = win.orthoPoints(cornerA, cornerB);
+  const previewPts2 = win.previewCorner(cornerA, cornerB);
+  assert(finalPts.length === 3 && finalPts[1].x === cornerB.x && finalPts[1].y === cornerA.y,
+    'le fil validé suit bien P0 → (x1,y0) → P1, un seul coude (conforme au document de référence)');
+  assert(JSON.stringify(finalPts) === JSON.stringify(previewPts2),
+    'le tracé définitif et l\'aperçu provisoire utilisent exactement la même géométrie');
+
   // Clic sur le FOND du canevas près de la borne (pas sur le petit cercle exact) : doit quand
   // même valider la connexion, grâce à la cible d'aimantation déjà détectée.
   const wiresBeforeSnapClick = win.wsState.schema.wires.length;

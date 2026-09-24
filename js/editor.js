@@ -158,6 +158,9 @@ function terminalAbsPos(item, idx){
    EXTRÉMITÉ DE FIL GÉNÉRALISÉE (§12 du cahier fils) : une extrémité est soit
    une vraie borne de composant { itemId, term }, soit un point de raccordement
    sur un AUTRE fil déjà existant { tap:{ wireId, x, y } } — jamais les deux.
+   Pas de troisième forme "libre" : le principe de traçage (point 3/12 du
+   document de référence) exige que toute connexion touche réellement une
+   borne ou un autre conducteur — jamais une connexion dans le vide.
    Toute la logique (rendu, sélection, diagnostic électrique) passe par ces
    deux fonctions plutôt que d'aller lire itemId/term directement, pour que
    les deux formes d'extrémité restent interchangeables partout.
@@ -177,14 +180,17 @@ function wireEndKey(end){
 
 /* ---- Routage orthogonal (§5) : jamais de diagonale, angles à 90° ---- */
 function orthoPoints(a, b){
+  // Coude simple, comme le fil provisoire (§4 du document de référence) : P0 → (x1,y0) → P1.
+  // Le fil validé doit garder EXACTEMENT la même forme que son aperçu — sinon il "saute"
+  // visuellement au moment de la validation, ce qui a été signalé comme une incohérence.
   if (Math.abs(a.x-b.x) < 0.5 || Math.abs(a.y-b.y) < 0.5) return [a, b]; // déjà aligné
-  const midX = a.x + (b.x - a.x)/2;
-  return [a, { x:midX, y:a.y }, { x:midX, y:b.y }, b];
+  return [a, { x:b.x, y:a.y }, b];
 }
 function polylinePoints(pts){ return pts.map(p=>`${p.x},${p.y}`).join(' '); }
 
-/* ---- Fil provisoire (§3-§6) : coude simple départ→coin→arrivée, jamais de diagonale ---- */
-function previewCorner(a, b){ return [a, { x:b.x, y:a.y }, b]; }
+/* Le fil provisoire suit exactement la même règle que le fil validé (ci-dessus) — un alias
+   nommé séparément pour rester lisible aux points d'appel (aperçu vs tracé définitif). */
+function previewCorner(a, b){ return orthoPoints(a, b); }
 
 /* Détection automatique de borne pendant le traçage (§5-§6) : ~8px de tolérance à l'écran,
    quel que soit le zoom courant — convertie en unités canevas via l'échelle réelle de l'écran. */
@@ -228,6 +234,8 @@ function nearestWirePoint(cur, svg, excludeWireId){
 }
 // Cible d'aimantation, toutes sources confondues : une vraie borne est toujours prioritaire
 // sur un simple point de raccordement sur fil (plus précis, moins ambigu pour l'utilisateur).
+// Pas de repli sur un point "libre" : le principe de traçage exige que chaque fil touche
+// réellement une borne ou un autre conducteur (jamais une connexion dans le vide).
 function nearestSnapTarget(cur, svg, excludeTerminal, excludeWireId){
   return nearestTerminal(cur, svg, excludeTerminal) || nearestWirePoint(cur, svg, excludeWireId);
 }
@@ -902,7 +910,7 @@ function renderCanvasSVG(){
       ${crossingsSvg()}
       ${ghostSvg}
       ${peerGhostsSvg}
-      <polyline id="wire-preview-line" class="wire-preview" style="display:none" points=""/>
+      <polyline id="wire-preview-line" class="wire-preview" style="display:none" points="" fill="none"/>
       <circle id="wire-snap-indicator" class="snap-indicator" style="display:none" cx="0" cy="0" r="7"/>
     </g>
   </svg>
