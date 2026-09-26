@@ -167,6 +167,12 @@ function terminalAbsPos(item, idx){
    ========================================================================== */
 function endpointAbsPos(schema, end){
   if (end.tap) return { x: end.tap.x, y: end.tap.y };
+  // Point libre de la maquette (§2 de la correction ciblée du traçage) : une extrémité qui ne
+  // touche ni une borne ni un autre fil. Ce n'est PAS un nœud électrique — voir wireEndKey et
+  // buildWireUnion : deux extrémités libres à la même coordonnée forment une continuité de
+  // conducteur (même réseau), mais aucun point plein n'est dessiné pour autant (§5-§6 du
+  // document de référence : un bout de fil n'est pas un nœud).
+  if (end.free) return { x: end.free.x, y: end.free.y };
   const item = schema.items.find(i => i.id === end.itemId);
   return item ? terminalAbsPos(item, end.term) : null;
 }
@@ -174,23 +180,34 @@ function wireEndKey(end){
   // Clé stable pour l'union-find électrique. Un point de raccordement n'est pas une broche :
   // il est uniquement identifié par le fil qu'il tape + sa position (voir l'union explicite
   // ajoutée dans buildWireUnion, qui le rattache au même nœud que ce fil tapé).
-  return end.tap ? ('tap#'+end.tap.wireId+'@'+Math.round(end.tap.x)+','+Math.round(end.tap.y))
-                 : (end.itemId+'#'+end.term);
+  if (end.tap) return 'tap#'+end.tap.wireId+'@'+Math.round(end.tap.x)+','+Math.round(end.tap.y);
+  // Deux extrémités LIBRES à la même coordonnée partagent volontairement la même clé : elles se
+  // retrouvent donc automatiquement dans le même groupe de l'union-find (même réseau électrique,
+  // "continuité de conducteur"), sans qu'aucun nœud/jonction explicite soit nécessaire — exactement
+  // la règle §6 du document de référence sur le traçage des fils.
+  if (end.free) return 'free@'+Math.round(end.free.x)+','+Math.round(end.free.y);
+  return end.itemId+'#'+end.term;
 }
 
-/* ---- Routage orthogonal (§5) : jamais de diagonale, angles à 90° ---- */
-function orthoPoints(a, b){
-  // Coude simple, comme le fil provisoire (§4 du document de référence) : P0 → (x1,y0) → P1.
+/* ---- Routage orthogonal (§5) : jamais de diagonale, angles à 90° ----
+   axis ('h'|'v', optionnel) : quel segment vient EN PREMIER depuis `a`. Omis => comportement
+   historique inchangé (horizontal d'abord), pour ne rien changer aux fils déjà enregistrés qui
+   n'ont pas ce champ. Un fil nouvellement tracé stocke son axe choisi dans wire.bend (voir
+   wirePreviewMove / les points de création du fil) afin que la forme reste identique entre
+   l'aperçu, la validation et tous les rechargements suivants. */
+function orthoPoints(a, b, axis){
+  // Coude simple, comme le fil provisoire (§4 du document de référence) : P0 → coude → P1.
   // Le fil validé doit garder EXACTEMENT la même forme que son aperçu — sinon il "saute"
   // visuellement au moment de la validation, ce qui a été signalé comme une incohérence.
   if (Math.abs(a.x-b.x) < 0.5 || Math.abs(a.y-b.y) < 0.5) return [a, b]; // déjà aligné
+  if (axis === 'v') return [a, { x:a.x, y:b.y }, b];
   return [a, { x:b.x, y:a.y }, b];
 }
 function polylinePoints(pts){ return pts.map(p=>`${p.x},${p.y}`).join(' '); }
 
 /* Le fil provisoire suit exactement la même règle que le fil validé (ci-dessus) — un alias
    nommé séparément pour rester lisible aux points d'appel (aperçu vs tracé définitif). */
-function previewCorner(a, b){ return orthoPoints(a, b); }
+function previewCorner(a, b, axis){ return orthoPoints(a, b, axis); }
 
 /* Détection automatique de borne pendant le traçage (§5-§6) : ~8px de tolérance à l'écran,
    quel que soit le zoom courant — convertie en unités canevas via l'échelle réelle de l'écran. */
@@ -219,23 +236,45 @@ function nearestWirePoint(cur, svg, excludeWireId){
   let best = null, bestDist = Infinity;
   wsState.schema.wires.forEach(w => {
     if (w.id === excludeWireId) return;
-    wireSegments(wsState.schema, w).forEach(([p,q]) => {
-      const dx = q.x-p.x, dy = q.y-p.y;
-      const len2 = dx*dx+dy*dy;
-      let t = len2 ? ((cur.x-p.x)*dx + (cur.y-p.y)*dy)/len2 : 0;
-      t = Math.max(0, Math.min(1, t));
-      const proj = { x:p.x+t*dx, y:p.y+t*dy };
-      const d = Math.hypot(proj.x-cur.x, proj.y-cur.y);
-      if (d < bestDist){ bestDist = d; best = { tap:{ wireId:w.id, x:Math.round(proj.x), y:Math.round(proj.y) }, pos:{ x:Math.round(proj.x), y:Math.round(proj.y) } }; }
-    });
+    const hit = wireHitPoint(w, cur);
+    if (hit && hit.dist < bestDist){ bestDist = hit.dist; best = hit.end; }
   });
   const tolerance = screenPxToCanvasUnits(8, svg);
   return (best && bestDist <= tolerance) ? best : null;
 }
+// Point le plus proche sur UN fil précis (utilisé par l'aimantation ci-dessus ET par le clic
+// direct sur un fil déjà tracé, §12 du cahier fils). Si ce point coïncide avec une extrémité
+// DÉJÀ EXISTANTE de ce fil (à ENDPOINT_EPS près) — qu'il s'agisse d'une borne, d'un autre
+// raccord ou d'un point libre — on reprend EXACTEMENT la nature de cette extrémité au lieu de
+// systématiquement synthétiser un nouveau raccord : un simple bout de fil n'est pas un nœud
+// (§5-§6 de la correction ciblée), donc reprendre un point déjà libre ne doit pas non plus en
+// créer un par erreur (ce qui afficherait à tort un point de raccordement visible).
+const ENDPOINT_EPS = 4;
+function wireHitPoint(wire, cur){
+  const segs = wireSegments(wsState.schema, wire);
+  let best = null, bestDist = Infinity;
+  segs.forEach(([p,q], idx) => {
+    const dx=q.x-p.x, dy=q.y-p.y, len2=dx*dx+dy*dy;
+    let t = len2 ? ((cur.x-p.x)*dx+(cur.y-p.y)*dy)/len2 : 0; t = Math.max(0,Math.min(1,t));
+    const proj = { x:p.x+t*dx, y:p.y+t*dy };
+    const d = Math.hypot(proj.x-cur.x, proj.y-cur.y);
+    if (d < bestDist){
+      bestDist = d;
+      const nearStart = idx===0 && Math.hypot(proj.x-p.x, proj.y-p.y) <= ENDPOINT_EPS;
+      const nearEnd = idx===segs.length-1 && Math.hypot(proj.x-q.x, proj.y-q.y) <= ENDPOINT_EPS;
+      if (nearStart) best = { ...wire.a, pos:{ x:Math.round(p.x), y:Math.round(p.y) } };
+      else if (nearEnd) best = { ...wire.b, pos:{ x:Math.round(q.x), y:Math.round(q.y) } };
+      else best = { tap:{ wireId:wire.id, x:Math.round(proj.x), y:Math.round(proj.y) }, pos:{ x:Math.round(proj.x), y:Math.round(proj.y) } };
+    }
+  });
+  return best ? { end:best, dist:bestDist } : null;
+}
 // Cible d'aimantation, toutes sources confondues : une vraie borne est toujours prioritaire
 // sur un simple point de raccordement sur fil (plus précis, moins ambigu pour l'utilisateur).
-// Pas de repli sur un point "libre" : le principe de traçage exige que chaque fil touche
-// réellement une borne ou un autre conducteur (jamais une connexion dans le vide).
+// Le repli sur un point "libre" de la maquette (aucune borne/fil à portée) n'est PAS géré ici :
+// il est traité séparément, uniquement au moment de la validation (clic), par les gestionnaires
+// de clic sur le fond du canevas — voir wireCanvasEvents. nearestSnapTarget continue donc de
+// renvoyer null en dehors de toute portée, exactement comme avant (comportement testé).
 function nearestSnapTarget(cur, svg, excludeTerminal, excludeWireId){
   return nearestTerminal(cur, svg, excludeTerminal) || nearestWirePoint(cur, svg, excludeWireId);
 }
@@ -258,7 +297,7 @@ function nearestSnapTarget(cur, svg, excludeTerminal, excludeWireId){
 function wireSegments(schema, wire){
   const a = endpointAbsPos(schema, wire.a), b = endpointAbsPos(schema, wire.b);
   if (!a || !b) return [];
-  const pts = orthoPoints(a, b);
+  const pts = orthoPoints(a, b, wire.bend);
   const segs = [];
   for (let i=0;i<pts.length-1;i++) segs.push([pts[i], pts[i+1]]);
   return segs;
@@ -841,7 +880,7 @@ function renderCanvasSVG(){
   const wiresSvg = wires.map(w => {
     const a = endpointAbsPos(wsState.schema, w.a), b = endpointAbsPos(wsState.schema, w.b);
     if (!a || !b) return '';
-    const pts = orthoPoints(a,b);
+    const pts = orthoPoints(a,b,w.bend);
     const custom = w.color && w.id!==wsState.selectedWireId ? ` style="stroke:${esc(w.color)}"` : '';
     return `<polyline class="wire-line ${w.id===wsState.selectedWireId?'selected':''}" data-wire="${w.id}" points="${polylinePoints(pts)}" fill="none"${custom}/>`;
   }).join('');
@@ -857,6 +896,17 @@ function renderCanvasSVG(){
   const tapPoints = new Map();
   wires.forEach(w => { [w.a, w.b].forEach(end => { if (end.tap){ tapPoints.set(end.tap.x+','+end.tap.y, end.tap); } }); });
   const tapsSvg = [...tapPoints.values()].map(p => `<circle class="wire-tap" cx="${p.x}" cy="${p.y}" r="3"/>`).join('');
+
+  // Extrémités LIBRES (§2 de la correction ciblée du traçage) : un simple bout de fil sur la
+  // maquette n'est PAS un nœud électrique — juste un petit repère discret indiquant qu'on peut
+  // reprendre le tracé ici. Si ce point compte finalement ≥3 branches, la jonction automatique
+  // ci-dessus (junctionsSvg) prend le dessus visuellement ; on ne dessine donc ce repère que pour
+  // les coordonnées qui n'ont pas déjà ce statut de nœud réel.
+  const junctionKeys = new Set([...endpointCount.entries()].filter(([,n])=>n>=3).map(([k])=>k));
+  const freePoints = new Map();
+  wires.forEach(w => { [w.a, w.b].forEach(end => { if (end.free){ freePoints.set(Math.round(end.free.x)+','+Math.round(end.free.y), end.free); } }); });
+  const freeEndsSvg = [...freePoints.entries()].filter(([k]) => !junctionKeys.has(k) && !tapPoints.has(k))
+    .map(([,p]) => `<circle class="wire-free-end" cx="${p.x}" cy="${p.y}" r="2.6"/>`).join('');
 
   const itemsSvg = items.map(item => {
     const def = findDef(item.typeId);
@@ -906,6 +956,7 @@ function renderCanvasSVG(){
       ${wiresSvg}
       ${junctionsSvg}
       ${tapsSvg}
+      ${freeEndsSvg}
       ${itemsSvg}
       ${crossingsSvg()}
       ${ghostSvg}
@@ -1088,22 +1139,36 @@ function wireCanvasEvents(){
       const a = endpointAbsPos(wsState.schema, wsState.wireStart);
       if (line && a){
         const cur = svgUserToCanvas(clientToSvgUser(e, svg));
+        // Coude au bon endroit (correction ciblée §1) : l'axe du premier segment se verrouille
+        // sur la toute première direction NETTE du curseur depuis le point de départ, puis ne
+        // change plus tant que ce fil est en cours — le coude reste exactement là où la
+        // direction a changé, au lieu de toujours partir à l'horizontale (bug précédent).
+        // Réinitialisé automatiquement dès que wireStart change (nouveau fil).
+        if (wsState.__wireAxisRef !== wsState.wireStart){ wsState.__wireAxisRef = wsState.wireStart; wsState.wireAxis = null; }
+        if (wsState.wireAxis === null){
+          const ddx = cur.x-a.x, ddy = cur.y-a.y;
+          if (Math.abs(ddx) > 3 || Math.abs(ddy) > 3) wsState.wireAxis = Math.abs(ddx) >= Math.abs(ddy) ? 'h' : 'v';
+        }
         const excludeTerm = wsState.wireStart.itemId ? wsState.wireStart : null;
         const excludeWireId = wsState.wireStart.tap ? wsState.wireStart.tap.wireId : null;
-        const snap = nearestSnapTarget(cur, svg, excludeTerm, excludeWireId);
-        wsState.wireSnapTarget = snap;
-        const end = snap ? snap.pos : cur;
-        line.setAttribute('points', polylinePoints(previewCorner(a, end)));
+        const snapRes = nearestSnapTarget(cur, svg, excludeTerm, excludeWireId);
+        wsState.wireSnapTarget = snapRes;
+        // Sans cible réelle à portée (borne/fil), l'aperçu continue de suivre le curseur au
+        // pixel près (comportement testé/inchangé) ; seul le point final RÉELLEMENT créé, au
+        // moment du clic, est aimanté à la grille (voir le clic sur le fond du canevas plus
+        // bas) — un point libre de la maquette est une cible de fin de tracé valide (§2).
+        const end = snapRes ? snapRes.pos : cur;
+        line.setAttribute('points', polylinePoints(previewCorner(a, end, wsState.wireAxis)));
         line.style.display = '';
         // Bornes/points de fil proches : la cible s'agrandit et devient verte (§5-§6-§12),
         // plutôt qu'un simple survol natif — fonctionne aussi bien au tactile qu'à la souris.
         svg.querySelectorAll('.terminal-dot.snap-target').forEach(el => el.classList.remove('snap-target'));
         if (indicator){
-          if (snap){
-            indicator.setAttribute('cx', snap.pos.x); indicator.setAttribute('cy', snap.pos.y);
+          if (snapRes){
+            indicator.setAttribute('cx', snapRes.pos.x); indicator.setAttribute('cy', snapRes.pos.y);
             indicator.style.display = '';
-            if (!snap.tap){
-              const dot = svg.querySelector(`.terminal-dot[data-term-item="${snap.itemId}"][data-term-idx="${snap.term}"]`);
+            if (!snapRes.tap){
+              const dot = svg.querySelector(`.terminal-dot[data-term-item="${snapRes.itemId}"][data-term-idx="${snapRes.term}"]`);
               if (dot) dot.classList.add('snap-target');
             }
           } else {
@@ -1166,9 +1231,30 @@ function wireCanvasEvents(){
       const target = wsState.wireSnapTarget;
       pushUndoSnapshot();
       wsState.schema.wires.push({ id:'w_'+Math.random().toString(36).slice(2,8), a:wsState.wireStart,
-        b: target.tap ? { tap:target.tap } : { itemId:target.itemId, term:target.term } });
-      wsState.wireStart = null; wsState.wireSnapTarget = null;
+        b: target.tap ? { tap:target.tap } : target.free ? { free:target.free } : { itemId:target.itemId, term:target.term },
+        bend: wsState.wireAxis });
+      wsState.wireStart = null; wsState.wireSnapTarget = null; wsState.wireAxis = null;
       persistSchema(); redrawCanvas();
+    } else if (wsState.tool === 'fil' && wsState.wireStart){
+      // NOUVEAU (§2 de la correction ciblée) : aucune borne/fil à portée — on termine sur un
+      // point libre de la maquette (« fil existant → maquette », « borne → maquette »). Ignoré
+      // si ce clic vient en réalité de relâcher un glissé de panoramique (didPan).
+      if (didPan){ didPan = false; return; }
+      if (guardReadOnly()) return;
+      const cur = svgUserToCanvas(clientToSvgUser(e, svg));
+      pushUndoSnapshot();
+      wsState.schema.wires.push({ id:'w_'+Math.random().toString(36).slice(2,8), a:wsState.wireStart,
+        b:{ free:{ x:Math.round(cur.x/GRID_SIZE)*GRID_SIZE, y:Math.round(cur.y/GRID_SIZE)*GRID_SIZE } }, bend: wsState.wireAxis });
+      wsState.wireStart = null; wsState.wireSnapTarget = null; wsState.wireAxis = null;
+      persistSchema(); redrawCanvas();
+    } else if (wsState.tool === 'fil' && !wsState.wireStart){
+      // NOUVEAU (§2) : démarrer un tracé depuis un point libre de la maquette, pas seulement
+      // depuis une borne ou un fil existant (« maquette → borne », « maquette → fil »).
+      if (didPan){ didPan = false; return; }
+      if (guardReadOnly()) return;
+      const cur = svgUserToCanvas(clientToSvgUser(e, svg));
+      wsState.wireStart = { free:{ x:Math.round(cur.x/GRID_SIZE)*GRID_SIZE, y:Math.round(cur.y/GRID_SIZE)*GRID_SIZE } };
+      redrawCanvas();
     } else if (wsState.selectedWireId){
       wsState.selectedWireId = null; redrawCanvas();
     }
@@ -1192,8 +1278,8 @@ function wireCanvasEvents(){
       if (!wsState.wireStart){ wsState.wireStart = { itemId, term }; redrawCanvas(); return; }
       if (wsState.wireStart.itemId === itemId && wsState.wireStart.term === term){ wsState.wireStart = null; wsState.wireSnapTarget = null; redrawCanvas(); return; }
       pushUndoSnapshot();
-      wsState.schema.wires.push({ id:'w_'+Math.random().toString(36).slice(2,8), a:wsState.wireStart, b:{itemId,term} });
-      wsState.wireStart = null; wsState.wireSnapTarget = null; persistSchema(); redrawCanvas();
+      wsState.schema.wires.push({ id:'w_'+Math.random().toString(36).slice(2,8), a:wsState.wireStart, b:{itemId,term}, bend: wsState.wireAxis });
+      wsState.wireStart = null; wsState.wireSnapTarget = null; wsState.wireAxis = null; persistSchema(); redrawCanvas();
     });
   });
 
@@ -1280,25 +1366,21 @@ function wireCanvasEvents(){
       if (wsState.tool === 'fil'){
         // Raccordement sur un fil existant (§12 du cahier fils) : le clic n'est pas forcément
         // tombé pile sur le point déjà signalé par l'aimantation (wireSnapTarget) — on
-        // recalcule le point exact sur CE fil précisément cliqué, tolérance identique.
+        // recalcule le point exact sur CE fil précisément cliqué, tolérance identique. Si ce
+        // point coïncide avec une extrémité déjà existante (borne, raccord ou point libre),
+        // wireHitPoint reprend exactement sa nature — pas de faux raccordement (§5-§6).
         if (guardReadOnly()) return;
         const cur = svgUserToCanvas(clientToSvgUser(e, svg));
-        let onThisWire = null, bestDist = Infinity;
-        wireSegments(wsState.schema, wsState.schema.wires.find(w=>w.id===id)).forEach(([p,q]) => {
-          const dx=q.x-p.x, dy=q.y-p.y, len2=dx*dx+dy*dy;
-          let t = len2 ? ((cur.x-p.x)*dx+(cur.y-p.y)*dy)/len2 : 0; t = Math.max(0,Math.min(1,t));
-          const proj = { x:p.x+t*dx, y:p.y+t*dy }; const d = Math.hypot(proj.x-cur.x, proj.y-cur.y);
-          if (d < bestDist){ bestDist = d; onThisWire = { x:Math.round(proj.x), y:Math.round(proj.y) }; }
-        });
-        if (!onThisWire) return;
-        const tapEnd = { tap:{ wireId:id, x:onThisWire.x, y:onThisWire.y } };
+        const hit = wireHitPoint(wsState.schema.wires.find(w=>w.id===id), cur);
+        if (!hit) return;
+        const tapEnd = hit.end;
         if (!wsState.wireStart){ wsState.wireStart = tapEnd; wsState.wireSnapTarget = null; redrawCanvas(); return; }
-        if (wsState.wireStart.tap && wsState.wireStart.tap.wireId===id && wsState.wireStart.tap.x===tapEnd.tap.x && wsState.wireStart.tap.y===tapEnd.tap.y){
+        if (wsState.wireStart.tap && tapEnd.tap && wsState.wireStart.tap.wireId===tapEnd.tap.wireId && wsState.wireStart.tap.x===tapEnd.tap.x && wsState.wireStart.tap.y===tapEnd.tap.y){
           wsState.wireStart = null; wsState.wireSnapTarget = null; redrawCanvas(); return;
         }
         pushUndoSnapshot();
-        wsState.schema.wires.push({ id:'w_'+Math.random().toString(36).slice(2,8), a:wsState.wireStart, b:tapEnd });
-        wsState.wireStart = null; wsState.wireSnapTarget = null;
+        wsState.schema.wires.push({ id:'w_'+Math.random().toString(36).slice(2,8), a:wsState.wireStart, b:tapEnd, bend: wsState.wireAxis });
+        wsState.wireStart = null; wsState.wireSnapTarget = null; wsState.wireAxis = null;
         persistSchema(); redrawCanvas();
         return;
       }
@@ -1340,14 +1422,17 @@ function wireCanvasEvents(){
 
   // pan + zoom sur fond — souris ET tactile (glisser un doigt sur le fond du canevas déplace
   // la vue), demande explicite du client.
-  let panning=false, panStart=null, panOrig=null;
+  let panning=false, panStart=null, panOrig=null, didPan=false;
   const startPan = (e) => {
     if (!isCanvasBackground(e.target, svg) || wsState.armedType) return;
     if (e.cancelable) e.preventDefault();
-    panning = true; svg.classList.add('panning'); panStart = clientToSvgUser(e, svg); panOrig = { ...wsState.view };
+    panning = true; didPan = false; svg.classList.add('panning'); panStart = clientToSvgUser(e, svg); panOrig = { ...wsState.view };
     const onMove = (ev) => {
       if (ev.cancelable) ev.preventDefault();
       const cur = clientToSvgUser(ev, svg);
+      // Distingue un vrai glissé (panoramique) d'un simple clic — sinon relâcher la souris après
+      // avoir déplacé la vue en outil "Fil" démarrait/terminait un fil au point de relâchement.
+      if (Math.hypot(cur.x-panStart.x, cur.y-panStart.y) > 3) didPan = true;
       wsState.view.panX = panOrig.panX + (cur.x - panStart.x);
       wsState.view.panY = panOrig.panY + (cur.y - panStart.y);
       document.getElementById('ws-viewport').setAttribute('transform', `translate(${wsState.view.panX},${wsState.view.panY}) scale(${wsState.view.scale})`);

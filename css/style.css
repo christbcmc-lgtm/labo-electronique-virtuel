@@ -342,6 +342,7 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:.86em; }
 .wire-preview{ stroke:var(--amber); stroke-width:1.5; stroke-dasharray:4 3; opacity:.7; fill:none; }
 .wire-junction{ fill:var(--amber); }
 .wire-tap{ fill:var(--cyan); }
+.wire-free-end{ fill:var(--text-faint); }
 .wire-crossing{ fill:transparent; stroke:none; cursor:pointer; }
 .wire-crossing:hover{ fill:rgba(245,166,35,.35); stroke:var(--amber); stroke-width:1; }
 .wire-crossing.connected{ fill:var(--amber); }

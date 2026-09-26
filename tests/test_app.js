@@ -1395,7 +1395,102 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(win.SYM['interphone'].includes('<polygon') && !win.SYM['interphone'].includes('>INT<'), 'le symbole de l\'interphone est désormais un boîtier avec pictogramme haut-parleur + bouton d\'appel, pas un rectangle générique avec le texte "INT" (résultat brut: ' + win.SYM['interphone'].replace(/\s+/g,' ').slice(0,160) + ')');
   assert(win.findDef('interphone').terminals.length === 4, 'le nombre de bornes de l\'interphone (4) est inchangé par ce correctif purement visuel');
 
-  console.log('\n=== Erreurs JS non interceptées pendant toute la session ===');
+  section('Correction ciblée — coude au bon endroit + traçage libre (session en cours)');
+  // 1) orthoPoints(a,b,axis) : le paramètre axis est optionnel et rétrocompatible — sans lui,
+  // le comportement historique (horizontal d'abord) ne doit STRICTEMENT rien changer pour les
+  // fils déjà enregistrés (aucun champ "bend").
+  const opA = { x:0, y:0 }, opB = { x:80, y:40 };
+  const opNoAxis = win.orthoPoints(opA, opB);
+  assert(opNoAxis.length===3 && opNoAxis[1].x===opB.x && opNoAxis[1].y===opA.y,
+    'orthoPoints sans axis : comportement historique inchangé (horizontal d\'abord) — rétrocompatible avec les fils déjà enregistrés');
+  const opH = win.orthoPoints(opA, opB, 'h');
+  assert(opH.length===3 && opH[1].x===opB.x && opH[1].y===opA.y, 'orthoPoints(...,\'h\') : coin en (b.x, a.y)');
+  const opV = win.orthoPoints(opA, opB, 'v');
+  assert(opV.length===3 && opV[1].x===opA.x && opV[1].y===opB.y, 'orthoPoints(...,\'v\') : coin en (a.x, b.y) — corrige le bug signalé (coude toujours à l\'horizontale)');
+
+  // 2) Schéma isolé et frais pour les tests d'interaction ci-dessous (aucune dépendance aux
+  // composants posés par les sections précédentes).
+  win.wsState.schema = { items:[
+    { id:'ta', typeId:'led', x:40,  y:100, rot:0, value:'' },
+    { id:'tb', typeId:'led', x:500, y:400, rot:0, value:'' },
+  ], wires: [], junctions: [] };
+  win.wsState.selectedId=null; win.wsState.selectedWireId=null;
+  win.wsState.wireStart=null; win.wsState.wireSnapTarget=null; win.wsState.wireAxis=null;
+  win.wsState.armedType=null; win.wsState.ghostPos=null;
+  win.redrawCanvas();
+  await tick(30);
+  click(win, doc.querySelector('#tool-panel [data-tool="fil"]'));
+  await tick(30);
+  const view = win.wsState.view;
+  const toClientX = (cx) => cx*view.scale + view.panX, toClientY = (cy) => cy*view.scale + view.panY;
+
+  const taPos = win.terminalAbsPos(win.wsState.schema.items[0], 0);
+  click(win, doc.querySelector('[data-term-item="ta"][data-term-idx="0"]'));
+  await tick(30);
+  assert(win.wsState.wireStart && win.wsState.wireStart.itemId==='ta', 'fil démarré depuis la borne 0 du composant de test "ta"');
+
+  // Glissé : d'abord franchement vers le BAS, puis franchement vers la DROITE (reproduit
+  // exactement le geste décrit dans la correction : "je passe du déplacement vertical au
+  // déplacement horizontal").
+  mouseAt(win, doc.getElementById('ws-svg'), 'mousemove', toClientX(taPos.x), toClientY(taPos.y+40));
+  await tick(20);
+  mouseAt(win, doc.getElementById('ws-svg'), 'mousemove', toClientX(taPos.x), toClientY(taPos.y+120));
+  await tick(20);
+  assert(win.wsState.wireAxis === 'v', 'l\'axe se verrouille sur "vertical" dès le premier mouvement net vers le bas');
+  mouseAt(win, doc.getElementById('ws-svg'), 'mousemove', toClientX(taPos.x+200), toClientY(taPos.y+120));
+  await tick(20);
+  const finalCanvas = { x:taPos.x+340, y:taPos.y+120 };
+  mouseAt(win, doc.getElementById('ws-svg'), 'mousemove', toClientX(finalCanvas.x), toClientY(finalCanvas.y));
+  await tick(30);
+  assert(win.wsState.wireAxis === 'v', 'l\'axe reste verrouillé sur "vertical" même après avoir ensuite beaucoup bougé à l\'horizontale');
+
+  const bendPreviewPts = doc.getElementById('wire-preview-line').getAttribute('points').trim().split(/\s+/).map(p=>p.split(',').map(Number));
+  assert(bendPreviewPts.length===3 && Math.abs(bendPreviewPts[1][0]-taPos.x)<0.5 && Math.abs(bendPreviewPts[1][1]-(taPos.y+120))<0.5,
+    'le coude de l\'aperçu est exactement au point où la direction a changé (descente puis latéral), pas à l\'horizontale par défaut (bug corrigé cette session)');
+
+  // Aucune borne/fil à cet endroit : le clic sur le fond termine le tracé sur un point LIBRE
+  // de la maquette (§2 — "aller vers n'importe quel point de la maquette").
+  mouseAt(win, doc.getElementById('ws-grid-bg'), 'click', toClientX(finalCanvas.x), toClientY(finalCanvas.y));
+  await tick(30);
+  const wFree = win.wsState.schema.wires[win.wsState.schema.wires.length-1];
+  const expX = Math.round(finalCanvas.x/win.GRID_SIZE)*win.GRID_SIZE, expY = Math.round(finalCanvas.y/win.GRID_SIZE)*win.GRID_SIZE;
+  assert(!!wFree && wFree.bend==='v' && !!wFree.b.free && wFree.b.free.x===expX && wFree.b.free.y===expY,
+    'le fil créé mémorise l\'axe verrouillé (bend:"v") et se termine sur un point libre aimanté à la grille');
+  assert(win.wsState.wireStart===null && win.wsState.wireAxis===null, 'le traçage se réinitialise complètement après validation sur un point libre');
+
+  section('Traçage libre — démarrer depuis la maquette, et continuité entre deux extrémités libres');
+  win.wsState.armedType=null; win.wsState.ghostPos=null;
+  const freePt = { x:180, y:180 }; // multiple de la grille (180 = 9×20), loin de tout composant
+  mouseAt(win, doc.getElementById('ws-grid-bg'), 'click', toClientX(freePt.x), toClientY(freePt.y));
+  await tick(30);
+  assert(win.wsState.wireStart && win.wsState.wireStart.free && win.wsState.wireStart.free.x===freePt.x && win.wsState.wireStart.free.y===freePt.y,
+    'un clic sur le fond sans fil en cours démarre bien un tracé depuis un point libre de la maquette ("maquette → …")');
+  click(win, doc.querySelector('[data-term-item="tb"][data-term-idx="0"]'));
+  await tick(30);
+  const wMaqBorne = win.wsState.schema.wires[win.wsState.schema.wires.length-1];
+  assert(!!wMaqBorne && wMaqBorne.a.free && wMaqBorne.b.itemId==='tb' && wMaqBorne.b.term===0,
+    'le fil part bien d\'un point libre et se termine sur une vraie borne ("maquette → borne")');
+
+  win.wsState.wireStart=null; win.wsState.wireSnapTarget=null; win.wsState.wireAxis=null; win.redrawCanvas(); await tick(20);
+  click(win, doc.querySelector('[data-term-item="ta"][data-term-idx="1"]'));
+  await tick(30);
+  mouseAt(win, doc.getElementById('ws-svg'), 'mousemove', toClientX(freePt.x), toClientY(freePt.y));
+  await tick(20);
+  mouseAt(win, doc.getElementById('ws-grid-bg'), 'click', toClientX(freePt.x), toClientY(freePt.y));
+  await tick(30);
+  const wDeuxiemeLibre = win.wsState.schema.wires[win.wsState.schema.wires.length-1];
+  assert(!!wDeuxiemeLibre && wDeuxiemeLibre.b.free && wDeuxiemeLibre.b.free.x===freePt.x && wDeuxiemeLibre.b.free.y===freePt.y,
+    'un second fil, indépendant, peut lui aussi se terminer exactement sur ce même point libre');
+
+  const { find:findNet } = win.buildWireUnion(win.wsState.schema);
+  assert(findNet(win.wireEndKey(wMaqBorne.a)) === findNet(win.wireEndKey(wDeuxiemeLibre.b)),
+    'deux extrémités libres à la même coordonnée forment automatiquement un seul et même réseau électrique (continuité), sans jonction explicite (§6 du document de référence)');
+  const freeDot = doc.querySelector(`.wire-free-end[cx="${freePt.x}"][cy="${freePt.y}"]`);
+  const junctionDot = doc.querySelector(`.wire-junction[cx="${freePt.x}"][cy="${freePt.y}"]`);
+  assert(!!freeDot && !junctionDot,
+    'ce point de continuité affiche un simple repère discret d\'extrémité libre, jamais le point plein réservé aux vraies jonctions (≥3 branches) — un bout de fil n\'est pas un nœud');
+
+
   console.log(win.__jsErrors.length ? win.__jsErrors.join('\n---\n') : '(aucune)');
 
   console.log('\n========================================');
