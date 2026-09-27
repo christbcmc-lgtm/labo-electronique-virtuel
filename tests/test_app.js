@@ -1490,7 +1490,68 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(!!freeDot && !junctionDot,
     'ce point de continuité affiche un simple repère discret d\'extrémité libre, jamais le point plein réservé aux vraies jonctions (≥3 branches) — un bout de fil n\'est pas un nœud');
 
+  section('Panneau de couleur du fil : bouton de fermeture + couleur verrouillée (nouvelle mission)');
+  win.wsState.schema = { items:[
+    { id:'wc1', typeId:'led', x:40, y:100, rot:0, value:'' },
+    { id:'wc2', typeId:'led', x:300, y:100, rot:0, value:'' },
+  ], wires: [], junctions: [] };
+  win.wsState.selectedId=null; win.wsState.selectedWireId=null;
+  win.wsState.wireStart=null; win.wsState.wireSnapTarget=null; win.wsState.wireAxis=null;
+  win.wsState.armedType=null; win.wsState.ghostPos=null;
+  win.redrawCanvas(); await tick(30);
+  click(win, doc.querySelector('#tool-panel [data-tool="fil"]'));
+  await tick(20);
+  click(win, doc.querySelector('[data-term-item="wc1"][data-term-idx="0"]'));
+  await tick(20);
+  click(win, doc.querySelector('[data-term-item="wc2"][data-term-idx="0"]'));
+  await tick(30);
+  const wcWireId = win.wsState.schema.wires[win.wsState.schema.wires.length-1].id;
+  click(win, doc.querySelector('#tool-panel [data-tool="select"]'));
+  await tick(20);
+  click(win, doc.querySelector(`.wire-line[data-wire="${wcWireId}"]`));
+  await tick(30);
+  assert(win.wsState.selectedWireId === wcWireId, 'le fil se sélectionne bien avec l\'outil Sélection, pour lui choisir une couleur');
 
+  let activeSwatch = doc.querySelector('.wire-toolbar .wire-color-swatch.active');
+  assert(!!activeSwatch && activeSwatch.textContent.trim()==='✓', 'la couleur actuelle du fil est signalée sans ambiguïté (coche + anneau), dès l\'ouverture du panneau');
+
+  const secondSwatch = [...doc.querySelectorAll('.wire-toolbar [data-wire-color]')][1];
+  click(win, secondSwatch);
+  await tick(30);
+  const wcWire = win.wsState.schema.wires.find(w=>w.id===wcWireId);
+  assert(wcWire.color === secondSwatch.dataset.wireColor, 'la couleur choisie est bien mémorisée sur le fil');
+  const swatchesAfter = [...doc.querySelectorAll('.wire-toolbar .wire-color-swatch')];
+  const activeAfter = swatchesAfter.filter(s=>s.classList.contains('active'));
+  assert(activeAfter.length===1 && activeAfter[0].dataset.wireColor===wcWire.color,
+    'le verrouillage visuel se déplace sur la couleur nouvellement choisie, et une seule à la fois, jusqu\'au prochain choix');
+
+  const closeBtn = doc.getElementById('btn-wire-toolbar-close');
+  assert(!!closeBtn, 'le panneau de couleur du fil affiche bien un vrai bouton de fermeture');
+  click(win, closeBtn);
+  await tick(30);
+  assert(win.wsState.selectedWireId === null && !doc.querySelector('.wire-toolbar'),
+    'le bouton de fermeture referme réellement le panneau (fil désélectionné, panneau disparu)');
+
+  section('Couleur des composants (nouvelle mission)');
+  win.selectItem('wc1');
+  await tick(30);
+  assert(!!doc.querySelector('[data-comp-color]'), 'le panneau de propriétés propose un choix de couleur pour le composant sélectionné');
+  const compSwatch = [...doc.querySelectorAll('[data-comp-color]')].find(b=>b.dataset.compColor==='#4FD1C5');
+  click(win, compSwatch);
+  await tick(30);
+  const wcItem = win.wsState.schema.items.find(i=>i.id==='wc1');
+  assert(wcItem.color === '#4FD1C5', 'la couleur choisie est bien mémorisée sur le composant');
+  const bodyEl = doc.querySelector('.comp-node[data-item="wc1"] .comp-body');
+  assert(bodyEl.getAttribute('style') === 'color:#4FD1C5', 'la couleur est appliquée au symbole (currentColor), sans toucher au reste du rendu');
+  const termDot = doc.querySelector('[data-term-item="wc1"][data-term-idx="0"]');
+  assert(!!termDot && termDot.getAttribute('fill') === null,
+    'les bornes du composant gardent leur propre couleur (classe CSS), indépendante de la couleur choisie pour le symbole');
+  const defaultSwatch = doc.querySelector('[data-comp-color=""]');
+  click(win, defaultSwatch);
+  await tick(30);
+  assert(!win.wsState.schema.items.find(i=>i.id==='wc1').color, 'on peut revenir à la couleur par défaut du composant (bouton "Couleur par défaut")');
+
+  console.log('\n=== Erreurs JS non interceptées pendant toute la session ===');
   console.log(win.__jsErrors.length ? win.__jsErrors.join('\n---\n') : '(aucune)');
 
   console.log('\n========================================');

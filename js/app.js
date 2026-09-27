@@ -797,6 +797,7 @@ async function viewMessages(){
   const { data: thread } = active ? await db.listPrivateThread(auth.currentUser.id, active) : { data:[] };
   return `<div class="app-shell">${renderSidebar()}
     <div class="main"><div class="grid" style="grid-template-columns:220px 1fr;gap:16px">
+      ${!SUPABASE_CONFIGURED ? `<div class="diag-warn" style="grid-column:1/-1">🔌 Mode démonstration locale : cette liste ne montre que les comptes créés dans CE navigateur (rien n'est partagé entre visiteurs). Configurez Supabase (js/config.js) pour un annuaire réel entre tous les utilisateurs inscrits.</div>` : ''}
       <div class="card pad-0"><div style="padding:14px 14px 4px"><strong style="font-size:.88em">Contacter un utilisateur</strong></div>
         <div class="people-list" style="padding:0 8px 10px">${others.map(u => `<button class="p-item ${u.id===active?'active':''}" data-user="${u.id}">${esc(u.prenom)} ${esc(u.nom)}</button>`).join('') || '<div class="empty">Aucun autre utilisateur.</div>'}</div>
       </div>
@@ -813,7 +814,8 @@ function afterMessagesView(){
     const { data: users } = await db.listUsers();
     const to = state.chatWith || users.find(u=>u.id!==auth.currentUser.id)?.id;
     if (!to) return;
-    await db.sendPrivateMessage({ from:auth.currentUser.id, to, texte:new FormData(e.target).get('texte') });
+    const { error } = await db.sendPrivateMessage({ from:auth.currentUser.id, to, texte:new FormData(e.target).get('texte') });
+    if (error){ toast(error.message || "Le message n'a pas pu être envoyé."); return; }
     render();
   });
 }

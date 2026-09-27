@@ -408,11 +408,11 @@ async function viewProject(id){
           <span id="presence-bar" style="margin-left:6px"></span></div>
         <div class="ws-tabs-top">
           <a href="#/project/${id}" class="active">Schéma</a>
+          <a href="#/devis/${id}">Devis</a>
+          <a href="#/dimensionnement/${id}">Dimensionnement</a>
           <a href="#/plan/${id}">Plan</a>
           <a href="#/plan3d/${id}">3D</a>
-          <a href="#/cad3d/${id}">Dessin technique</a>
-          <a href="#/dimensionnement/${id}">Dimensionnement</a>
-          <a href="#/devis/${id}">Devis</a>
+          <a href="#/cad3d/${id}">CAO 3D</a>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           ${wsState.isOwner ? `<button class="btn btn-ghost btn-sm" id="btn-share">Partager</button>` : ''}
@@ -856,6 +856,13 @@ function propertiesPanelHTML(){
         ${variantOptions.map(v => `<option value="${v.id}">${esc(v.nom)}</option>`).join('')}
       </select>
     </div>` : ''}
+    <div class="field" style="margin-top:14px">
+      <label>Couleur du symbole</label>
+      <div class="wire-colors">
+        <button class="wire-color-swatch ${!item.color?'active':''}" data-comp-color="" ${ro?'disabled':''} style="background:var(--cyan)" title="Couleur par défaut">${!item.color?'✓':''}</button>
+        ${WIRE_COLORS.map(c => `<button class="wire-color-swatch ${item.color===c?'active':''}" data-comp-color="${c}" ${ro?'disabled':''} style="background:${c}" title="${c}">${item.color===c?'✓':''}</button>`).join('')}
+      </div>
+    </div>
     <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
       <button class="btn btn-ghost btn-sm" id="prop-rotate" ${ro?'disabled':''}>↻ Pivoter</button>
       <button class="btn btn-ghost btn-sm" id="prop-duplicate" ${ro?'disabled':''}>⧉ Dupliquer</button>
@@ -930,7 +937,7 @@ function renderCanvasSVG(){
     const mismatch = customRefMismatch(item, def);
     const customRefLabel = item.customRef ? `<text class="comp-customref ${mismatch?'mismatch':''}" x="6" y="${viewH+16}">${mismatch?'⚠ ':''}${esc(item.customRef)}</text>` : '';
     return `<g class="comp-node ${selected}" data-item="${item.id}" transform="translate(${item.x},${item.y}) rotate(${item.rot||0},30,${viewH/2})">
-      <g class="comp-body">${sym}</g>
+      <g class="comp-body"${item.color ? ` style="color:${esc(item.color)}"` : ''}>${sym}</g>
       ${valueLabel}${refLabel}${customRefLabel}
       ${terms}
     </g>`;
@@ -975,10 +982,12 @@ function renderWireToolbar(){
   if (wsState.readOnly) return '';
   const w = wsState.schema.wires.find(w=>w.id===wsState.selectedWireId);
   if (!w) return '';
+  const current = w.color || '#F5A623';
   return `<div class="wire-toolbar">
     <span>Fil sélectionné —</span>
-    <div class="wire-colors">${WIRE_COLORS.map(c => `<button class="wire-color-swatch ${(w.color||'#F5A623')===c?'active':''}" data-wire-color="${c}" style="background:${c}" title="Couleur du fil"></button>`).join('')}</div>
+    <div class="wire-colors">${WIRE_COLORS.map(c => `<button class="wire-color-swatch ${current===c?'active':''}" data-wire-color="${c}" style="background:${c}" title="${current===c?'Couleur actuelle : ':'Couleur du fil : '}${c}">${current===c?'✓':''}</button>`).join('')}</div>
     <button class="btn btn-ghost btn-sm" id="btn-wire-front" title="Fait passer ce fil par-dessus les autres à une intersection">⤒ Premier plan</button>
+    <button class="btn btn-ghost btn-sm wire-toolbar-close" id="btn-wire-toolbar-close" title="Fermer ce panneau">✕</button>
   </div>`;
 }
 function isCanvasBackground(target, svg){ return target === svg || target.id === 'ws-grid-bg'; }
@@ -1124,6 +1133,11 @@ function wireCanvasEvents(){
     const [w] = wsState.schema.wires.splice(idx,1);
     wsState.schema.wires.push(w);
     persistSchema(); redrawCanvas(); toast('Fil envoyé au premier plan.');
+  });
+  document.getElementById('btn-wire-toolbar-close')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    wsState.selectedWireId = null;
+    redrawCanvas();
   });
 
   // Aperçu du fil en cours de traçage, et fantôme du composant "armé" en attente de dépôt.
@@ -1558,6 +1572,17 @@ function wirePropsPanel(){
     if (!e.target.value) return;
     replaceVariant(wsState.selectedId, e.target.value);
   });
+  document.querySelectorAll('[data-comp-color]').forEach(sw => sw.addEventListener('click', (e) => {
+    if (guardReadOnly()) return;
+    const item = wsState.schema.items.find(i=>i.id===wsState.selectedId);
+    if (!item) return;
+    pushUndoSnapshot();
+    const c = sw.dataset.compColor;
+    if (c) item.color = c; else delete item.color;
+    persistSchema(); redrawCanvas();
+    const p = document.getElementById('ws-panel');
+    if (p){ p.innerHTML = window.__wsPanels.proprietes(); wirePropsPanel(); }
+  }));
   document.getElementById('prop-rotate')?.addEventListener('click', () => {
     if (guardReadOnly()) return;
     const item = wsState.schema.items.find(i=>i.id===wsState.selectedId);

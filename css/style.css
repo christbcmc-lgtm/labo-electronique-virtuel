@@ -359,8 +359,12 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:.86em; }
 
 .wire-toolbar{ position:absolute; left:50%; top:10px; transform:translateX(-50%); z-index:6; background:var(--panel); border:1px solid var(--cyan-dim); border-radius:6px; padding:8px 12px; font-size:.78em; color:var(--text-muted); display:flex; align-items:center; gap:10px; }
 .wire-colors{ display:flex; gap:4px; }
-.wire-color-swatch{ width:18px; height:18px; border-radius:50%; border:2px solid transparent; padding:0; }
-.wire-color-swatch.active{ border-color:var(--text); }
+.wire-color-swatch{ width:18px; height:18px; border-radius:50%; border:2px solid transparent; padding:0; display:flex; align-items:center; justify-content:center; font-size:.75em; line-height:1; cursor:pointer; }
+/* Couleur verrouillée comme choix actuel (§4 des consignes reçues) : anneau net + coche,
+   pour qu'elle reste identifiable sans ambiguïté jusqu'à ce qu'une autre soit choisie. */
+.wire-color-swatch.active{ border-color:#fff; box-shadow:0 0 0 2px var(--cyan), 0 0 0 1px #000 inset; color:#fff; text-shadow:0 0 2px #000; }
+.wire-toolbar-close{ margin-left:2px; padding:.15em .5em; font-size:1em; line-height:1; color:var(--text-muted); }
+.wire-toolbar-close:hover{ color:var(--text); }
 
 .catalog-item{ position:relative; }
 .catalog-item .ws-comp{ padding-right:46px; }
