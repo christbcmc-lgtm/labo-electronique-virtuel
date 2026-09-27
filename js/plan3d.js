@@ -279,11 +279,11 @@ async function viewPlan3D(projectId) {
       <div><strong>${esc(project.titre)}</strong><span class="pill" style="margin-left:8px">Vue 3D du bâtiment</span></div>
       <div class="ws-tabs-top">
         <a href="#/project/${projectId}">Schéma</a>
-        <a href="#/devis/${projectId}">Devis</a>
-        <a href="#/dimensionnement/${projectId}">Dimensionnement</a>
         <a href="#/plan/${projectId}">Plan</a>
         <a href="#/plan3d/${projectId}" class="active">3D</a>
-        <a href="#/cad3d/${projectId}">CAO 3D</a>
+        <a href="#/cad3d/${projectId}">Dessin technique</a>
+        <a href="#/dimensionnement/${projectId}">Dimensionnement</a>
+        <a href="#/devis/${projectId}">Devis</a>
       </div>
     </div>
     <div id="plan3d-shell">

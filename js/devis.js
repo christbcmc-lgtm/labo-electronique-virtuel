@@ -54,11 +54,11 @@ async function viewDevis(projectId){
         <div><h2>Devis — ${esc(project.titre)}</h2><p style="margin:0;font-size:.85em">Indépendant du schéma : ajoutez ici toutes les fournitures et la main-d'œuvre nécessaires, pas seulement les composants simulés.</p></div>
         <div class="ws-tabs-top">
           <a href="#/project/${projectId}">Schéma</a>
-          <a href="#/devis/${projectId}" class="active">Devis</a>
-          <a href="#/dimensionnement/${projectId}">Dimensionnement</a>
           <a href="#/plan/${projectId}">Plan</a>
           <a href="#/plan3d/${projectId}">3D</a>
-          <a href="#/cad3d/${projectId}">CAO 3D</a>
+          <a href="#/cad3d/${projectId}">Dessin technique</a>
+          <a href="#/dimensionnement/${projectId}">Dimensionnement</a>
+          <a href="#/devis/${projectId}" class="active">Devis</a>
         </div>
       </div>
       <div class="card">
