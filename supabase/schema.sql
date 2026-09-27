@@ -1,8 +1,21 @@
 -- ============================================================================
 -- LABORATOIRE ÉLECTRONIQUE VIRTUEL — schéma Supabase (PostgreSQL)
 -- ============================================================================
--- À exécuter UNE FOIS dans l'éditeur SQL de votre projet Supabase
+-- À exécuter dans l'éditeur SQL de votre projet Supabase
 -- (Dashboard → SQL Editor → New query → coller ce fichier en entier → Run).
+--
+-- Ce fichier est désormais IDEMPOTENT : il peut être ré-exécuté en entier à
+-- tout moment sans erreur, même si une version plus ancienne avait déjà été
+-- lancée sur ce projet. C'est important car ce fichier a évolué au fil de
+-- plusieurs sessions de travail (nouvelles colonnes, nouvelles policies) —
+-- si votre projet Supabase avait été créé avec une version plus ancienne,
+-- certaines colonnes ou règles de sécurité récentes (ex. la policy qui
+-- permet aux utilisateurs connectés de se voir entre eux dans la messagerie)
+-- peuvent ne jamais avoir été appliquées réellement à votre base. En cas de
+-- doute — par exemple si les utilisateurs inscrits ne se voient pas entre
+-- eux dans la messagerie — RE-COLLEZ CE FICHIER EN ENTIER dans le SQL Editor
+-- et relancez-le : ça ne cassera rien de ce qui existe déjà, et ça posera
+-- ce qui manquait.
 --
 -- Avant d'exécuter : remplacez la valeur ADMIN_EMAIL_A_REMPLACER ci-dessous
 -- (deux occurrences) par l'adresse e-mail réelle de l'administrateur.
@@ -31,6 +44,16 @@ create table if not exists public.profiles (
   storage_quota bigint not null default 2097152,            -- §27 : quota de stockage en octets (2 Mo par défaut)
   created_at    timestamptz not null default now()
 );
+
+-- Sécurité contre la dérive de schéma (§ mission messagerie/visibilité) : si cette table
+-- existait déjà depuis une exécution plus ancienne de ce fichier (avant l'ajout du mot
+-- magique, de la suspension ou du quota de stockage), "create table if not exists" ne
+-- l'aurait PAS mise à jour — ces colonnes manqueraient silencieusement sur le projet réel.
+-- Ce bloc rattrape ce cas ; il ne fait rien si les colonnes existent déjà.
+alter table public.profiles add column if not exists mot_magique   text;
+alter table public.profiles add column if not exists avatar        text;
+alter table public.profiles add column if not exists suspended     boolean not null default false;
+alter table public.profiles add column if not exists storage_quota bigint not null default 2097152;
 
 -- Création automatique du profil à chaque inscription (trigger sur auth.users).
 -- L'e-mail administrateur reçoit automatiquement le rôle admin dès son inscription.
@@ -288,6 +311,7 @@ alter table public.custom_components     enable row level security;
 -- Le champ "role" ne doit jamais pouvoir être modifié par l'utilisateur lui-même
 -- (sinon n'importe qui pourrait s'auto-promouvoir admin) : c'est garanti en
 -- vérifiant que "role" reste inchangé dans la policy UPDATE ci-dessous.
+drop policy if exists "profiles_select_authenticated" on public.profiles;
 create policy "profiles_select_authenticated" on public.profiles
   for select using (auth.role() = 'authenticated');
 
@@ -296,6 +320,7 @@ create policy "profiles_select_authenticated" on public.profiles
 -- doivent rester strictement identiques à leur valeur actuelle dans cette policy (sinon un
 -- utilisateur suspendu pourrait lui-même annuler sa suspension, ou s'auto-attribuer un quota
 -- illimité). Seul l'administrateur peut les changer, via la policy admin ci-dessous (§29).
+drop policy if exists "profiles_update_own" on public.profiles;
 create policy "profiles_update_own" on public.profiles
   for update using (id = auth.uid())
   with check (
@@ -305,15 +330,18 @@ create policy "profiles_update_own" on public.profiles
     and storage_quota = (select storage_quota from public.profiles where id = auth.uid())
   );
 
+drop policy if exists "profiles_update_admin" on public.profiles;
 create policy "profiles_update_admin" on public.profiles
   for update using (public.is_admin())
   with check (public.is_admin());
 
+drop policy if exists "profiles_delete_admin" on public.profiles;
 create policy "profiles_delete_admin" on public.profiles
   for delete using (public.is_admin());
 
 -- PROJECTS : le propriétaire et les collaborateurs peuvent lire ; seul le
 -- propriétaire peut modifier/supprimer ; l'admin peut tout lire (support/modération).
+drop policy if exists "projects_select_owner_collab_or_admin" on public.projects;
 create policy "projects_select_owner_collab_or_admin" on public.projects
   for select using (
     owner_id = auth.uid()
@@ -321,37 +349,46 @@ create policy "projects_select_owner_collab_or_admin" on public.projects
     or exists (select 1 from public.project_collaborators pc where pc.project_id = id and pc.user_id = auth.uid())
   );
 
+drop policy if exists "projects_insert_own" on public.projects;
 create policy "projects_insert_own" on public.projects
   for insert with check (owner_id = auth.uid());
 
+drop policy if exists "projects_update_owner" on public.projects;
 create policy "projects_update_owner" on public.projects
   for update using (owner_id = auth.uid());
 
 -- §3 des notes en cours : un collaborateur avec la permission "edition" peut aussi enregistrer
 -- le schéma/statut — sans cette policy, "voir + modifier" resterait purement décoratif côté UI
 -- (RLS aurait silencieusement rejeté sa sauvegarde, seul le propriétaire pouvait écrire jusqu'ici).
+drop policy if exists "projects_update_editor_collab" on public.projects;
 create policy "projects_update_editor_collab" on public.projects
   for update using (
     exists (select 1 from public.project_collaborators pc where pc.project_id = id and pc.user_id = auth.uid() and pc.permission = 'edition')
   );
 
+drop policy if exists "projects_delete_owner_or_admin" on public.projects;
 create policy "projects_delete_owner_or_admin" on public.projects
   for delete using (owner_id = auth.uid() or public.is_admin());
 
 -- PROJECT_COLLABORATORS : visible par le propriétaire du projet et le collaborateur lui-même.
+drop policy if exists "collab_select" on public.project_collaborators;
 create policy "collab_select" on public.project_collaborators
   for select using (
     user_id = auth.uid()
     or exists (select 1 from public.projects p where p.id = project_id and p.owner_id = auth.uid())
   );
+drop policy if exists "collab_insert_by_owner" on public.project_collaborators;
 create policy "collab_insert_by_owner" on public.project_collaborators
   for insert with check (exists (select 1 from public.projects p where p.id = project_id and p.owner_id = auth.uid()));
+drop policy if exists "collab_update_by_owner" on public.project_collaborators;
 create policy "collab_update_by_owner" on public.project_collaborators
   for update using (exists (select 1 from public.projects p where p.id = project_id and p.owner_id = auth.uid()));
+drop policy if exists "collab_delete_by_owner" on public.project_collaborators;
 create policy "collab_delete_by_owner" on public.project_collaborators
   for delete using (exists (select 1 from public.projects p where p.id = project_id and p.owner_id = auth.uid()));
 
 -- COMMENTS : visibles par les participants du projet (propriétaire + collaborateurs).
+drop policy if exists "comments_select_participants" on public.comments;
 create policy "comments_select_participants" on public.comments
   for select using (
     exists (
@@ -361,6 +398,7 @@ create policy "comments_select_participants" on public.comments
              or exists (select 1 from public.project_collaborators pc where pc.project_id = p.id and pc.user_id = auth.uid()))
     )
   );
+drop policy if exists "comments_insert_participants" on public.comments;
 create policy "comments_insert_participants" on public.comments
   for insert with check (
     user_id = auth.uid()
@@ -373,31 +411,41 @@ create policy "comments_insert_participants" on public.comments
   );
 
 -- COMMON_MESSAGES : lisibles par tout utilisateur connecté ; chacun écrit ses propres messages.
+drop policy if exists "common_messages_select_authenticated" on public.common_messages;
 create policy "common_messages_select_authenticated" on public.common_messages
   for select using (auth.role() = 'authenticated');
+drop policy if exists "common_messages_insert_own" on public.common_messages;
 create policy "common_messages_insert_own" on public.common_messages
   for insert with check (user_id = auth.uid());
 
 -- PRIVATE_MESSAGES : uniquement visibles par l'expéditeur et le destinataire.
+drop policy if exists "private_messages_select_participant" on public.private_messages;
 create policy "private_messages_select_participant" on public.private_messages
   for select using (from_user = auth.uid() or to_user = auth.uid());
+drop policy if exists "private_messages_insert_own" on public.private_messages;
 create policy "private_messages_insert_own" on public.private_messages
   for insert with check (from_user = auth.uid());
 
 -- SUGGESTIONS : strictement privées entre l'auteur et l'admin.
+drop policy if exists "suggestions_select_own_or_admin" on public.suggestions;
 create policy "suggestions_select_own_or_admin" on public.suggestions
   for select using (user_id = auth.uid() or public.is_admin());
+drop policy if exists "suggestions_insert_own" on public.suggestions;
 create policy "suggestions_insert_own" on public.suggestions
   for insert with check (user_id = auth.uid());
+drop policy if exists "suggestions_update_admin_only" on public.suggestions;
 create policy "suggestions_update_admin_only" on public.suggestions
   for update using (public.is_admin());
 
 -- GROUP_MEMBERS : gérés par le responsable du groupe (owner_id) ; visibles aussi par la
 -- personne ajoutée (member_id), pour qu'elle sache de quel groupe elle fait partie.
+drop policy if exists "group_members_select_owner_or_member" on public.group_members;
 create policy "group_members_select_owner_or_member" on public.group_members
   for select using (owner_id = auth.uid() or member_id = auth.uid());
+drop policy if exists "group_members_insert_owner" on public.group_members;
 create policy "group_members_insert_owner" on public.group_members
   for insert with check (owner_id = auth.uid());
+drop policy if exists "group_members_delete_owner" on public.group_members;
 create policy "group_members_delete_owner" on public.group_members
   for delete using (owner_id = auth.uid());
 
@@ -405,10 +453,13 @@ create policy "group_members_delete_owner" on public.group_members
 -- traiter (accepter/refuser). L'augmentation effective du quota est appliquée côté client dans
 -- resolveStorageRequest() lors de l'acceptation (nécessite d'être admin, protégé par profiles_update_admin
 -- ci-dessus) — une fonction Postgres dédiée serait préférable en production pour atomicité, voir rapport final.
+drop policy if exists "storage_requests_select_own_or_admin" on public.storage_requests;
 create policy "storage_requests_select_own_or_admin" on public.storage_requests
   for select using (user_id = auth.uid() or public.is_admin());
+drop policy if exists "storage_requests_insert_own" on public.storage_requests;
 create policy "storage_requests_insert_own" on public.storage_requests
   for insert with check (user_id = auth.uid());
+drop policy if exists "storage_requests_update_admin_only" on public.storage_requests;
 create policy "storage_requests_update_admin_only" on public.storage_requests
   for update using (public.is_admin());
 
@@ -417,10 +468,13 @@ create policy "storage_requests_update_admin_only" on public.storage_requests
 -- common_messages/private_messages dans ce schéma) car c'est toujours un TIERS qui notifie un
 -- utilisateur (le propriétaire d'un projet en le partageant, l'admin en répondant à une demande...),
 -- jamais le destinataire lui-même — il n'y a pas de fonction serveur dédiée dans ce dépôt.
+drop policy if exists "notifications_select_own_or_admin" on public.notifications;
 create policy "notifications_select_own_or_admin" on public.notifications
   for select using (user_id = auth.uid() or public.is_admin());
+drop policy if exists "notifications_insert_authenticated" on public.notifications;
 create policy "notifications_insert_authenticated" on public.notifications
   for insert with check (auth.role() = 'authenticated');
+drop policy if exists "notifications_update_own" on public.notifications;
 create policy "notifications_update_own" on public.notifications
   for update using (user_id = auth.uid());
 
@@ -428,6 +482,7 @@ create policy "notifications_update_own" on public.notifications
 -- pour les autres utilisateurs (contrairement aux profils/messages ci-dessus, un composant
 -- personnalisé n'a pas vocation à être visible par d'autres avant un partage explicite,
 -- fonctionnalité non prévue dans ce schéma).
+drop policy if exists "custom_components_owner_all" on public.custom_components;
 create policy "custom_components_owner_all" on public.custom_components
   for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 
