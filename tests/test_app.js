@@ -165,6 +165,65 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   const projectId = win.currentRoute().split('/')[1];
   await tick(400);
 
+  section('Projet — création des deux projets "Plan technique", séparés du projet Élec (§ séparation Élec / Plan technique)');
+  await nav(win, 'dashboard');
+  await tick(250);
+  click(win, doc.getElementById('btn-new-project'));
+  await tick(150);
+  let npForm2 = doc.getElementById('form-new-project');
+  setVal(win, npForm2.querySelector('[name=titre]'), 'Ma maison test');
+  setVal(win, npForm2.querySelector('#sel-branche'), 'plan-technique');
+  setVal(win, npForm2.querySelector('[name=espace]'), 'plan-architectural');
+  npForm2.dispatchEvent(new win.Event('submit', { bubbles:true, cancelable:true }));
+  await tick(250);
+  assert(win.currentRoute().startsWith('plan/'), 'un projet "Plan architectural" redirige directement vers l\'espace Plan, jamais vers le Schéma (route=' + win.currentRoute() + ')');
+  const planProjectId = win.currentRoute().split('/')[1];
+  await tick(400);
+
+  await nav(win, 'dashboard');
+  await tick(250);
+  click(win, doc.getElementById('btn-new-project'));
+  await tick(150);
+  let npForm3 = doc.getElementById('form-new-project');
+  setVal(win, npForm3.querySelector('[name=titre]'), 'Pièce test');
+  setVal(win, npForm3.querySelector('#sel-branche'), 'plan-technique');
+  setVal(win, npForm3.querySelector('[name=espace]'), 'dessin-technique');
+  npForm3.dispatchEvent(new win.Event('submit', { bubbles:true, cancelable:true }));
+  await tick(250);
+  assert(win.currentRoute().startsWith('cad3d/'), 'un projet "Dessin technique" redirige directement vers l\'espace CAO 3D (route=' + win.currentRoute() + ')');
+  const cadProjectId = win.currentRoute().split('/')[1];
+  await tick(400);
+
+  section('Garde-fou de branche — impossible d\'atteindre Schéma/Devis/Dimensionnement pour un projet Plan technique, et inversement');
+  await nav(win, 'project/' + planProjectId);
+  await tick(300);
+  assert(win.currentRoute() === 'plan/' + planProjectId, 'taper l\'URL du Schéma pour un projet "Plan architectural" redirige vers Plan (route=' + win.currentRoute() + ')');
+  await nav(win, 'devis/' + cadProjectId);
+  await tick(300);
+  assert(win.currentRoute() === 'cad3d/' + cadProjectId, 'taper l\'URL du Devis pour un projet "Dessin technique" redirige vers Dessin technique (route=' + win.currentRoute() + ')');
+  await nav(win, 'plan/' + projectId);
+  await tick(300);
+  assert(win.currentRoute() === 'project/' + projectId, 'taper l\'URL du Plan pour le projet Élec redirige vers le Schéma (route=' + win.currentRoute() + ')');
+  await nav(win, 'cad3d/' + projectId);
+  await tick(300);
+  assert(win.currentRoute() === 'project/' + projectId, 'taper l\'URL du Dessin technique pour le projet Élec redirige aussi vers le Schéma (route=' + win.currentRoute() + ')');
+
+  section('Onglets du haut — cohérents avec la branche du projet (plus de fourre-tout à 6 onglets)');
+  await nav(win, 'project/' + projectId);
+  await tick(300);
+  assert(!!doc.querySelector(`.ws-tabs-top a[href="#/dimensionnement/${projectId}"]`), 'le projet Élec propose bien Dimensionnement');
+  assert(!doc.querySelector(`.ws-tabs-top a[href="#/plan/${projectId}"]`), 'le projet Élec ne propose plus l\'onglet Plan');
+  await nav(win, 'plan/' + planProjectId);
+  await tick(300);
+  assert(!!doc.querySelector(`.ws-tabs-top a[href="#/plan3d/${planProjectId}"]`), 'le projet Plan architectural propose bien l\'onglet 3D');
+  assert(!doc.querySelector(`.ws-tabs-top a[href="#/dimensionnement/${planProjectId}"]`), 'le projet Plan architectural ne propose plus Dimensionnement');
+  await nav(win, 'cad3d/' + cadProjectId);
+  await tick(300);
+  assert(!doc.querySelector(`.ws-tabs-top a[href="#/plan/${cadProjectId}"]`), 'le projet Dessin technique ne propose pas l\'onglet Plan (pas de 2D pour ce type pour l\'instant)');
+  await nav(win, 'project/' + projectId);
+  await tick(300);
+
+
   section('Statut de projet (§6 des notes en cours) — valeur initiale');
   const projectJustCreated = (await win.db.getProject(projectId)).data;
   assert(projectJustCreated.statut === 'brouillon', 'un projet nouvellement créé a le statut "brouillon" (valeur: ' + projectJustCreated.statut + ')');
@@ -691,10 +750,10 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
 
   section('Plan bâtiment — éditeur d\'architecture/électricité intégré (§11-19 des mises à jour reçues)');
   const jsErrCountBeforePlan = win.__jsErrors.length;
-  await nav(win, 'plan/' + projectId);
+  await nav(win, 'plan/' + planProjectId);
   await tick(300);
   assert(!!doc.getElementById('plan-shell'), 'l\'éditeur de plan (prototype "Atelier Plan" intégré) est monté dans la vue');
-  assert(!!doc.querySelector(`.ws-tabs-top a[href="#/plan/${projectId}"].active`), 'le 4e onglet "Plan" est actif sur cette route, aux côtés de Schéma/Devis/Dimensionnement');
+  assert(!!doc.querySelector(`.ws-tabs-top a[href="#/plan/${planProjectId}"].active`), 'le 4e onglet "Plan" est actif sur cette route, aux côtés de Schéma/Devis/Dimensionnement');
   assert(typeof win.AtelierPlanEditor === 'object' && typeof win.AtelierPlanEditor.mount === 'function' && typeof win.AtelierPlanEditor.unmount === 'function', 'window.AtelierPlanEditor.mount/unmount exposés (API d\'intégration du module)');
   assert(typeof win.AtelierPlan === 'object' && typeof win.AtelierPlan.getProject === 'function', 'window.AtelierPlan (API interne du module monté) exposée');
   const freshPlan = win.AtelierPlan.getProject();
@@ -705,12 +764,12 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
     levels:[{ id:'L0', name:'RDC', elevation:0, height:2800 }],
     layers:[{ id:'A-MUR', name:'Murs', color:'#f0f0f0', lw:'thick', lt:'continu', pc:'#000000', visible:true, locked:false }],
     circuits:[], entities:[{ id:'w1', type:'wall', level:'L0', layer:'A-MUR', a:{x:0,y:0}, b:{x:5000,y:0}, t:200, kind:'porteur' }] };
-  await win.db.savePlan(projectId, samplePlan);
-  const { data: reloadedPlan } = await win.db.getPlan(projectId);
+  await win.db.savePlan(planProjectId, samplePlan);
+  const { data: reloadedPlan } = await win.db.getPlan(planProjectId);
   assert(!!reloadedPlan && reloadedPlan.entities.length === 1 && reloadedPlan.entities[0].type === 'wall', 'le plan enregistré (db.savePlan) est bien relu tel quel (db.getPlan)');
   await nav(win, 'dashboard');
   await tick(100);
-  await nav(win, 'plan/' + projectId);
+  await nav(win, 'plan/' + planProjectId);
   await tick(400);
   const remountedPlan = win.AtelierPlan.getProject();
   assert(remountedPlan.entities.length === 1 && remountedPlan.entities[0].type === 'wall', 'en rouvrant la vue Plan, le mur précédemment enregistré est rechargé depuis le backend (mount() → storage.load())');
@@ -721,9 +780,9 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   const planSheetSvg = win.AtelierPlan.sheetSVG({});
   assert(planSheetSvg.includes('rx="2.5"') && planSheetSvg.includes('<svg'), 'la planche imprimable du plan intègre désormais le même symbole de logo vectoriel que les 4 autres exports PDF (résultat contient-il le logo ? ' + planSheetSvg.includes('rx="2.5"') + ')');
 
-  await nav(win, 'project/' + projectId);
+  await nav(win, 'plan3d/' + planProjectId);
   await tick(200);
-  assert(!doc.getElementById('plan-shell'), 'en quittant la route Plan, son DOM est bien retiré (remplacé par la vue Schéma)');
+  assert(!doc.getElementById('plan-shell'), 'en quittant la route Plan, son DOM est bien retiré (remplacé par la vue 3D)');
 
   section('Vue 3D du bâtiment — géométrie pure (js/plan3d.js, sans WebGL/Three.js requis)');
   // Porte pleine hauteur (h = hauteur du mur, allège 0) : aucun linteau ni allège, juste les 2 pans pleins.
@@ -751,15 +810,15 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
 
   section('Vue 3D du bâtiment — intégration routeur et repli gracieux sans WebGL (attendu dans ce harnais de test)');
   const jsErrCountBefore3D = win.__jsErrors.length;
-  await nav(win, 'plan3d/' + projectId);
+  await nav(win, 'plan3d/' + planProjectId);
   await tick(250);
   assert(!!doc.getElementById('plan3d-shell'), 'la vue 3D est montée dans la page (conteneur #plan3d-shell présent)');
-  assert(!!doc.querySelector(`.ws-tabs-top a[href="#/plan3d/${projectId}"].active`), 'le 5e onglet "3D" est actif sur cette route');
+  assert(!!doc.querySelector(`.ws-tabs-top a[href="#/plan3d/${planProjectId}"].active`), 'le 5e onglet "3D" est actif sur cette route');
   assert(win.threeAvailable() === false, 'Three.js n\'est pas chargé dans ce harnais (scripts CDN retirés volontairement, voir boot()) — comportement attendu, pas une erreur');
   assert(!doc.getElementById('p3d-fallback').classList.contains('hidden'), 'en l\'absence de Three.js, le message de repli est affiché au lieu de planter');
   assert(doc.getElementById('p3d-fallback').textContent.includes('3D'), 'le message de repli explique que l\'aperçu 3D est indisponible');
   assert(win.__jsErrors.length === jsErrCountBefore3D, 'aucune erreur JS non interceptée en montant la vue 3D sans Three.js disponible' + (win.__jsErrors.length > jsErrCountBefore3D ? ' — NOUVELLES ERREURS: ' + win.__jsErrors.slice(jsErrCountBefore3D).join(' | ') : ''));
-  await nav(win, 'project/' + projectId);
+  await nav(win, 'project/' + planProjectId);
   await tick(200);
   assert(!doc.getElementById('plan3d-shell'), 'en quittant la route 3D, son DOM est bien retiré');
 
@@ -883,10 +942,10 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
 
   section('CAO mécanique 3D — intégration routeur et repli gracieux sans WebGL (attendu dans ce harnais de test)');
   const jsErrCountBeforeCad = win.__jsErrors.length;
-  await nav(win, 'cad3d/' + projectId);
+  await nav(win, 'cad3d/' + cadProjectId);
   await tick(250);
   assert(!!doc.getElementById('cao3d-shell'), 'l\'atelier CAO 3D est monté dans la page (conteneur #cao3d-shell présent)');
-  assert(!!doc.querySelector(`.ws-tabs-top a[href="#/cad3d/${projectId}"].active`), 'le 6e onglet "CAO 3D" est actif sur cette route');
+  assert(!!doc.querySelector(`.ws-tabs-top a[href="#/cad3d/${cadProjectId}"].active`), 'le 6e onglet "CAO 3D" est actif sur cette route');
   assert(win.cao_threeAvailable() === false, 'Three.js/STLExporter ne sont pas chargés dans ce harnais (scripts CDN retirés volontairement) — attendu, pas une erreur');
   assert(!doc.getElementById('c3d-fallback').classList.contains('hidden'), 'en l\'absence de Three.js, le message de repli est affiché au lieu de planter');
   assert(win.__jsErrors.length === jsErrCountBeforeCad, 'aucune erreur JS non interceptée en montant l\'atelier CAO 3D sans Three.js disponible' + (win.__jsErrors.length > jsErrCountBeforeCad ? ' — NOUVELLES ERREURS: ' + win.__jsErrors.slice(jsErrCountBeforeCad).join(' | ') : ''));
@@ -896,8 +955,8 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
 
   section('CAO mécanique 3D — persistance par projet (db.getCad3d/db.saveCad3d, même principe que le plan §22/§23)');
   const sampleCad = { version:1, meta:{ name:'Pièce test' }, bodies:[{ id:'b1', name:'Plaque', visible:true, material:'aluminium', transform:{ pos:[0,0,0], rot:[0,0,0] }, feature:{ type:'box', w:50, h:5, d:30 } }] };
-  await win.db.saveCad3d(projectId, sampleCad);
-  const { data: reloadedCad } = await win.db.getCad3d(projectId);
+  await win.db.saveCad3d(cadProjectId, sampleCad);
+  const { data: reloadedCad } = await win.db.getCad3d(cadProjectId);
   assert(!!reloadedCad && reloadedCad.bodies.length === 1 && reloadedCad.bodies[0].feature.type === 'box', 'le projet CAO 3D enregistré (db.saveCad3d) est bien relu tel quel (db.getCad3d)');
 
   section('Thème (§33)');
@@ -1252,7 +1311,25 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(!doc.getElementById('btn-save-project') && !doc.getElementById('btn-share'), 'les boutons Enregistrer/Partager sont masqués en lecture seule');
 
   section('Plan bâtiment en lecture seule — vérification du verrouillage complet (limite documentée dans l\'addendum 7, revérifiée ici)');
-  await nav(win, 'plan/' + projectId);
+  // Bob n'a la permission "lecture" que sur le projet Élec pour l'instant — il faut la lui
+  // donner aussi sur le projet Plan architectural, séparé, propriété d'Alice.
+  await win.auth.signOut();
+  await nav(win, 'login');
+  const loginAlicePlan = doc.getElementById('form-login');
+  setVal(win, loginAlicePlan.querySelector('[name=email]'), 'alice@example.com');
+  setVal(win, loginAlicePlan.querySelector('[name=password]'), 'nouveaumdp123');
+  loginAlicePlan.dispatchEvent(new win.Event('submit', { bubbles:true, cancelable:true }));
+  await tick(250);
+  let rPlanShare = await win.db.addCollaborator({ projectId: planProjectId, userId: bobId, permission: 'lecture' });
+  assert(!rPlanShare.error, 'Alice peut bien partager le projet Plan architectural avec Bob en lecture seule');
+  await win.auth.signOut();
+  await nav(win, 'login');
+  const loginBobPlan = doc.getElementById('form-login');
+  setVal(win, loginBobPlan.querySelector('[name=email]'), 'bob@example.com');
+  setVal(win, loginBobPlan.querySelector('[name=password]'), 'motdepasse456');
+  loginBobPlan.dispatchEvent(new win.Event('submit', { bubbles:true, cancelable:true }));
+  await tick(250);
+  await nav(win, 'plan/' + planProjectId);
   await tick(300);
   assert(doc.querySelector('.ws-topbar .pill')?.textContent.includes('Lecture seule') || [...doc.querySelectorAll('.ws-topbar .pill')].some(p=>p.textContent.includes('Lecture seule')), 'le bandeau "Lecture seule" est bien affiché pour Bob sur le plan');
   const planEntitiesBefore = win.AtelierPlan.getProject().entities.length;
@@ -1282,7 +1359,7 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   r = await win.db.addCollaborator({ projectId, userId: bobId, permission: 'edition' });
   assert(!r.error, 'passage en "voir + modifier" accepté sans erreur');
   const bobNotifs2 = (await win.db.listNotifications(bobId)).data;
-  assert(bobNotifs2.length === 2, 'une seconde notification est créée lors du changement de permission (total: ' + bobNotifs2.length + ')');
+  assert(bobNotifs2.length === 3, 'une notification supplémentaire (partage du projet Plan architectural, ajouté cette session) plus le changement de permission (total attendu: 3, obtenu: ' + bobNotifs2.length + ')');
 
   await win.auth.signOut();
   await nav(win, 'login');

@@ -144,6 +144,28 @@ function rotatePointAround(px,py,cx,cy,angleDeg){
   const dx=px-cx, dy=py-cy;
   return { x: cx + dx*Math.cos(rad) - dy*Math.sin(rad), y: cy + dx*Math.sin(rad) + dy*Math.cos(rad) };
 }
+/* ==========================================================================
+   ONGLETS PARTAGÉS EN HAUT D'UN ESPACE DE TRAVAIL (§ séparation Élec / Plan
+   technique). Un projet Élec (Électronique/Électrotechnique/Bâtiment/
+   Renouvelable/Automatisme) n'a plus accès à Plan/3D/Dessin technique, et
+   inversement un projet Plan technique n'a plus de Schéma/Dimensionnement/
+   Devis — ce sont deux branches strictement séparées dès la création du
+   projet, plus une simple pile d'onglets sur le même document.
+   Fonction unique utilisée par les 6 fichiers qui affichaient auparavant
+   la même barre d'onglets codée en dur, pour ne l'écrire qu'à un seul
+   endroit désormais.
+   ========================================================================== */
+function projectTabsHTML(projectId, espace, activeRoute){
+  const tabsParDefaut = [ ['project','Schéma'], ['dimensionnement','Dimensionnement'], ['devis','Devis'] ];
+  const tabsParEspace = {
+    'plan-architectural': [ ['plan','Plan'], ['plan3d','3D'] ],
+    'dessin-technique': [ [ 'cad3d','Dessin technique'] ],
+  };
+  const tabs = tabsParEspace[espace] || tabsParDefaut;
+  return `<div class="ws-tabs-top">${tabs.map(([route,label]) =>
+    `<a href="#/${route}/${projectId}"${route===activeRoute?' class="active"':''}>${label}</a>`).join('')}</div>`;
+}
+
 function terminalAbsPos(item, idx){
   const def = findDef(item.typeId);
   const [tx,ty] = def.terminals[idx];
@@ -401,19 +423,12 @@ async function viewProject(id){
 
     <div class="ws-canvas-wrap mobile-active">
       <div class="ws-topbar">
-        <div><strong>${esc(project.titre)}</strong><span class="pill" style="margin-left:8px">${ESPACES[project.espace]?.nom}</span>
+        <div><strong>${esc(project.titre)}</strong><span class="pill" style="margin-left:8px">${ALL_ESPACES[project.espace]?.nom}</span>
           <span class="pill pill-cyan" id="tool-indicator" style="margin-left:6px">Outil : Sélection</span>
           ${wsState.readOnly ? `<span class="pill" style="margin-left:6px;color:var(--amber);border-color:var(--amber-dim)">🔒 Lecture seule</span>` : ''}
           ${statutPillHTML(project.statut)}
           <span id="presence-bar" style="margin-left:6px"></span></div>
-        <div class="ws-tabs-top">
-          <a href="#/project/${id}" class="active">Schéma</a>
-          <a href="#/devis/${id}">Devis</a>
-          <a href="#/dimensionnement/${id}">Dimensionnement</a>
-          <a href="#/plan/${id}">Plan</a>
-          <a href="#/plan3d/${id}">3D</a>
-          <a href="#/cad3d/${id}">CAO 3D</a>
-        </div>
+        ${projectTabsHTML(id, project.espace, 'project')}
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           ${wsState.isOwner ? `<button class="btn btn-ghost btn-sm" id="btn-share">Partager</button>` : ''}
           <button class="btn btn-ghost btn-sm" id="btn-export-pdf">Exporter le schéma (PDF)</button>

@@ -14,6 +14,15 @@ const ESPACES = {
   'energies-renouvelables': { nom:'Énergies Renouvelables', icon:'☀' },
   'automatisme': { nom:'Automatisme et commande', icon:'⚙' },
 };
+// Branche « Plan technique » (§ séparation Élec / Plan technique) : un projet créé ici n'a
+// AUCUN domaine électrique — c'est un projet architectural/dessin dès sa création, pas un
+// sous-onglet accroché à un projet Élec comme c'était le cas avant.
+const PLAN_TECH_TYPES = {
+  'plan-architectural': { nom:'Plan architectural', icon:'🏛' },
+  'dessin-technique': { nom:'Dessin technique', icon:'📐' },
+};
+const ALL_ESPACES = { ...ESPACES, ...PLAN_TECH_TYPES };
+function estPlanTechnique(espace){ return Object.prototype.hasOwnProperty.call(PLAN_TECH_TYPES, espace); }
 const ACCOUNT_TYPES = {
   solo: { icon:'👤', label:'Personnel', desc:'Un usage individuel.' },
   groupe: { icon:'🤝', label:'Groupe (2-3)', desc:'Un responsable, quelques membres.' },
@@ -198,6 +207,25 @@ async function render(){
   ensureCustomComponentsLoaded(); // volontairement non attendu (voir commentaire de la fonction)
   if (auth.currentUser && auth.currentUser.mustChangePassword && base !== 'change-password'){ go('change-password'); return; }
   if (base === 'admin' && auth.currentUser?.role !== 'admin'){ go('dashboard'); toast("Accès réservé à l'administrateur."); return; }
+
+  // Garde-fou de branche (§ séparation Élec / Plan technique) : un projet appartient
+  // strictement à une seule branche dès sa création — on ne doit plus pouvoir atteindre
+  // Schéma/Dimensionnement/Devis pour un projet Plan technique, ni Plan/3D/Dessin technique
+  // pour un projet Élec, même en tapant directement l'URL.
+  const ELEC_ROUTES = ['project','devis','dimensionnement'];
+  const PLAN_TECH_ROUTES = { 'plan':'plan-architectural', 'plan3d':'plan-architectural', 'cad3d':'dessin-technique' };
+  if ((ELEC_ROUTES.includes(base) || base in PLAN_TECH_ROUTES) && param){
+    const { data: guardProject } = await db.getProject(param);
+    if (myGen !== __renderGen) return;
+    if (guardProject){
+      if (ELEC_ROUTES.includes(base) && estPlanTechnique(guardProject.espace)){
+        go((guardProject.espace === 'dessin-technique' ? 'cad3d' : 'plan') + '/' + param); return;
+      }
+      if (base in PLAN_TECH_ROUTES && guardProject.espace !== PLAN_TECH_ROUTES[base]){
+        go('project/' + param); return;
+      }
+    }
+  }
 
   const routes = {
     ''          : viewLanding, 'login':viewLogin, 'register':viewRegister, 'forgot':viewForgot,
@@ -508,7 +536,7 @@ function renderSidebar(active){
 async function viewDashboard(espaceKey){
   const user = auth.currentUser;
   const { data: projects } = await db.listProjects({ userId:user.id, espace:espaceKey });
-  const title = espaceKey ? ESPACES[espaceKey]?.nom : 'Mes projets';
+  const title = espaceKey ? ALL_ESPACES[espaceKey]?.nom : 'Mes projets';
   return `<div class="app-shell">${renderSidebar(espaceKey || 'mine')}
     <div class="main">
       <div class="main-header"><h2>${esc(title)}</h2><button class="btn btn-primary btn-sm" id="btn-new-project">+ Nouveau projet</button></div>
@@ -708,7 +736,7 @@ function projectCard(p, showOwner){
   return `<div class="project-card">
     <div class="thumb" data-open="${p.id}" style="cursor:pointer"></div>
     <div data-open="${p.id}" style="cursor:pointer"><strong style="font-size:.94em">${esc(p.titre)}</strong>
-      <div class="meta"><span>${ESPACES[p.espace]?.nom || p.espace}</span><span>${p.updatedAt}</span></div>
+      <div class="meta"><span>${ALL_ESPACES[p.espace]?.nom || p.espace}</span><span>${p.updatedAt}</span></div>
       ${showOwner ? `<div class="meta" style="margin-top:4px">Propriétaire : ${esc(owner?.prenom)} ${esc(owner?.nom)}${p.monAcces ? ` · ${p.monAcces==='edition'?'voir + modifier':'voir seulement'}` : ''}</div>` : ''}
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:4px;flex-wrap:wrap">
@@ -736,23 +764,39 @@ function afterDashboardView(){
     toast('Projet supprimé.'); render();
   });
   const openModal = async () => {
-    const opts = Object.entries(ESPACES).map(([k,e]) => `<option value="${k}">${e.nom}</option>`).join('');
+    const optsElec = Object.entries(ESPACES).map(([k,e]) => `<option value="${k}">${e.nom}</option>`).join('');
+    const optsPlan = Object.entries(PLAN_TECH_TYPES).map(([k,e]) => `<option value="${k}">${e.nom}</option>`).join('');
     const backdrop = document.createElement('div'); backdrop.className='modal-backdrop';
     backdrop.innerHTML = `<div class="modal"><h3>Nouveau projet</h3>
       <form id="form-new-project">
         <div class="field"><label>Titre du projet</label><input name="titre" required autofocus></div>
-        <div class="field"><label>Espace</label><select name="espace">${opts}</select></div>
+        <div class="field"><label>Branche</label>
+          <select name="branche" id="sel-branche">
+            <option value="elec">Élec (Électronique, Électrotechnique, Bâtiment, Renouvelable, Automatisme)</option>
+            <option value="plan-technique">Plan technique (Plan architectural, Dessin technique)</option>
+          </select>
+        </div>
+        <div class="field"><label>Type</label><select name="espace" id="sel-espace">${optsElec}</select></div>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:1.2em">
           <button type="button" class="btn btn-ghost" id="btn-cancel-modal">Annuler</button>
           <button type="submit" class="btn btn-primary">Créer</button>
         </div></form></div>`;
     document.body.appendChild(backdrop);
     backdrop.querySelector('#btn-cancel-modal').onclick = () => backdrop.remove();
+    backdrop.querySelector('#sel-branche').addEventListener('change', (e) => {
+      backdrop.querySelector('#sel-espace').innerHTML = e.target.value === 'plan-technique' ? optsPlan : optsElec;
+    });
     backdrop.querySelector('#form-new-project').onsubmit = async (e) => {
       e.preventDefault();
       const f = new FormData(e.target);
-      const { data:p } = await db.createProject({ ownerId:auth.currentUser.id, titre:f.get('titre'), espace:f.get('espace') });
-      backdrop.remove(); toast('Projet créé.'); go('project/' + p.id);
+      const espace = f.get('espace');
+      const { data:p } = await db.createProject({ ownerId:auth.currentUser.id, titre:f.get('titre'), espace });
+      backdrop.remove(); toast('Projet créé.');
+      // Chaque branche mène directement à son propre espace de travail — un projet Plan
+      // technique n'a plus de Schéma du tout, donc pas de raison de passer par #/project/.
+      if (espace === 'plan-architectural') go('plan/' + p.id);
+      else if (espace === 'dessin-technique') go('cad3d/' + p.id);
+      else go('project/' + p.id);
     };
   };
   document.getElementById('btn-new-project')?.addEventListener('click', openModal);
@@ -946,7 +990,7 @@ async function viewAdmin(section){
     const full = (await Promise.all(users.map(u => db.listProjects({ userId:u.id })))).flatMap(r=>r.data);
     const uniq = [...new Map(full.map(p=>[p.id,p])).values()];
     content = `<div class="card"><table class="data-table"><tr><th>Titre</th><th>Espace</th><th>Propriétaire</th><th>Mis à jour</th><th></th></tr>
-      ${uniq.map(p => `<tr><td>${esc(p.titre)}</td><td>${ESPACES[p.espace]?.nom}</td><td>${esc(db.userById(p.ownerId)?.prenom||'')}</td><td>${p.updatedAt}</td>
+      ${uniq.map(p => `<tr><td>${esc(p.titre)}</td><td>${ALL_ESPACES[p.espace]?.nom}</td><td>${esc(db.userById(p.ownerId)?.prenom||'')}</td><td>${p.updatedAt}</td>
         <td><button class="btn btn-ghost btn-sm" data-admin-del-project="${p.id}">Supprimer</button></td></tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text-faint)">Aucun projet créé pour l\'instant.</td></tr>'}
     </table></div>`;
   } else if (section === 'storage'){

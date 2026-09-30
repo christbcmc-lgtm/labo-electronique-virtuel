@@ -2319,14 +2319,7 @@ async function viewPlan(projectId) {
     <div class="ws-topbar">
       <div><strong>${esc(project.titre)}</strong><span class="pill" style="margin-left:8px">Plan bâtiment</span>
         ${readOnly ? `<span class="pill" style="margin-left:6px;color:var(--amber);border-color:var(--amber-dim)">🔒 Lecture seule</span>` : ''}</div>
-      <div class="ws-tabs-top">
-        <a href="#/project/${projectId}">Schéma</a>
-        <a href="#/plan/${projectId}" class="active">Plan</a>
-        <a href="#/plan3d/${projectId}">3D</a>
-        <a href="#/cad3d/${projectId}">Dessin technique</a>
-        <a href="#/dimensionnement/${projectId}">Dimensionnement</a>
-        <a href="#/devis/${projectId}">Devis</a>
-      </div>
+      ${projectTabsHTML(projectId, project.espace, 'plan')}
     </div>
     <div style="flex:1;min-height:0;position:relative">${planShellHTML()}</div>
   </div>`;

@@ -22,14 +22,7 @@ async function viewDimensionnement(projectId){
     <div class="main">
       <div class="main-header">
         <div><h2>Dimensionnement — ${esc(project.titre)}</h2><p style="margin:0;font-size:.85em">Calculs indépendants du schéma : formules affichées, aucune valeur inventée.</p></div>
-        <div class="ws-tabs-top">
-          <a href="#/project/${projectId}">Schéma</a>
-          <a href="#/plan/${projectId}">Plan</a>
-          <a href="#/plan3d/${projectId}">3D</a>
-          <a href="#/cad3d/${projectId}">Dessin technique</a>
-          <a href="#/dimensionnement/${projectId}" class="active">Dimensionnement</a>
-          <a href="#/devis/${projectId}">Devis</a>
-        </div>
+        ${projectTabsHTML(projectId, project.espace, 'dimensionnement')}
       </div>
       <div class="ws-tabs-top" style="margin-bottom:14px">
         <a href="#" data-dim-tab="pv" class="${defaultTab==='pv'?'active':''}">Photovoltaïque</a>
