@@ -168,6 +168,7 @@ const AFTER = {
   login: () => afterLoginView(), register: () => afterRegisterView(), forgot: () => afterForgotView(),
   'reset-email': () => afterResetEmailView(), 'change-password': () => afterChangePasswordView(),
   dashboard: () => afterDashboardView(), 'shared': () => afterDashboardView(), 'composants': () => afterComposantsView(),
+  'tableau-de-bord': () => afterTableauDeBordView(),
   project: () => afterProjectView(), devis: () => afterDevisView(), dimensionnement: () => afterDimensionnementView(),
   plan: () => afterPlanView(), plan3d: () => afterPlan3DView(), cad3d: () => afterCad3DView(),
   discussion: () => afterDiscussionView(), messages: () => afterMessagesView(),
@@ -231,6 +232,8 @@ async function render(){
     ''          : viewLanding, 'login':viewLogin, 'register':viewRegister, 'forgot':viewForgot,
     'reset-email': viewResetEmail, 'change-password': viewChangePassword,
     'dashboard' : () => viewDashboard(param), 'shared': viewShared, 'composants': viewComposants,
+    'tableau-de-bord': viewTableauDeBord, 'modeles': viewModeles, 'cours': viewCours,
+    'bibliotheque-3d': viewBibliotheque3D, 'aide': viewAide,
     'project'   : () => viewProject(param), 'devis': () => viewDevis(param), 'dimensionnement': () => viewDimensionnement(param),
     'plan'      : () => viewPlan(param), 'plan3d': () => viewPlan3D(param), 'cad3d': () => viewCad3D(param),
     'discussion': viewDiscussion, 'messages': viewMessages,
@@ -523,14 +526,60 @@ function wirePwToggle(){
    ========================================================================== */
 function renderSidebar(active){
   return `<aside class="sidebar">
+    <a href="#/tableau-de-bord" class="sb-link ${active==='tableau-de-bord'?'active':''}">🏠 Tableau de bord</a>
     <a href="#/dashboard" class="sb-link ${active==='mine'?'active':''}">📁 Mes projets</a>
-    <a href="#/shared" class="sb-link ${active==='shared'?'active':''}">🤝 Partagés avec moi</a>
-    <a href="#/composants" class="sb-link ${active==='composants'?'active':''}">🔍 Composants</a>
-    <div class="sb-label">Espaces</div>
-    ${Object.entries(ESPACES).map(([k,e]) => `<a href="#/dashboard/${k}" class="sb-link ${active===k?'active':''}">${e.icon} ${e.nom}</a>`).join('')}
+    <a href="#/modeles" class="sb-link ${active==='modeles'?'active':''}">🧩 Modèles</a>
+    <a href="#/cours" class="sb-link ${active==='cours'?'active':''}">🎓 Cours &amp; TP</a>
+    <a href="#/composants" class="sb-link ${active==='composants'?'active':''}">📚 Catalogue</a>
+    <a href="#/bibliotheque-3d" class="sb-link ${active==='bibliotheque-3d'?'active':''}">🧱 Bibliothèque 3D</a>
     <div class="sb-label">Compte</div>
     <a href="#/compte" class="sb-link ${active==='compte'?'active':''}">⚙ Paramètres</a>
+    <a href="#/aide" class="sb-link ${active==='aide'?'active':''}">❓ Aide</a>
   </aside>`;
+}
+
+/* Page simple, honnêtement marquée comme pas encore développée (§ réorganisation Mon espace,
+   plan complet du logiciel reçu du client) — la navigation existe, le contenu viendra ensuite. */
+function pageAVenir(active, titre, description){
+  return `<div class="app-shell">${renderSidebar(active)}
+    <div class="main">
+      <div class="main-header"><h2>${esc(titre)}</h2></div>
+      <div class="empty">${esc(description)}<br><span style="opacity:.7">Cette section sera développée dans une prochaine phase.</span></div>
+    </div></div>`;
+}
+async function viewModeles(){ return pageAVenir('modeles', 'Modèles & exemples', 'Galerie de projets types pour démarrer rapidement — pas encore disponible.'); }
+async function viewCours(){ return pageAVenir('cours', 'Cours & TP guidés', 'Exercices pas à pas dans les éditeurs, par domaine — pas encore disponible.'); }
+async function viewBibliotheque3D(){ return pageAVenir('bibliotheque-3d', 'Bibliothèque 3D', 'Objets 3D paramétriques à insérer dans vos projets — pas encore disponible.'); }
+async function viewAide(){ return pageAVenir('aide', 'Aide & tutoriels', 'Documentation et tutoriels — pas encore disponible. En attendant, chaque espace de travail garde ses propres info-bulles.'); }
+
+async function viewTableauDeBord(){
+  const user = auth.currentUser;
+  const { data: projects } = await db.listProjects({ userId:user.id });
+  const recents = [...projects].sort((a,b) => (b.updatedAt||'').localeCompare(a.updatedAt||'')).slice(0,6);
+  const tuile = (k, e) => `<button class="project-card" data-creer="${k}" style="text-align:center;cursor:pointer">
+    <div style="font-size:1.6em">${e.icon}</div><div>${esc(e.nom)}</div></button>`;
+  return `<div class="app-shell">${renderSidebar('tableau-de-bord')}
+    <div class="main">
+      <div class="main-header"><h2>Tableau de bord</h2></div>
+      <div class="sb-label">Créer</div>
+      <div class="grid grid-3">
+        ${Object.entries(ESPACES).map(([k,e]) => tuile(k,e)).join('')}
+        ${Object.entries(PLAN_TECH_TYPES).map(([k,e]) => tuile(k,e)).join('')}
+      </div>
+      <div class="sb-label" style="margin-top:20px">Projets récents</div>
+      <div class="grid grid-3">
+        ${recents.map(p=>projectCard(p)).join('')}
+      </div>
+      ${recents.length === 0 ? `<p style="margin-top:16px">Aucun projet pour l'instant — créez le premier ci-dessus.</p>` : ''}
+    </div></div>`;
+}
+function afterTableauDeBordView(){
+  document.querySelectorAll('[data-creer]').forEach(btn => btn.onclick = () => {
+    const k = btn.dataset.creer;
+    const branche = PLAN_TECH_TYPES[k] ? 'plan-technique' : 'elec';
+    openNewProjectModal({ branche, espace:k });
+  });
+  document.querySelectorAll('[data-open]').forEach(c => c.onclick = () => go('project/' + c.dataset.open));
 }
 
 async function viewDashboard(espaceKey){
@@ -540,6 +589,7 @@ async function viewDashboard(espaceKey){
   return `<div class="app-shell">${renderSidebar(espaceKey || 'mine')}
     <div class="main">
       <div class="main-header"><h2>${esc(title)}</h2><button class="btn btn-primary btn-sm" id="btn-new-project">+ Nouveau projet</button></div>
+      <div style="margin-bottom:10px"><a href="#/shared" class="pill" style="cursor:pointer">🤝 Partagés avec moi</a></div>
       <div class="grid grid-3" id="project-grid">
         ${projects.map(p=>projectCard(p)).join('')}
         <button class="project-card project-card-new" id="btn-new-project-2">+ Nouveau projet</button>
@@ -553,6 +603,7 @@ async function viewShared(){
   return `<div class="app-shell">${renderSidebar('shared')}
     <div class="main">
       <div class="main-header"><h2>Partagés avec moi</h2></div>
+      <div style="margin-bottom:10px"><a href="#/dashboard" class="pill" style="cursor:pointer">📁 Mes projets</a></div>
       <div class="grid grid-3">${projects.map(p => projectCard(p, true)).join('')}</div>
       ${projects.length === 0 ? `<div class="empty">Aucun projet partagé avec vous pour l'instant.</div>` : ''}
     </div></div>`;
@@ -749,6 +800,45 @@ function projectCard(p, showOwner){
     </div>
   </div>`;
 }
+function openNewProjectModal(preselect){
+  const optsElec = Object.entries(ESPACES).map(([k,e]) => `<option value="${k}">${e.nom}</option>`).join('');
+  const optsPlan = Object.entries(PLAN_TECH_TYPES).map(([k,e]) => `<option value="${k}">${e.nom}</option>`).join('');
+  const brancheInit = preselect?.branche || 'elec';
+  const backdrop = document.createElement('div'); backdrop.className='modal-backdrop';
+  backdrop.innerHTML = `<div class="modal"><h3>Nouveau projet</h3>
+    <form id="form-new-project">
+      <div class="field"><label>Titre du projet</label><input name="titre" required autofocus></div>
+      <div class="field"><label>Branche</label>
+        <select name="branche" id="sel-branche">
+          <option value="elec"${brancheInit==='elec'?' selected':''}>Élec (Électronique, Électrotechnique, Bâtiment, Renouvelable, Automatisme)</option>
+          <option value="plan-technique"${brancheInit==='plan-technique'?' selected':''}>Plan technique (Plan architectural, Dessin technique)</option>
+        </select>
+      </div>
+      <div class="field"><label>Type</label><select name="espace" id="sel-espace">${brancheInit==='plan-technique'?optsPlan:optsElec}</select></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:1.2em">
+        <button type="button" class="btn btn-ghost" id="btn-cancel-modal">Annuler</button>
+        <button type="submit" class="btn btn-primary">Créer</button>
+      </div></form></div>`;
+  document.body.appendChild(backdrop);
+  backdrop.querySelector('#btn-cancel-modal').onclick = () => backdrop.remove();
+  backdrop.querySelector('#sel-branche').addEventListener('change', (e) => {
+    backdrop.querySelector('#sel-espace').innerHTML = e.target.value === 'plan-technique' ? optsPlan : optsElec;
+  });
+  if (preselect?.espace) backdrop.querySelector('#sel-espace').value = preselect.espace;
+  backdrop.querySelector('#form-new-project').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const espace = f.get('espace');
+    const { data:p } = await db.createProject({ ownerId:auth.currentUser.id, titre:f.get('titre'), espace });
+    backdrop.remove(); toast('Projet créé.');
+    // Chaque branche mène directement à son propre espace de travail — un projet Plan
+    // technique n'a plus de Schéma du tout, donc pas de raison de passer par #/project/.
+    if (espace === 'plan-architectural') go('plan/' + p.id);
+    else if (espace === 'dessin-technique') go('cad3d/' + p.id);
+    else go('project/' + p.id);
+  };
+}
+
 function afterDashboardView(){
   document.querySelectorAll('[data-open]').forEach(c => c.onclick = () => go('project/' + c.dataset.open));
   document.querySelectorAll('[data-dup]').forEach(b => b.onclick = async (e) => {
@@ -763,44 +853,8 @@ function afterDashboardView(){
     await db.deleteProject(b.dataset.delProject);
     toast('Projet supprimé.'); render();
   });
-  const openModal = async () => {
-    const optsElec = Object.entries(ESPACES).map(([k,e]) => `<option value="${k}">${e.nom}</option>`).join('');
-    const optsPlan = Object.entries(PLAN_TECH_TYPES).map(([k,e]) => `<option value="${k}">${e.nom}</option>`).join('');
-    const backdrop = document.createElement('div'); backdrop.className='modal-backdrop';
-    backdrop.innerHTML = `<div class="modal"><h3>Nouveau projet</h3>
-      <form id="form-new-project">
-        <div class="field"><label>Titre du projet</label><input name="titre" required autofocus></div>
-        <div class="field"><label>Branche</label>
-          <select name="branche" id="sel-branche">
-            <option value="elec">Élec (Électronique, Électrotechnique, Bâtiment, Renouvelable, Automatisme)</option>
-            <option value="plan-technique">Plan technique (Plan architectural, Dessin technique)</option>
-          </select>
-        </div>
-        <div class="field"><label>Type</label><select name="espace" id="sel-espace">${optsElec}</select></div>
-        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:1.2em">
-          <button type="button" class="btn btn-ghost" id="btn-cancel-modal">Annuler</button>
-          <button type="submit" class="btn btn-primary">Créer</button>
-        </div></form></div>`;
-    document.body.appendChild(backdrop);
-    backdrop.querySelector('#btn-cancel-modal').onclick = () => backdrop.remove();
-    backdrop.querySelector('#sel-branche').addEventListener('change', (e) => {
-      backdrop.querySelector('#sel-espace').innerHTML = e.target.value === 'plan-technique' ? optsPlan : optsElec;
-    });
-    backdrop.querySelector('#form-new-project').onsubmit = async (e) => {
-      e.preventDefault();
-      const f = new FormData(e.target);
-      const espace = f.get('espace');
-      const { data:p } = await db.createProject({ ownerId:auth.currentUser.id, titre:f.get('titre'), espace });
-      backdrop.remove(); toast('Projet créé.');
-      // Chaque branche mène directement à son propre espace de travail — un projet Plan
-      // technique n'a plus de Schéma du tout, donc pas de raison de passer par #/project/.
-      if (espace === 'plan-architectural') go('plan/' + p.id);
-      else if (espace === 'dessin-technique') go('cad3d/' + p.id);
-      else go('project/' + p.id);
-    };
-  };
-  document.getElementById('btn-new-project')?.addEventListener('click', openModal);
-  document.getElementById('btn-new-project-2')?.addEventListener('click', openModal);
+  document.getElementById('btn-new-project')?.addEventListener('click', () => openNewProjectModal());
+  document.getElementById('btn-new-project-2')?.addEventListener('click', () => openNewProjectModal());
 }
 
 /* ==========================================================================

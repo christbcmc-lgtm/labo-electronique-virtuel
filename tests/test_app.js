@@ -959,7 +959,28 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   const { data: reloadedCad } = await win.db.getCad3d(cadProjectId);
   assert(!!reloadedCad && reloadedCad.bodies.length === 1 && reloadedCad.bodies[0].feature.type === 'box', 'le projet CAO 3D enregistré (db.saveCad3d) est bien relu tel quel (db.getCad3d)');
 
-  section('Thème (§33)');
+  section('Mon espace — nouveau menu latéral conforme au plan complet du logiciel (Tableau de bord, Modèles, Cours & TP, Catalogue, Bibliothèque 3D, Aide, Paramètres)');
+  await nav(win, 'tableau-de-bord');
+  await tick(250);
+  assert(!!doc.querySelector('.sb-link[href="#/tableau-de-bord"].active'), 'le lien "Tableau de bord" est actif sur sa propre page');
+  assert(doc.querySelectorAll('[data-creer]').length === 7, 'les 7 tuiles "Créer" sont présentes (5 domaines Élec + Plan architectural + Dessin technique)');
+  assert(!doc.querySelector('.sb-link[href="#/shared"]'), '"Partagés avec moi" n\'est plus un lien de premier niveau dans le menu latéral');
+  click(win, doc.querySelector('[data-creer="dessin-technique"]'));
+  await tick(150);
+  assert(doc.getElementById('sel-branche').value === 'plan-technique' && doc.getElementById('sel-espace').value === 'dessin-technique',
+    'cliquer sur la tuile "Dessin technique" préremplit directement la bonne branche et le bon type dans la modale');
+  doc.getElementById('btn-cancel-modal').click();
+  await nav(win, 'dashboard');
+  await tick(200);
+  assert(!!doc.querySelector('a[href="#/shared"]'), '"Partagés avec moi" reste atteignable depuis "Mes projets", juste plus dans le menu latéral');
+  for (const [route, texte] of [['modeles','Modèles'], ['cours','Cours'], ['bibliotheque-3d','Bibliothèque 3D'], ['aide','Aide']]){
+    await nav(win, route);
+    await tick(150);
+    assert(doc.querySelector('.main-header h2')?.textContent.includes(texte), `la page "${route}" existe et affiche son titre`);
+    assert(doc.querySelector('.empty')?.textContent.includes('pas encore disponible'), `la page "${route}" est honnêtement marquée comme pas encore disponible`);
+  }
+
+
   const themeBtn = doc.querySelector('[data-theme-pick="clair"]');
   assert(!!themeBtn, 'sélecteur de thème présent dans la barre supérieure');
   click(win, themeBtn);
