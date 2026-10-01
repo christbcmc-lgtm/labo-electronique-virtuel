@@ -66,6 +66,16 @@ n'appartient pas à la branche du projet.
 - Esquisse extrudée et révolution, dessinables à la souris ou par saisie numérique
 - Assemblage par positionnement, matériaux/masse, coupe, export STL et DXF (profil 2D)
 
+**Mon espace (navigation générale)**
+- Menu latéral conforme au plan complet du logiciel : Tableau de bord, Mes projets, Modèles,
+  Cours & TP, Catalogue, Bibliothèque 3D, Paramètres, Aide
+- Tableau de bord : 7 tuiles "Créer" (5 domaines Élec + Plan architectural + Dessin technique),
+  projets récents tous domaines confondus
+- Modèles, Cours & TP, Bibliothèque 3D, Aide : navigation en place, contenu honnêtement marqué
+  "pas encore disponible" (pas de fausse fonctionnalité)
+- "Partagés avec moi" : plus dans le menu latéral de premier niveau, accessible par un lien
+  depuis "Mes projets" et réciproquement
+
 **Comptes et collaboration**
 - Authentification Supabase (e-mail + mot de passe), profils, rôles
 - Partage de projet (lecture/édition), notifications
@@ -104,8 +114,6 @@ n'appartient pas à la branche du projet.
 - Bascule de normes de symboles CEI/NEMA — pas commencé
 - Couleurs de fils alignées sur les vraies normes électriques (phase/neutre/terre nommés, en
   plus de la palette esthétique actuelle) — pas commencé
-- Restructuration complète du menu "Mon espace" (Tableau de bord, Modèles, Cours & TP,
-  Bibliothèque 3D, Aide) — actée avec le client, pas encore exécutée
 - Sidebar escamotable / mode plein écran du canevas — pas commencé
 
 ## Pour toute session qui reprend ce projet
