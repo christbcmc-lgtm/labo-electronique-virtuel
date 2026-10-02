@@ -51,6 +51,8 @@ n'appartient pas à la branche du projet.
 - Calques, couleur des fils (palette libre) et des composants
 - Colonnes Outils et Propriétés repliables indépendamment (boutons flottants sur les bords du
   canevas), pour libérer l'espace de dessin
+- Couleurs de fils normalisées (Phase/Neutre/Terre/Signal/Masse, nommées), en plus de la palette
+  esthétique libre existante
 
 **Dimensionnement et Devis (branche Élec)**
 - Calculs automatiques depuis le schéma (sections de câble, protections, PV/batterie, éolien,
@@ -114,8 +116,6 @@ n'appartient pas à la branche du projet.
   graphique est couvert)
 - Mode hors-ligne (PWA) — pas commencé
 - Bascule de normes de symboles CEI/NEMA — pas commencé
-- Couleurs de fils alignées sur les vraies normes électriques (phase/neutre/terre nommés, en
-  plus de la palette esthétique actuelle) — pas commencé
 
 
 ## Pour toute session qui reprend ce projet
