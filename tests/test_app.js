@@ -1643,6 +1643,21 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(win.wsState.selectedWireId === null && !doc.querySelector('.wire-toolbar'),
     'le bouton de fermeture referme réellement le panneau (fil désélectionné, panneau disparu)');
 
+  section('Couleurs de fils normalisées — Phase/Neutre/Terre/Signal/Masse, en plus de la palette libre (cahier des charges reçu)');
+  click(win, doc.querySelector(`.wire-line[data-wire="${wcWireId}"]`));
+  await tick(30);
+  const swatchesNommees = [...doc.querySelectorAll('.wire-toolbar .wire-color-nommee')];
+  assert(swatchesNommees.length === 5, 'les 5 couleurs normalisées (Phase, Neutre, Terre, Signal, Masse) sont proposées');
+  assert(swatchesNommees.some(s => s.title.startsWith('Phase')) && swatchesNommees.some(s => s.title.startsWith('Terre')),
+    'chaque pastille normalisée est nommée explicitement (info-bulle), pas seulement une couleur');
+  const phaseSwatch = swatchesNommees.find(s => s.title.startsWith('Phase'));
+  click(win, phaseSwatch);
+  await tick(30);
+  const wcWireApresNorme = win.wsState.schema.wires.find(w=>w.id===wcWireId);
+  assert(wcWireApresNorme.color === phaseSwatch.dataset.wireColor, 'choisir "Phase" fonctionne exactement comme la palette libre (même mécanisme, juste nommé)');
+  assert(!!doc.querySelector('.wire-toolbar .wire-colors') && doc.querySelectorAll('.wire-toolbar .wire-colors').length === 2,
+    'la palette libre existante reste intacte, à côté des couleurs normalisées (ajout, pas remplacement)');
+
   section('Couleur des composants (nouvelle mission)');
   win.selectItem('wc1');
   await tick(30);

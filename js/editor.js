@@ -995,6 +995,19 @@ function renderCanvasSVG(){
 
 /* ---- Barre d'outils du fil sélectionné (§2 des notes en cours) : couleur + premier plan ---- */
 const WIRE_COLORS = ['#F5A623','#4FD1C5','#E4572E','#6FCF7A','#E8ECEA','#9B59B6'];
+// Couleurs normalisées (§ cahier des charges reçu, normes de câblage) : en plus de la palette
+// libre ci-dessus, pas à la place. Valeur pédagogique pour un étudiant en électrotechnique —
+// un vrai réflexe de métier, pas juste une couleur d'interface. "Terre" est réellement
+// bicolore vert/jaune dans la norme ; le dégradé est purement visuel sur le bouton (la couleur
+// réellement enregistrée pour le fil reste une seule teinte hexadécimale, comme pour tous les
+// fils — le moteur de rendu SVG ne gère qu'une seule couleur de trait).
+const WIRE_COLORS_NORMALISEES = [
+  { label:'Phase',  color:'#8B4513' },
+  { label:'Neutre', color:'#4FA8D8' },
+  { label:'Terre',  color:'#2ECC71', degrade:'linear-gradient(135deg,#2ECC71 50%,#F1C40F 50%)' },
+  { label:'Signal', color:'#9CA3AF' },
+  { label:'Masse',  color:'#2B2B2B' },
+];
 function renderWireToolbar(){
   if (wsState.readOnly) return '';
   const w = wsState.schema.wires.find(w=>w.id===wsState.selectedWireId);
@@ -1003,6 +1016,9 @@ function renderWireToolbar(){
   return `<div class="wire-toolbar">
     <span>Fil sélectionné —</span>
     <div class="wire-colors">${WIRE_COLORS.map(c => `<button class="wire-color-swatch ${current===c?'active':''}" data-wire-color="${c}" style="background:${c}" title="${current===c?'Couleur actuelle : ':'Couleur du fil : '}${c}">${current===c?'✓':''}</button>`).join('')}</div>
+    <span class="wire-colors-sep">Normes —</span>
+    <div class="wire-colors wire-colors-normalisees">${WIRE_COLORS_NORMALISEES.map(({label,color,degrade}) =>
+      `<button class="wire-color-swatch wire-color-nommee ${current===color?'active':''}" data-wire-color="${color}" style="background:${degrade||color}" title="${label} (${color})">${current===color?'✓':label[0]}</button>`).join('')}</div>
     <button class="btn btn-ghost btn-sm" id="btn-wire-front" title="Fait passer ce fil par-dessus les autres à une intersection">⤒ Premier plan</button>
     <button class="btn btn-ghost btn-sm wire-toolbar-close" id="btn-wire-toolbar-close" title="Fermer ce panneau">✕</button>
   </div>`;

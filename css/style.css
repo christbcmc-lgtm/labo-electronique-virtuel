@@ -378,6 +378,8 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:.86em; }
 .wire-color-swatch.active{ border-color:#fff; box-shadow:0 0 0 2px var(--cyan), 0 0 0 1px #000 inset; color:#fff; text-shadow:0 0 2px #000; }
 .wire-toolbar-close{ margin-left:2px; padding:.15em .5em; font-size:1em; line-height:1; color:var(--text-muted); }
 .wire-toolbar-close:hover{ color:var(--text); }
+.wire-colors-sep{ opacity:.6; font-size:.95em; }
+.wire-color-nommee{ border-radius:4px; width:20px; font-weight:700; color:#fff; text-shadow:0 0 2px #000; }
 
 .catalog-item{ position:relative; }
 .catalog-item .ws-comp{ padding-right:46px; }
