@@ -49,6 +49,8 @@ n'appartient pas à la branche du projet.
 - Export PDF/SVG/PNG/JSON, cartouche avec logo unifié interface+PDF
 - Constructeur de composant personnalisé (gabarit rectangulaire ou circulaire, import JSON)
 - Calques, couleur des fils (palette libre) et des composants
+- Colonnes Outils et Propriétés repliables indépendamment (boutons flottants sur les bords du
+  canevas), pour libérer l'espace de dessin
 
 **Dimensionnement et Devis (branche Élec)**
 - Calculs automatiques depuis le schéma (sections de câble, protections, PV/batterie, éolien,
@@ -114,7 +116,7 @@ n'appartient pas à la branche du projet.
 - Bascule de normes de symboles CEI/NEMA — pas commencé
 - Couleurs de fils alignées sur les vraies normes électriques (phase/neutre/terre nommés, en
   plus de la palette esthétique actuelle) — pas commencé
-- Sidebar escamotable / mode plein écran du canevas — pas commencé
+
 
 ## Pour toute session qui reprend ce projet
 
