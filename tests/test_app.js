@@ -980,7 +980,20 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
     assert(doc.querySelector('.empty')?.textContent.includes('pas encore disponible'), `la page "${route}" est honnêtement marquée comme pas encore disponible`);
   }
 
+  section('Libérer l\'espace de dessin — colonnes Outils/Propriétés repliables (priorité 1 du cahier des charges reçu)');
+  await nav(win, 'project/' + projectId);
+  await tick(250);
+  assert(!doc.querySelector('.ws-tools').classList.contains('collapsed'), 'la colonne Outils est visible par défaut');
+  click(win, doc.getElementById('btn-toggle-tools'));
+  assert(doc.querySelector('.ws-tools').classList.contains('collapsed'), 'un clic sur le bouton replie la colonne Outils');
+  click(win, doc.getElementById('btn-toggle-tools'));
+  assert(!doc.querySelector('.ws-tools').classList.contains('collapsed'), 'un second clic la réaffiche');
+  click(win, doc.getElementById('btn-toggle-right'));
+  assert(doc.querySelector('.ws-right').classList.contains('collapsed'), 'le même principe fonctionne pour la colonne Propriétés');
+  click(win, doc.getElementById('btn-toggle-right'));
+  assert(!doc.querySelector('.ws-right').classList.contains('collapsed'), 'et se réaffiche aussi');
 
+  section('Thème (§33)');
   const themeBtn = doc.querySelector('[data-theme-pick="clair"]');
   assert(!!themeBtn, 'sélecteur de thème présent dans la barre supérieure');
   click(win, themeBtn);

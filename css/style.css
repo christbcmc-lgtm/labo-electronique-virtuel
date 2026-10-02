@@ -258,6 +258,19 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:.86em; }
 .ws-tabs-top a{ padding:.4em .8em; border-radius:var(--radius); font-size:.8em; color:var(--text-muted); border:1px solid transparent; }
 .ws-tabs-top a.active{ color:var(--amber); border-color:var(--amber-dim); background:var(--panel); }
 .ws-canvas{ flex:1; position:relative; background-color:var(--bg); overflow:hidden; }
+/* Repli des colonnes Outils/Propriétés (§ libérer l'espace de dessin) : les deux boutons
+   flottent sur le bord du canevas, donc restent toujours atteignables même colonne masquée. */
+.ws-collapse-btn{ position:absolute; top:50%; transform:translateY(-50%); z-index:5; width:20px; height:40px;
+  background:var(--bg-raised); border:1px solid var(--panel-border); color:var(--text-muted); cursor:pointer;
+  font-size:.75em; display:flex; align-items:center; justify-content:center; opacity:.6; }
+.ws-collapse-btn:hover{ opacity:1; color:var(--amber); }
+.ws-collapse-left{ left:0; border-radius:0 4px 4px 0; border-left:none; }
+.ws-collapse-right{ right:0; border-radius:4px 0 0 4px; border-right:none; }
+@media (min-width:761px){
+  .ws-tools.collapsed{ display:none; }
+  .ws-right.collapsed{ display:none; }
+}
+@media (max-width:760px){ .ws-collapse-btn{ display:none; } }
 .ws-canvas .placeholder-msg{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px; color:var(--text-faint); font-size:.9em; text-align:center; padding:20px; }
 .ws-right{ width:290px; border-left:1px solid var(--panel-border); background:var(--bg-raised); display:flex; flex-direction:column; }
 .ws-tabs{ display:flex; border-bottom:1px solid var(--panel-border); flex-wrap:wrap; }

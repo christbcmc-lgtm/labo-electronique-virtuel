@@ -442,6 +442,8 @@ async function viewProject(id){
         ${renderCanvasSVG()}
         ${renderToolPanel()}
         ${renderFavPanel()}
+        <button class="ws-collapse-btn ws-collapse-left" id="btn-toggle-tools" title="Masquer/afficher les outils">◀</button>
+        <button class="ws-collapse-btn ws-collapse-right" id="btn-toggle-right" title="Masquer/afficher les propriétés">▶</button>
         <div class="zoom-controls">
           <button id="zoom-in">+</button>
           <div class="zoom-pct" id="zoom-pct">${Math.round(wsState.view.scale*100)}%</div>
@@ -1866,6 +1868,16 @@ function afterProjectView(){
       : `<div class="empty" style="padding:10px 4px;font-size:.78em">Aucun résultat.</div>`);
   });
 
+  document.getElementById('btn-toggle-tools')?.addEventListener('click', (e) => {
+    const tools = document.querySelector('.ws-tools');
+    const collapsed = tools.classList.toggle('collapsed');
+    e.currentTarget.textContent = collapsed ? '▶' : '◀';
+  });
+  document.getElementById('btn-toggle-right')?.addEventListener('click', (e) => {
+    const right = document.querySelector('.ws-right');
+    const collapsed = right.classList.toggle('collapsed');
+    e.currentTarget.textContent = collapsed ? '◀' : '▶';
+  });
   document.getElementById('zoom-in')?.addEventListener('click', () => { wsState.view.scale = Math.min(4, wsState.view.scale*1.2); redrawCanvas(); });
   document.getElementById('zoom-out')?.addEventListener('click', () => { wsState.view.scale = Math.max(0.35, wsState.view.scale/1.2); redrawCanvas(); });
 
