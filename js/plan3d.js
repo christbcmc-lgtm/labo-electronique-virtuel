@@ -124,7 +124,10 @@ function createBuildingViewer(container, THREE) {
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x11151a);
+  // Même correction que la vue 2D (ctxLive dans plan.js) : suivre le thème réel de la page
+  // plutôt qu'une couleur figée, sinon la vue 3D reste bleu-marine quel que soit le thème.
+  const bgTheme = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+  scene.background = new THREE.Color(bgTheme || 0x11151a);
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 5000);
   camera.position.set(12, 10, 14);
 

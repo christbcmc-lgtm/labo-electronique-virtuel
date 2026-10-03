@@ -959,6 +959,35 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   const { data: reloadedCad } = await win.db.getCad3d(cadProjectId);
   assert(!!reloadedCad && reloadedCad.bodies.length === 1 && reloadedCad.bodies[0].feature.type === 'box', 'le projet CAO 3D enregistré (db.saveCad3d) est bien relu tel quel (db.getCad3d)');
 
+  section('Plan architectural / 3D / Dessin technique — le fond suit le thème réel au lieu d\'une couleur figée (retour client : "tache bleue" quel que soit le thème)');
+  // ctxLive() et les scènes Three.js sont privées aux modules (pas exposées sur window comme
+  // les fonctions de editor.js) — vérification directe du code source plutôt que comportementale.
+  const srcPlan = fs.readFileSync(path.join(__dirname, '..', 'js', 'plan.js'), 'utf8');
+  const ctxLiveBody = srcPlan.slice(srcPlan.indexOf('function ctxLive'), srcPlan.indexOf('function ctxLive') + 600);
+  assert(ctxLiveBody.includes("getComputedStyle(document.documentElement).getPropertyValue('--bg')"),
+    'ctxLive() (fond de la vue 2D en édition) lit la vraie variable de thème --bg au lieu d\'une couleur figée');
+  for (const f of ['plan3d.js', 'cao3d.js']){
+    const src = fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8');
+    assert(src.includes("getComputedStyle(document.documentElement).getPropertyValue('--bg')") && src.includes('scene.background'),
+      `${f} : le fond de la scène 3D lit aussi la vraie variable de thème --bg`);
+  }
+
+  section('Barre du haut — "Composants" visible uniquement dans l\'espace électrique, pas sur Mon espace ni dans Plan technique (retour client)');
+  await nav(win, 'project/' + projectId);
+  await tick(200);
+  assert(!!doc.querySelector('.navlink[href="#/composants"]'), '"Composants" est visible dans la barre du haut quand on est dans le Schéma (espace électrique)');
+  await nav(win, 'plan/' + planProjectId);
+  await tick(200);
+  assert(!doc.querySelector('.navlink[href="#/composants"]'), '"Composants" disparaît de la barre du haut dans Plan architectural');
+  await nav(win, 'cad3d/' + cadProjectId);
+  await tick(200);
+  assert(!doc.querySelector('.navlink[href="#/composants"]'), '"Composants" disparaît aussi dans Dessin technique');
+  await nav(win, 'tableau-de-bord');
+  await tick(200);
+  assert(!doc.querySelector('.navlink[href="#/composants"]'), '"Composants" n\'apparaît pas non plus sur Mon espace, réservé au travail dans un schéma électrique');
+  await nav(win, 'project/' + projectId);
+  await tick(200);
+
   section('Mon espace — nouveau menu latéral conforme au plan complet du logiciel (Tableau de bord, Modèles, Cours & TP, Catalogue, Bibliothèque 3D, Aide, Paramètres)');
   await nav(win, 'tableau-de-bord');
   await tick(250);

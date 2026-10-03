@@ -427,7 +427,12 @@ function offsetPoly(pts, closed, d) {
    tailles définies sur le papier × échelle.
    ===================================================================== */
 function ctxLive(pid) {
-  return { pid: pid || 'L', print: false, mono: false, scale: SC(), minW: 1.3 / S.view.z, bg: '#1b1e24', ink: '#e6e6e6', wallFill: '#565c68', level: S.level };
+  // Le fond doit suivre le thème réel de la page (clair/sombre/variante) — une valeur figée
+  // ici créait une tache de couleur visible à chaque découpe de porte/fenêtre dans un mur,
+  // qui ne correspondait plus au reste de l'interface dès qu'on changeait de thème (retour
+  // client : "comme si c'était un espace isolé").
+  const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#1b1e24';
+  return { pid: pid || 'L', print: false, mono: false, scale: SC(), minW: 1.3 / S.view.z, bg, ink: '#e6e6e6', wallFill: '#565c68', level: S.level };
 }
 function ctxPrint(mono) {
   return { pid: 'S', print: true, mono: !!mono, scale: SC(), minW: 0, bg: '#ffffff', ink: '#000000', wallFill: mono ? '#dcdcdc' : '#cfd3d8', level: S.level };

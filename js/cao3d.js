@@ -403,7 +403,9 @@ function cao_createViewer(container, THREE){
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x14171c);
+  // Même correction que plan.js/plan3d.js : suivre le thème réel plutôt qu'une couleur figée.
+  const bgTheme = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+  scene.background = new THREE.Color(bgTheme || 0x14171c);
   const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 20000);
   camera.position.set(180, 150, 220);
   const controls = new THREE.OrbitControls(camera, renderer.domElement);

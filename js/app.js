@@ -227,6 +227,10 @@ async function render(){
       }
     }
   }
+  // Le lien "Composants" de la barre du haut n'a de sens que dans l'espace électrique (c'est là
+  // qu'on pose réellement des composants sur un schéma) : masqué partout ailleurs, y compris
+  // sur Mon espace et dans la branche Plan technique (§ retour client).
+  __topbarMontreComposants = ELEC_ROUTES.includes(base);
 
   const routes = {
     ''          : viewLanding, 'login':viewLogin, 'register':viewRegister, 'forgot':viewForgot,
@@ -273,6 +277,7 @@ const MODE_PILL = SUPABASE_CONFIGURED
   ? `<span class="pill pill-cyan" title="Comptes et projets stockés sur votre projet Supabase">Supabase</span>`
   : `<span class="pill" title="Comptes et projets stockés uniquement dans ce navigateur (localStorage) — voir le rapport final pour connecter Supabase">Démo locale</span>`;
 
+let __topbarMontreComposants = false;
 function renderTopbar(route){
   const bar = document.getElementById('topbar');
   const base = route.split('/')[0];
@@ -283,7 +288,9 @@ function renderTopbar(route){
     wireThemeSwitch();
     return;
   }
-  const links = [['dashboard','Mon espace'],['composants','Composants'],['discussion','Discussion & suggestions'],['messages','Messagerie']];
+  const links = [['dashboard','Mon espace'],
+    ...(__topbarMontreComposants ? [['composants','Composants']] : []),
+    ['discussion','Discussion & suggestions'],['messages','Messagerie']];
   if (user.role === 'admin') links.push(['admin','Admin']);
   bar.innerHTML = `<a href="#/dashboard" class="brand" title="Christ BCMC"><span class="brand-mark">${LAB_LOGO_SVG}</span><span class="brand-text">Labo Électronique Virtuel<span class="brand-signature">Christ BCMC</span></span></a>
     <nav>${links.map(([r,l]) => `<a href="#/${r}" class="navlink ${base===r?'active':''}">${l}</a>`).join('')}</nav>
