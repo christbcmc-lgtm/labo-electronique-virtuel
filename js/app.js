@@ -231,6 +231,9 @@ async function render(){
   // qu'on pose réellement des composants sur un schéma) : masqué partout ailleurs, y compris
   // sur Mon espace et dans la branche Plan technique (§ retour client).
   __topbarMontreComposants = ELEC_ROUTES.includes(base);
+  // Retenir le schéma qu'on vient de quitter pour accéder aux Composants (retour client :
+  // pouvoir revenir directement dessus sans repasser par Mon espace / Mes projets).
+  if (base === 'project' && param) __dernierSchemaVisite = param;
 
   const routes = {
     ''          : viewLanding, 'login':viewLogin, 'register':viewRegister, 'forgot':viewForgot,
@@ -278,6 +281,7 @@ const MODE_PILL = SUPABASE_CONFIGURED
   : `<span class="pill" title="Comptes et projets stockés uniquement dans ce navigateur (localStorage) — voir le rapport final pour connecter Supabase">Démo locale</span>`;
 
 let __topbarMontreComposants = false;
+let __dernierSchemaVisite = null;
 function renderTopbar(route){
   const bar = document.getElementById('topbar');
   const base = route.split('/')[0];
@@ -626,6 +630,7 @@ async function viewComposants(){
     <div class="main">
       <div class="main-header">
         <div><h2>Composants</h2><p style="margin:0;font-size:.85em">Indépendant de tout projet — recherchez, parcourez toute la bibliothèque par famille et mettez des composants en favoris.</p></div>
+        ${__dernierSchemaVisite ? `<a href="#/project/${__dernierSchemaVisite}" class="btn btn-ghost btn-sm">← Retour au schéma</a>` : ''}
         <div class="ws-tabs-top">
           <a href="#" data-comp-mode="recherche" class="${mode==='recherche'?'active':''}">Recherche &amp; favoris</a>
           <a href="#" data-comp-mode="parcourir" class="${mode==='parcourir'?'active':''}">Parcourir la bibliothèque</a>

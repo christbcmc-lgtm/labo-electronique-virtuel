@@ -1004,6 +1004,15 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   await nav(win, 'project/' + projectId);
   await tick(200);
 
+  section('"Composants" se souvient du schéma quitté pour y revenir directement, sans repasser par Mon espace (retour client)');
+  await nav(win, 'composants');
+  await tick(200);
+  const retourSchema = doc.querySelector(`a[href="#/project/${projectId}"]`);
+  assert(!!retourSchema && retourSchema.textContent.includes('Retour au schéma'), 'un lien "Retour au schéma" ramène directement au schéma quitté juste avant');
+  click(win, retourSchema);
+  await tick(200);
+  assert(win.currentRoute() === 'project/' + projectId, 'le clic ramène bien sur ce schéma précis');
+
   section('Mon espace — nouveau menu latéral conforme au plan complet du logiciel (Tableau de bord, Modèles, Cours & TP, Catalogue, Bibliothèque 3D, Aide, Paramètres)');
   await nav(win, 'tableau-de-bord');
   await tick(250);
