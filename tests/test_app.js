@@ -753,11 +753,18 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   await nav(win, 'plan/' + planProjectId);
   await tick(300);
   assert(!!doc.getElementById('plan-shell'), 'l\'éditeur de plan (prototype "Atelier Plan" intégré) est monté dans la vue');
-  assert(!!doc.querySelector(`.ws-tabs-top a[href="#/plan/${planProjectId}"].active`), 'le 4e onglet "Plan" est actif sur cette route, aux côtés de Schéma/Devis/Dimensionnement');
+  assert(!!doc.querySelector(`.ws-tabs-top a[href="#/plan/${planProjectId}"].active`), 'l\'onglet "Plan" est actif sur cette route (seul onglet Plan technique affiché, depuis la séparation Élec/Plan technique)');
   assert(typeof win.AtelierPlanEditor === 'object' && typeof win.AtelierPlanEditor.mount === 'function' && typeof win.AtelierPlanEditor.unmount === 'function', 'window.AtelierPlanEditor.mount/unmount exposés (API d\'intégration du module)');
   assert(typeof win.AtelierPlan === 'object' && typeof win.AtelierPlan.getProject === 'function', 'window.AtelierPlan (API interne du module monté) exposée');
   const freshPlan = win.AtelierPlan.getProject();
   assert(freshPlan.version === 1 && Array.isArray(freshPlan.entities) && freshPlan.entities.length === 0, 'un projet de plan vide est créé par défaut quand aucun plan n\'a encore été enregistré pour ce projet');
+
+  section('Plan bâtiment — ruban d\'outils repliable pour libérer l\'espace de dessin (retour client)');
+  assert(!doc.getElementById('ribbon').classList.contains('collapsed'), 'le ruban (Mur/Porte/Fenêtre/...) est visible par défaut');
+  click(win, doc.getElementById('ribbonToggle'));
+  assert(doc.getElementById('ribbon').classList.contains('collapsed'), 'un clic sur le bouton "Ruban" le replie entièrement');
+  click(win, doc.getElementById('ribbonToggle'));
+  assert(!doc.getElementById('ribbon').classList.contains('collapsed'), 'un second clic le réaffiche');
 
   section('Plan bâtiment — persistance par projet (db.getPlan/db.savePlan, même principe que le devis §22/§23)');
   const samplePlan = { version:1, meta:{ name:'Villa test', scale:50, sheet:'A3', projet:'', titre:'Plan électrique', auteur:'', date:'2026-01-01', indice:'A', planche:'1/1', sheetOrigin:null, dimUnit:'mm' },
@@ -971,6 +978,15 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
     assert(src.includes("getComputedStyle(document.documentElement).getPropertyValue('--bg')") && src.includes('scene.background'),
       `${f} : le fond de la scène 3D lit aussi la vraie variable de thème --bg`);
   }
+  // Découverte en creusant le retour client : tout le CHROME du Plan (ruban, panneaux, pas
+  // seulement le canevas déjà corrigé) suivait une palette privée figée dans css/plan.css,
+  // jamais connectée au thème réel de l'application (clair/sombre/gris, §33).
+  const srcPlanCss = fs.readFileSync(path.join(__dirname, '..', 'css', 'plan.css'), 'utf8');
+  assert(!/#plan-shell\{[^}]*--bg:\s*#[0-9a-fA-F]{3,6}/.test(srcPlanCss),
+    'css/plan.css : --bg n\'est plus une couleur figée dans #plan-shell (hérite du thème réel)');
+  assert(srcPlanCss.includes('--line:var(--panel-border)') && srcPlanCss.includes('--ink:var(--text)'),
+    'css/plan.css : le ruban et les panneaux (--line/--ink notamment) sont bien reliés aux vraies variables de thème');
+
 
   section('Barre du haut — "Composants" visible uniquement dans l\'espace électrique, pas sur Mon espace ni dans Plan technique (retour client)');
   await nav(win, 'project/' + projectId);

@@ -11,8 +11,19 @@
    ========================================================================== */
 
 #plan-shell{
-  --bg:#14171c; --panel:#1b1f26; --panel2:#222833; --line:#2c3441; --ink:#e6e9ef; --mute:#8a94a6;
-  --acc:#4fc3f7; --acc2:#ffb74d; --ok:#66bb6a; --warn:#ffa726; --bad:#ef5350; --sheet:#1b1e24;
+  /* Ces variables suivaient avant une palette sombre figée, indépendante du thème choisi dans
+     le reste de l'application (clair/sombre/gris, §33) — d'où un atelier Plan toujours bleu-
+     sombre quel que soit le thème (retour client répété). Elles reprennent maintenant les
+     vraies variables de thème globales de :root (css/style.css), pour que changer de thème
+     change aussi l'atelier Plan. Les couleurs purement sémantiques (succès/avertissement/
+     erreur/accent) restent fixes : elles ne décrivent pas un fond, juste un état.  */
+  /* --bg et --panel ne sont PAS redéclarées ici : --bg:var(--bg) sur le même sélecteur serait
+     une référence circulaire (invalide en CSS, ça casserait la variable au lieu de l'hériter).
+     #plan-shell hérite donc directement --bg et --panel de :root, naturellement, sans rien
+     écrire — seuls les noms différents ci-dessous ont besoin d'un vrai alias. */
+  --panel2:var(--bg-raised); --line:var(--panel-border);
+  --ink:var(--text); --mute:var(--text-muted);
+  --acc:var(--cyan); --acc2:var(--amber); --ok:#66bb6a; --warn:#ffa726; --bad:var(--danger); --sheet:var(--bg);
 
   display:grid; grid-template-rows:auto auto minmax(0,1fr) auto; height:100%;
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
@@ -40,6 +51,7 @@
 
 /* ---- ruban ---- */
 #plan-shell #ribbon{ display:flex; gap:0; overflow-x:auto; background:var(--panel2); border-bottom:1px solid var(--line); scrollbar-width:thin; min-height:66px; }
+#plan-shell #ribbon.collapsed{ display:none; }
 #plan-shell .grp{ display:flex; flex-direction:column; padding:4px 8px 2px; border-right:1px solid var(--line); flex:none; }
 #plan-shell .grp .items{ display:flex; gap:2px; align-items:flex-start; flex:1; }
 #plan-shell .grp .gname{ font-size:10px; color:var(--mute); text-align:center; margin-top:2px; letter-spacing:.4px; text-transform:uppercase; }

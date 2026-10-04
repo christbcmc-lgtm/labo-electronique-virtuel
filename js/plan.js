@@ -1795,6 +1795,14 @@ const stabsEl = $('#stabs');
 if (stabsEl) stabsEl.addEventListener('click', ev => { const b = ev.target.closest('button'); if (b) setPanel(b.dataset.p, true); });
 const sideToggleEl = $('#sideToggle');
 if (sideToggleEl) sideToggleEl.addEventListener('click', () => { const s = $('#side'); if (s) s.classList.toggle('open'); });
+// Libérer l'espace de dessin (retour client) : le ruban (Mur/Porte/Fenêtre/...) peut être
+// replié entièrement, même principe que le panneau Propriétés ci-dessus.
+const ribbonToggleEl = $('#ribbonToggle');
+if (ribbonToggleEl) ribbonToggleEl.addEventListener('click', () => {
+  const r = $('#ribbon'); if (!r) return;
+  const collapsed = r.classList.toggle('collapsed');
+  ribbonToggleEl.classList.toggle('on', collapsed);
+});
 function refreshPanels() { renderProps(); renderLayers(); renderCircuits(); renderLevelSelect(); if (S.tab === 'rep') renderReport(); }
 
 const FIELDS = {
@@ -2248,6 +2256,7 @@ function planShellHTML() {
       <div id="fileinfo">
         <input id="projName" aria-label="Nom du projet" maxlength="80">
         <span id="saveState">Enregistré</span>
+        <button class="tg" id="ribbonToggle" title="Masquer/afficher le ruban d'outils">Ruban</button>
         <button class="tg" id="sideToggle">Panneau</button>
       </div>
     </header>
