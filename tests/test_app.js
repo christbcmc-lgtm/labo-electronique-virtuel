@@ -956,6 +956,8 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(win.cao_threeAvailable() === false, 'Three.js/STLExporter ne sont pas chargés dans ce harnais (scripts CDN retirés volontairement) — attendu, pas une erreur');
   assert(!doc.getElementById('c3d-fallback').classList.contains('hidden'), 'en l\'absence de Three.js, le message de repli est affiché au lieu de planter');
   assert(win.__jsErrors.length === jsErrCountBeforeCad, 'aucune erreur JS non interceptée en montant l\'atelier CAO 3D sans Three.js disponible' + (win.__jsErrors.length > jsErrCountBeforeCad ? ' — NOUVELLES ERREURS: ' + win.__jsErrors.slice(jsErrCountBeforeCad).join(' | ') : ''));
+  assert(!!doc.querySelector('[data-v="gauche"]') && !!doc.querySelector('[data-v="arriere"]') && !!doc.querySelector('[data-v="dessous"]'),
+    'les 3 vues normalisées manquantes (Gauche, Arrière, Dessous) sont maintenant proposées à côté de Iso/Dessus/Face/Droite (retour client sur les vues du dessin technique)');
   await nav(win, 'project/' + projectId);
   await tick(200);
   assert(!doc.getElementById('cao3d-shell'), 'en quittant la route CAO 3D, son DOM est bien retiré');

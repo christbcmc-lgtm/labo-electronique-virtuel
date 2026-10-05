@@ -451,7 +451,13 @@ function cao_createViewer(container, THREE){
     camera.position.set(center.x+span, center.y+span*0.8, center.z+span);
     controls.target.copy(center); controls.update(); render();
   }
-  const VIEWS = { iso:[1,0.85,1], dessus:[0,1,0.0001], face:[0,0.25,1], droite:[1,0.25,0] };
+  // Les 6 vues normalisées du dessin technique (retour client) : dessus/dessous, face/arrière,
+  // gauche/droite, plus l'isométrique de confort. 0.0001 au lieu de 0 évite une caméra alignée
+  // pile sur l'axe de contrôle d'OrbitControls (comportement indéfini à l'aplomb du pôle).
+  const VIEWS = {
+    iso:[1,0.85,1], dessus:[0,1,0.0001], dessous:[0,-1,0.0001],
+    face:[0,0.25,1], arriere:[0,0.25,-1], droite:[1,0.25,0], gauche:[-1,0.25,0],
+  };
   function setView(name){
     const box = new THREE.Box3().setFromObject(group);
     const center = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());
@@ -579,8 +585,11 @@ function cao3dShellHTML(){
       <div class="c3d-group">
         <button class="c3d-btn" data-v="iso">Isométrique</button>
         <button class="c3d-btn" data-v="dessus">Dessus</button>
+        <button class="c3d-btn" data-v="dessous">Dessous</button>
         <button class="c3d-btn" data-v="face">Face</button>
+        <button class="c3d-btn" data-v="arriere">Arrière</button>
         <button class="c3d-btn" data-v="droite">Droite</button>
+        <button class="c3d-btn" data-v="gauche">Gauche</button>
         <button class="c3d-btn" id="c3d-fit">Cadrer tout</button>
       </div>
       <div class="c3d-group">
