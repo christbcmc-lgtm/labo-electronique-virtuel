@@ -408,6 +408,8 @@ function cao_createViewer(container, THREE){
   scene.background = new THREE.Color(bgTheme || 0x14171c);
   const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 20000);
   camera.position.set(180, 150, 220);
+  const orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 20000);
+  let activeCamera = camera;
   const controls = new THREE.OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true; controls.dampingFactor = 0.08; controls.target.set(0,0,0);
 
@@ -418,10 +420,43 @@ function cao_createViewer(container, THREE){
 
   const group = new THREE.Group(); scene.add(group);
   const objById = new Map();
+  let technicalMode = false;
+  let lastViewName = 'iso';
   let clipPlane = null;
 
   function clear(){ objById.forEach(o => { o.traverse(n => { if (n.geometry) n.geometry.dispose(); if (n.material) (Array.isArray(n.material)?n.material:[n.material]).forEach(m=>m.dispose&&m.dispose()); }); }); group.clear(); objById.clear(); }
 
+  // Arêtes vue technique (§ vues orthographiques + traits cachés en pointillés, suite de la
+  // demande client) : pour chaque maillage, une paire de lignes partageant la même géométrie
+  // d'arêtes — l'une au test de profondeur normal (ne s'affiche que si visible depuis la
+  // caméra), l'autre au test de profondeur INVERSÉ (ne s'affiche QUE là où elle est cachée
+  // derrière la pièce), rendue en pointillés. Ajoutées comme enfants du maillage lui-même pour
+  // hériter automatiquement de sa transformation, sans double comptabilité à maintenir.
+  function cao_addTechnicalEdges(mesh){
+    if (!mesh.geometry) return;
+    const edgesGeom = new THREE.EdgesGeometry(mesh.geometry, 20);
+    const inkColor = (getComputedStyle(document.documentElement).getPropertyValue('--text').trim()) || '#e6e9ef';
+    const muteColor = (getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim()) || '#8a94a6';
+    const visLines = new THREE.LineSegments(edgesGeom, new THREE.LineBasicMaterial({ color: inkColor, depthTest:true }));
+    const hidLines = new THREE.LineSegments(edgesGeom, new THREE.LineDashedMaterial({ color: muteColor, dashSize:3, gapSize:2, depthTest:true, depthFunc: THREE.GreaterDepth }));
+    hidLines.computeLineDistances();
+    visLines.visible = false; hidLines.visible = false; // affichées uniquement en mode technique (setTechnicalMode)
+    visLines.renderOrder = 2; hidLines.renderOrder = 2;
+    mesh.add(visLines); mesh.add(hidLines);
+    mesh.userData.__edgeVisible = visLines; mesh.userData.__edgeHidden = hidLines;
+  }
+  function setTechnicalMode(on){
+    technicalMode = on;
+    group.traverse(n => {
+      if (n.isMesh){
+        n.visible = !on;
+        if (n.userData.__edgeVisible) n.userData.__edgeVisible.visible = on;
+        if (n.userData.__edgeHidden) n.userData.__edgeHidden.visible = on;
+      }
+    });
+    grid.visible = !on; // une planche technique n'a pas de quadrillage de sol
+    render();
+  }
   function setBodies(bodies, selectedId){
     clear();
     for (const b of (bodies||[])){
@@ -433,6 +468,7 @@ function cao_createViewer(container, THREE){
       try { obj = cao_buildObject(b, THREE, material); } catch (e) { continue; }
       obj.position.set(b.transform.pos[0]||0, b.transform.pos[1]||0, b.transform.pos[2]||0);
       obj.rotation.set((b.transform.rot[0]||0)*Math.PI/180, (b.transform.rot[1]||0)*Math.PI/180, (b.transform.rot[2]||0)*Math.PI/180);
+      obj.traverse(n => { if (n.isMesh) cao_addTechnicalEdges(n); });
       if (b.id === selectedId){
         const bbox = new THREE.Box3().setFromObject(obj);
         const helper = new THREE.Box3Helper(bbox, 0x4fc3f7); group.add(helper);
@@ -440,10 +476,12 @@ function cao_createViewer(container, THREE){
       group.add(obj);
       objById.set(b.id, obj);
     }
+    if (technicalMode) setTechnicalMode(true); // réapplique l'état visible/pointillés aux nouveaux maillages
     render();
   }
 
   function frameAll(){
+    setTechnicalMode(false); activeCamera = camera; controls.enabled = true;
     const box = new THREE.Box3().setFromObject(group);
     if (box.isEmpty()) { camera.position.set(180,150,220); controls.target.set(0,0,0); controls.update(); render(); return; }
     const size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3());
@@ -458,14 +496,42 @@ function cao_createViewer(container, THREE){
     iso:[1,0.85,1], dessus:[0,1,0.0001], dessous:[0,-1,0.0001],
     face:[0,0.25,1], arriere:[0,0.25,-1], droite:[1,0.25,0], gauche:[-1,0.25,0],
   };
+  // Vraie projection orthographique (pas de distorsion de perspective) pour les 6 vues
+  // techniques strictes — "iso" reste en perspective, librement orbitable, pour l'exploration.
+  function cao_setOrthoFrustum(w, h, aspect){
+    const halfH = Math.max(w, h) / 2 * (aspect >= 1 ? 1 : 1/aspect);
+    const halfW = halfH * aspect;
+    orthoCam.left = -halfW; orthoCam.right = halfW; orthoCam.top = halfH; orthoCam.bottom = -halfH;
+    orthoCam.updateProjectionMatrix();
+  }
   function setView(name){
     const box = new THREE.Box3().setFromObject(group);
     const center = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());
     const size = box.isEmpty() ? new THREE.Vector3(100,100,100) : box.getSize(new THREE.Vector3());
     const span = Math.max(size.x, size.y, size.z, 20) * 1.6;
     const dir = VIEWS[name] || VIEWS.iso;
-    camera.position.set(center.x+dir[0]*span, center.y+dir[1]*span, center.z+dir[2]*span);
-    controls.target.copy(center); controls.update(); render();
+    lastViewName = name;
+    if (name === 'iso' || !VIEWS[name]){
+      setTechnicalMode(false); activeCamera = camera; controls.enabled = true;
+      camera.position.set(center.x+dir[0]*span, center.y+dir[1]*span, center.z+dir[2]*span);
+      controls.target.copy(center); controls.update(); render();
+      return;
+    }
+    // Vue technique stricte : caméra orthographique verrouillée sur l'axe, pas d'orbite libre
+    // (comme un vrai plan 2D), traits cachés en pointillés plutôt que pièce pleine ombrée.
+    setTechnicalMode(true); activeCamera = orthoCam; controls.enabled = false;
+    const w = container.clientWidth || 300, h = container.clientHeight || 300;
+    const dim = name==='dessus'||name==='dessous' ? Math.max(size.x,size.z) : name==='face'||name==='arriere' ? Math.max(size.x,size.y) : Math.max(size.y,size.z);
+    cao_setOrthoFrustum(dim*1.3, dim*1.3, w/h);
+    // "Haut" de l'image rendue : vertical (0,1,0) pour les 4 vues latérales (face/arrière/
+    // gauche/droite) — mais ce serait dégénéré pour dessus/dessous, où l'axe de visée EST déjà
+    // quasi vertical (0,±1,0.0001) ; dans ce cas, "haut" doit être un axe horizontal (ici -Z),
+    // sinon lookAt() produit une orientation instable (axes parallèles).
+    orthoCam.up.set(0, (name==='dessus'||name==='dessous') ? 0 : 1, (name==='dessus'||name==='dessous') ? -1 : 0);
+    orthoCam.position.set(center.x+dir[0]*span, center.y+dir[1]*span, center.z+dir[2]*span);
+    orthoCam.lookAt(center);
+    orthoCam.updateProjectionMatrix();
+    render();
   }
   function setClip(y){
     clipPlane = (y===null||y===undefined) ? null : new THREE.Plane(new THREE.Vector3(0,-1,0), y);
@@ -476,8 +542,14 @@ function cao_createViewer(container, THREE){
     const exporter = new THREE.STLExporter();
     return exporter.parse(group, { binary:true });
   }
-  function resize(){ const w=Math.max(1,container.clientWidth), h=Math.max(1,container.clientHeight); renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); render(); }
-  function render(){ renderer.render(scene, camera); }
+  function resize(){
+    const w=Math.max(1,container.clientWidth), h=Math.max(1,container.clientHeight);
+    renderer.setSize(w,h,false);
+    camera.aspect=w/h; camera.updateProjectionMatrix();
+    if (technicalMode) setView(lastViewName); // recadre la vue orthographique au nouveau ratio
+    else render();
+  }
+  function render(){ renderer.render(scene, activeCamera); }
   let raf = null;
   (function loop(){ raf = requestAnimationFrame(loop); controls.update(); render(); })();
   function dispose(){ if (raf) cancelAnimationFrame(raf); controls.dispose(); clear(); renderer.dispose(); if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement); }

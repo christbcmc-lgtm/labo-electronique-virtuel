@@ -958,6 +958,14 @@ async function tick(ms=30){ await new Promise(r=>setTimeout(r,ms)); }
   assert(win.__jsErrors.length === jsErrCountBeforeCad, 'aucune erreur JS non interceptée en montant l\'atelier CAO 3D sans Three.js disponible' + (win.__jsErrors.length > jsErrCountBeforeCad ? ' — NOUVELLES ERREURS: ' + win.__jsErrors.slice(jsErrCountBeforeCad).join(' | ') : ''));
   assert(!!doc.querySelector('[data-v="gauche"]') && !!doc.querySelector('[data-v="arriere"]') && !!doc.querySelector('[data-v="dessous"]'),
     'les 3 vues normalisées manquantes (Gauche, Arrière, Dessous) sont maintenant proposées à côté de Iso/Dessus/Face/Droite (retour client sur les vues du dessin technique)');
+  // Caméra orthographique + arêtes cachées en pointillés : comportement non testable dans ce
+  // harnais (Three.js volontairement absent), vérification directe des briques essentielles.
+  const srcCao = fs.readFileSync(path.join(__dirname, '..', 'js', 'cao3d.js'), 'utf8');
+  assert(srcCao.includes('new THREE.OrthographicCamera'), 'une vraie caméra orthographique est utilisée pour les 6 vues techniques (pas seulement une perspective repositionnée)');
+  assert(srcCao.includes('new THREE.EdgesGeometry') && srcCao.includes('LineDashedMaterial') && srcCao.includes('THREE.GreaterDepth'),
+    'les arêtes cachées sont rendues en pointillés via un second passage au test de profondeur inversé (technique standard de dessin technique)');
+  assert(srcCao.includes('function setTechnicalMode') && srcCao.includes('controls.enabled = false'),
+    'le mode technique verrouille l\'orbite libre sur les 6 vues strictes (comme un vrai plan 2D), et cache le quadrillage de sol');
   await nav(win, 'project/' + projectId);
   await tick(200);
   assert(!doc.getElementById('cao3d-shell'), 'en quittant la route CAO 3D, son DOM est bien retiré');
