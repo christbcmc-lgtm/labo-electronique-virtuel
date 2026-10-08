@@ -69,6 +69,12 @@ n'appartient pas à la branche du projet.
 - Pièces paramétriques, bibliothèque de pièces standard (vis/écrou/rondelle/profilé/engrenage)
 - Esquisse extrudée et révolution, dessinables à la souris ou par saisie numérique
 - Assemblage par positionnement, matériaux/masse, coupe, export STL et DXF (profil 2D)
+- 6 vues normalisées (Dessus/Dessous/Face/Arrière/Gauche/Droite) en vraie projection
+  orthographique (pas de distorsion de perspective), arêtes cachées en pointillés — plus
+  l'isométrique, librement orbitable, en perspective. Non vérifié visuellement par une session
+  IA (Three.js volontairement absent du harnais de test) — à confirmer sur le site déployé.
+- Contraintes d'assemblage réelles (pièces qui "s'accrochent" entre elles) et opérations
+  booléennes générales : pas encore faites (voir plus bas)
 
 **Mon espace (navigation générale)**
 - Menu latéral conforme au plan complet du logiciel : Tableau de bord, Mes projets, Modèles,
