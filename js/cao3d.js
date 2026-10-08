@@ -468,7 +468,10 @@ function cao_createViewer(container, THREE){
       try { obj = cao_buildObject(b, THREE, material); } catch (e) { continue; }
       obj.position.set(b.transform.pos[0]||0, b.transform.pos[1]||0, b.transform.pos[2]||0);
       obj.rotation.set((b.transform.rot[0]||0)*Math.PI/180, (b.transform.rot[1]||0)*Math.PI/180, (b.transform.rot[2]||0)*Math.PI/180);
-      obj.traverse(n => { if (n.isMesh) cao_addTechnicalEdges(n); });
+      // Protégé par try/catch : une pièce entière ne doit jamais disparaître de la scène à
+      // cause d'un souci sur ses seules arêtes techniques (pointillés) — la pièce reste
+      // visible en mode normal même si le mode technique est, pour elle, dégradé.
+      obj.traverse(n => { if (n.isMesh) { try { cao_addTechnicalEdges(n); } catch(e){ console.warn('Arêtes techniques non générées pour une pièce :', e); } } });
       if (b.id === selectedId){
         const bbox = new THREE.Box3().setFromObject(obj);
         const helper = new THREE.Box3Helper(bbox, 0x4fc3f7); group.add(helper);
