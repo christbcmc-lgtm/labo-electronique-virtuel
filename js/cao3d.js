@@ -508,6 +508,17 @@ function cao_createViewer(container, THREE){
     orthoCam.updateProjectionMatrix();
   }
   function setView(name){
+    try { cao_setViewInner(name); }
+    catch(e){
+      // Si quoi que ce soit échoue ici, on revient à une vue sûre plutôt que de laisser le
+      // canevas dans un état indéterminé (vide, caméra mal orientée) sans aucun signal —
+      // retour client "ça ne sort pas" non reproduit depuis cet environnement : ce filet
+      // rend au moins l'échec visible (console) au lieu de silencieux, en attendant.
+      console.error('cao3d setView("'+name+'") a échoué :', e);
+      try { setTechnicalMode(false); activeCamera = camera; controls.enabled = true; render(); } catch(e2){}
+    }
+  }
+  function cao_setViewInner(name){
     const box = new THREE.Box3().setFromObject(group);
     const center = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());
     const size = box.isEmpty() ? new THREE.Vector3(100,100,100) : box.getSize(new THREE.Vector3());
